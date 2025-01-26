@@ -323,8 +323,8 @@ namespace dxvk {
     }} },
     /* Garden Warfare 2
        Won't start on amd Id without atiadlxx     */
-    { R"(\\GW2.Main_Win64_Retail\.exe$)", {{
-      { "dxgi.customVendorId",           "10de"   },
+    { R"(\\GW2\.Main_Win64_Retail\.exe$)", {{
+      { "dxgi.customVendorId",              "10de"   },
     }} },
     /* DayZ */
     { R"(\\DayZ_x64\.exe$)", {{
