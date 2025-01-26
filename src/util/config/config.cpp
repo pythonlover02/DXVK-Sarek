@@ -612,7 +612,7 @@ namespace dxvk {
      * Also hang when alt tabbing which seems     *
      * like a game bug that d3d9 drivers work     *
      * around.                                    */
-    { R"(\\(BF2|BF2142)\.exe$)", {{
+    { R"(\\(BF2|BF2142|PRBF2)\.exe$)", {{
       { "d3d9.longMad",                     "True" },
     }} },
     /* SpellForce 2 Series                        */
