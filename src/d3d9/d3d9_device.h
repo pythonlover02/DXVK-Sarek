@@ -90,6 +90,11 @@ namespace dxvk {
     void*           mapPtr = nullptr;
   };
 
+  struct SWCursorVertex {
+    float x, y, z, rhw;
+    float u, v;
+  };
+
   class D3D9DeviceEx final : public ComObjectClamp<IDirect3DDevice9Ex> {
     constexpr static uint32_t DefaultFrameLatency = 3;
     constexpr static uint32_t MaxFrameLatency     = 20;

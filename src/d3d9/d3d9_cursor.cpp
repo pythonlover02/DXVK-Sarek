@@ -26,26 +26,24 @@ namespace dxvk {
       m_sCursor.Bitmap = nullptr;
       m_sCursor.XHotSpot = 0;
       m_sCursor.YHotSpot = 0;
-      m_sCursor.X = 0.0f;
-      m_sCursor.Y = 0.0f;
   }
 
 
   void D3D9Cursor::UpdateCursor(int X, int Y) {
+    // SetCursorPosition is used to directly update the position of software cursors,
+    // but keep track of the cursor position even when using hardware cursors, in order
+    // to ensure a smooth transition/overlap from one type to the other.
+    m_sCursor.X = static_cast<float>(X);
+    m_sCursor.Y = static_cast<float>(Y);
+
+    if (unlikely(m_sCursor.Bitmap != nullptr))
+      return;
+
     POINT currentPos = { };
     if (::GetCursorPos(&currentPos) && currentPos == POINT{ X, Y })
         return;
 
     ::SetCursorPos(X, Y);
-  }
-
-
-  void D3D9Cursor::RefreshSoftwareCursorPosition() {
-    POINT currentPos = { };
-    ::GetCursorPos(&currentPos);
-
-    m_sCursor.X = static_cast<float>(currentPos.x) - static_cast<float>(m_sCursor.XHotSpot);
-    m_sCursor.Y = static_cast<float>(currentPos.y) - static_cast<float>(m_sCursor.YHotSpot);
   }
 
 
