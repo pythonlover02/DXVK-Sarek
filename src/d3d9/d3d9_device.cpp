@@ -3538,34 +3538,27 @@ namespace dxvk {
       D3DSURFACE_DESC dstDesc;
       m_state.renderTargets[0]->GetDesc(&dstDesc);
 
-      m_cursor.RefreshSoftwareCursorPosition();
-
       // Calculate cursor quad vertex coordinates based on render target edges and the win32 cursor position
-      float dstLeft   = pSoftwareCursor->X;
-      float dstTop    = pSoftwareCursor->Y;
-      float dstRight  = std::min(pSoftwareCursor->X + static_cast<float>(srcDesc.Width),  static_cast<float>(dstDesc.Width));
-      float dstBottom = std::min(pSoftwareCursor->Y + static_cast<float>(srcDesc.Height), static_cast<float>(dstDesc.Height));
+      const float dstLeft   = pSoftwareCursor->X - static_cast<float>(pSoftwareCursor->XHotSpot);
+      const float dstTop    = pSoftwareCursor->Y - static_cast<float>(pSoftwareCursor->YHotSpot);
+      const float dstRight  = std::min(dstLeft + static_cast<float>(srcDesc.Width),  static_cast<float>(dstDesc.Width));
+      const float dstBottom = std::min(dstTop + static_cast<float>(srcDesc.Height), static_cast<float>(dstDesc.Height));
       // Calculate cursor texture coordinates based on quad rendering coordinates and render target edges
-      float srcRight   = dstRight  == static_cast<float>(dstDesc.Width)  ?
-                          dstRight  - pSoftwareCursor->X : static_cast<float>(srcDesc.Width);
-      float srcBottom  = dstBottom == static_cast<float>(dstDesc.Height) ?
-                          dstBottom - pSoftwareCursor->Y : static_cast<float>(srcDesc.Height);
+      const float srcRight   = dstRight  == static_cast<float>(dstDesc.Width)  ?
+                          dstRight  - dstLeft : static_cast<float>(srcDesc.Width);
+      const float srcBottom  = dstBottom == static_cast<float>(dstDesc.Height) ?
+                          dstBottom - dstTop : static_cast<float>(srcDesc.Height);
       // Calculate normalized texture coordinates (will be < 1.0f to handle right/bottom edge cursor clipping)
-      srcRight  /= static_cast<float>(srcDesc.Width);
-      srcBottom /= static_cast<float>(srcDesc.Height);
+      const float normSrcRight  = srcRight / static_cast<float>(srcDesc.Width);
+      const float normSrcBottom = srcBottom / static_cast<float>(srcDesc.Height);
 
-      struct SWCURSORVERTEX {
-          FLOAT x, y, z, rhw;
-          FLOAT u, v;
-      };
-
-      std::array<SWCURSORVERTEX, 4> quadVertices = {{
+      std::array<SWCursorVertex, 4> quadVertices = {{
         { dstLeft,  dstTop, 0.0f, 1.0f, 0.0f, 0.0f },
-        { dstRight, dstTop, 0.0f, 1.0f, srcRight, 0.0f },
-        { dstLeft,  dstBottom, 0.0f, 1.0f, 0.0f, srcBottom },
-        { dstRight, dstBottom, 0.0f, 1.0f, srcRight, srcBottom },
+        { dstRight, dstTop, 0.0f, 1.0f, normSrcRight, 0.0f },
+        { dstLeft,  dstBottom, 0.0f, 1.0f, 0.0f, normSrcBottom },
+        { dstRight, dstBottom, 0.0f, 1.0f, normSrcRight, normSrcBottom },
       }};
-      const size_t quadVerticesSize = quadVertices.size() * sizeof(SWCURSORVERTEX);
+      const size_t quadVerticesSize = quadVertices.size() * sizeof(SWCursorVertex);
 
       Com<IDirect3DVertexBuffer9> pVertexBuffer;
       CreateVertexBuffer(quadVerticesSize, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
@@ -3592,21 +3585,21 @@ namespace dxvk {
 
       // Temporarily enable alpha blending for the cursor texture
       SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-      // Temporarily disable culling while drawing the cursor quad, as some
-      // games may not render it at all otherwise, due to their own preset
+      // Temporarily disable culling while drawing the cursor quad,
+      // as some games may not render it at all otherwise
       SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
       SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
-      // Filtering is not needed since our dimensions are exact
-      // and it only makes the cursor look more blurry
+      // Filtering is not needed since the dimensions are
+      // exact and it only makes the cursor look blurry
       SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_NONE);
       SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_NONE);
       HRESULT hr = SetTexture(0, pSoftwareCursor->Bitmap.ptr());
       if (FAILED(hr))
-        Logger::warn("D3D9DeviceEx::PresentEx: Failed to set software cursor bitmap texture");
+        Logger::err("D3D9DeviceEx::PresentEx: Failed setting software cursor texture");
 
-      hr = DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, pVertices, sizeof(SWCURSORVERTEX));
+      hr = DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, pVertices, sizeof(SWCursorVertex));
       if (FAILED(hr))
-        Logger::warn("D3D9DeviceEx::PresentEx: Failed on software cursor draw call");
+        Logger::err("D3D9DeviceEx::PresentEx: Failed software cursor draw call");
 
       // Reinstate pre-cursor draw state
       SetTexture(0, tex.ptr());
