@@ -2,12 +2,12 @@
 
 #include "d3d8_include.h"
 #include "d3d8_subresource.h"
-#include "d3d8_d3d9_util.h"
 
 namespace dxvk {
 
-  // TODO: all inherited methods in D3D8Surface should be final like in d9vk
-
+  // Note: IDirect3DSurface8 does not actually inherit from IDirect3DResource8,
+  // however it does expose serveral of the methods typically found part of
+  // IDirect3DResource8, such as Set/Get/FreePrivateData, so model it as such.
   using D3D8SurfaceBase = D3D8Subresource<d3d9::IDirect3DSurface9, IDirect3DSurface8>;
   class D3D8Surface final : public D3D8SurfaceBase {
 
@@ -16,72 +16,33 @@ namespace dxvk {
     D3D8Surface(
             D3D8Device*                     pDevice,
             IDirect3DBaseTexture8*          pTexture,
-            Com<d3d9::IDirect3DSurface9>&&  pSurface)
-      : D3D8SurfaceBase (pDevice, std::move(pSurface), pTexture) {
-    }
+            Com<d3d9::IDirect3DSurface9>&&  pSurface);
 
-    // A surface does not need to be attached to a texture
     D3D8Surface(
             D3D8Device*                     pDevice,
-            Com<d3d9::IDirect3DSurface9>&&  pSurface)
-      : D3D8Surface (pDevice, nullptr, std::move(pSurface)) {
-    }
+            Com<d3d9::IDirect3DSurface9>&&  pSurface);
 
-    D3DRESOURCETYPE STDMETHODCALLTYPE GetType() {
-      return D3DRESOURCETYPE(GetD3D9()->GetType());
-    }
+    HRESULT STDMETHODCALLTYPE GetDesc(D3DSURFACE_DESC* pDesc) final;
 
-    HRESULT STDMETHODCALLTYPE GetDesc(D3DSURFACE_DESC* pDesc) {
-      if (unlikely(pDesc == nullptr))
-        return D3DERR_INVALIDCALL;
+    HRESULT STDMETHODCALLTYPE LockRect(
+        D3DLOCKED_RECT* pLockedRect,
+        CONST RECT*     pRect,
+        DWORD           Flags) final;
 
-      d3d9::D3DSURFACE_DESC desc;
-      HRESULT res = GetD3D9()->GetDesc(&desc);
-
-      if (likely(SUCCEEDED(res)))
-        ConvertSurfaceDesc8(&desc, pDesc);
-
-      return res;
-    }
-
-    HRESULT STDMETHODCALLTYPE LockRect(D3DLOCKED_RECT* pLockedRect, CONST RECT* pRect, DWORD Flags) {
-      return GetD3D9()->LockRect((d3d9::D3DLOCKED_RECT*)pLockedRect, pRect, Flags);
-    }
-
-    HRESULT STDMETHODCALLTYPE UnlockRect() {
-      return GetD3D9()->UnlockRect();
-    }
-
-    HRESULT STDMETHODCALLTYPE GetDC(HDC* phDC) {
-      return GetD3D9()->GetDC(phDC);
-    }
-
-    HRESULT STDMETHODCALLTYPE ReleaseDC(HDC hDC) {
-      return GetD3D9()->ReleaseDC(hDC);
-    }
-
-  public:
+    HRESULT STDMETHODCALLTYPE UnlockRect() final;
 
     /**
      * \brief Allocate or reuse an image of the same size
      * as this texture for performing blit into system mem.
-     * 
-     * TODO: Consider creating only one texture to
-     * encompass all surface levels of a texture.
      */
-    Com<d3d9::IDirect3DSurface9> GetBlitImage() {
-      if (unlikely(m_blitImage == nullptr)) {
-        m_blitImage = CreateBlitImage();
-      }
-
-      return m_blitImage;
-    }
-
+    Com<d3d9::IDirect3DSurface9> GetBlitImage();
 
   private:
+
     Com<d3d9::IDirect3DSurface9> CreateBlitImage();
 
-    Com<d3d9::IDirect3DSurface9> m_blitImage = nullptr;
+    Com<d3d9::IDirect3DSurface9> m_blitImage;
 
   };
+
 }
