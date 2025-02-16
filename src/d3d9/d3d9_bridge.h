@@ -6,7 +6,7 @@
 /**
  * The D3D9 bridge allows D3D8 to access DXVK internals.
  * For Vulkan interop without needing DXVK internals, see d3d9_interop.h.
- * 
+ *
  * NOTE: You must include "d3d9_include.h" or "d3d8_include.h" before this header.
  */
 
@@ -22,15 +22,8 @@ IDxvkD3D8Bridge : public IUnknown {
   #endif
 
   /**
-   * \brief Changes the API name displayed on the HUD
-   * 
-   * \param [in] name The new API name 
-   */
-  virtual void SetAPIName(const char* name) = 0;
-
-  /**
    * \brief Updates a D3D9 surface from a D3D9 buffer
-   * 
+   *
    * \param [in] pDestSurface Destination surface (typically in VRAM)
    * \param [in] pSrcSurface  Source surface (typically in system memory)
    * \param [in] pSrcRect     Source rectangle
@@ -50,14 +43,14 @@ MIDL_INTERFACE("D3D9D3D8-A407-773E-18E9-CAFEBEEF3000")
 IDxvkD3D8InterfaceBridge : public IUnknown {
   /**
    * \brief Enables or disables D3D9-specific features and validations
-   * 
+   *
    * \param [in] compatMode Compatibility state
    */
   virtual void SetD3D8CompatibilityMode(const bool compatMode) = 0;
 
   /**
    * \brief Retrieves the DXVK configuration
-   * 
+   *
    * \returns The DXVK Config object
    */
   virtual const dxvk::Config* GetConfig() const = 0;
@@ -74,8 +67,11 @@ namespace dxvk {
   class D3D9InterfaceEx;
 
   class DxvkD3D8Bridge : public IDxvkD3D8Bridge {
+
   public:
+
     DxvkD3D8Bridge(D3D9DeviceEx* pDevice);
+
     ~DxvkD3D8Bridge();
 
     ULONG STDMETHODCALLTYPE AddRef();
@@ -84,8 +80,6 @@ namespace dxvk {
             REFIID  riid,
             void** ppvObject);
 
-    void SetAPIName(const char* name);
-
     HRESULT UpdateTextureFromBuffer(
         IDirect3DSurface9*        pDestSurface,
         IDirect3DSurface9*        pSrcSurface,
@@ -93,12 +87,17 @@ namespace dxvk {
         const POINT*              pDestPoint);
 
   private:
+
     D3D9DeviceEx* m_device;
+
   };
 
   class DxvkD3D8InterfaceBridge : public IDxvkD3D8InterfaceBridge {
+
   public:
+
     DxvkD3D8InterfaceBridge(D3D9InterfaceEx* pObject);
+
     ~DxvkD3D8InterfaceBridge();
 
     ULONG STDMETHODCALLTYPE AddRef();
@@ -112,6 +111,9 @@ namespace dxvk {
     const Config* GetConfig() const;
 
   protected:
+
     D3D9InterfaceEx* m_interface;
+
   };
+
 }

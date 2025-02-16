@@ -32,12 +32,12 @@ namespace dxvk {
   };
 
   D3D8Device::D3D8Device(
-    D3D8Interface*                pParent,
-    Com<d3d9::IDirect3DDevice9>&& pDevice,
-    D3DDEVTYPE                    DeviceType,
-    HWND                          hFocusWindow,
-    DWORD                         BehaviorFlags,
-    D3DPRESENT_PARAMETERS*        pParams)
+        D3D8Interface*                pParent,
+        Com<d3d9::IDirect3DDevice9>&& pDevice,
+        D3DDEVTYPE                    DeviceType,
+        HWND                          hFocusWindow,
+        DWORD                         BehaviorFlags,
+        D3DPRESENT_PARAMETERS*        pParams)
     : D3D8DeviceBase(std::move(pDevice))
     , m_d3d8Options(pParent->GetOptions())
     , m_parent(pParent)
@@ -51,13 +51,17 @@ namespace dxvk {
       throw DxvkError("D3D8Device: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
     }
 
-    m_bridge->SetAPIName("D3D8");
-
     ResetState();
     RecreateBackBuffersAndAutoDepthStencil();
-    
+
     if (m_d3d8Options.batching)
       m_batcher = new D3D8Batcher(this, GetD3D9());
+
+    d3d9::D3DCAPS9 caps9;
+    HRESULT res = GetD3D9()->GetDeviceCaps(&caps9);
+
+    if (unlikely(SUCCEEDED(res) && caps9.PixelShaderVersion == D3DPS_VERSION(0, 0)))
+      m_isFixedFunctionOnly = true;
   }
 
   D3D8Device::~D3D8Device() {
@@ -73,7 +77,7 @@ namespace dxvk {
 
     HRESULT res;
     Com<d3d9::IDirect3DQuery9> pQuery;
-    
+
     switch (DevInfoID) {
       // pre-D3D8 queries
       case 0:
@@ -81,7 +85,7 @@ namespace dxvk {
       case D3DDEVINFOID_D3DTEXTUREMANAGER:
       case D3DDEVINFOID_TEXTURING:
         return E_FAIL;
-      
+
       case D3DDEVINFOID_VCACHE:
         // The query will return D3D_OK on Nvidia and D3DERR_NOTAVAILABLE on AMD/Intel
         // in D3D9, however in the case of the latter we'll need to return a
@@ -131,6 +135,7 @@ namespace dxvk {
       // Immediately issue the query. D3D9 will begin it automatically before ending.
       pQuery->Issue(D3DISSUE_END);
       // TODO: Will immediately issuing the query actually yield meaingful results?
+      //
       // Only relevant once RESOURCEMANAGER or VERTEXSTATS are implemented by D9VK,
       // since VCACHE queries will immediately return data during this call.
       res = pQuery->GetData(pDevInfoStruct, DevInfoStructSize, D3DGETDATA_FLUSH);
@@ -148,7 +153,7 @@ namespace dxvk {
     return GetD3D9()->GetAvailableTextureMem();
   }
 
-  HRESULT STDMETHODCALLTYPE D3D8Device::ResourceManagerDiscardBytes(DWORD bytes) { 
+  HRESULT STDMETHODCALLTYPE D3D8Device::ResourceManagerDiscardBytes(DWORD bytes) {
     return GetD3D9()->EvictManagedResources();
   }
 
@@ -165,7 +170,7 @@ namespace dxvk {
     HRESULT res = GetD3D9()->GetDeviceCaps(&caps9);
 
     if (likely(SUCCEEDED(res)))
-      dxvk::ConvertCaps8(caps9, pCaps);
+      ConvertCaps8(caps9, pCaps);
 
     return res;
   }
@@ -207,7 +212,7 @@ namespace dxvk {
 
     if (unlikely(pPresentationParameters == nullptr || ppSwapChain == nullptr))
       return D3DERR_INVALIDCALL;
-    
+
     Com<d3d9::IDirect3DSwapChain9> pSwapChain9;
     d3d9::D3DPRESENT_PARAMETERS params = ConvertPresentParameters9(pPresentationParameters);
     HRESULT res = GetD3D9()->CreateAdditionalSwapChain(
@@ -234,6 +239,12 @@ namespace dxvk {
     // RC Cars depends on it not being rejected.
     if (unlikely(pPresentationParameters->SwapEffect == D3DSWAPEFFECT_COPY
               && pPresentationParameters->BackBufferCount > 1))
+      return D3DERR_INVALIDCALL;
+
+    // In D3D8 nothing except D3DPRESENT_INTERVAL_DEFAULT can be used
+    // as a flag for windowed presentation.
+    if (unlikely(pPresentationParameters->Windowed
+              && pPresentationParameters->FullScreen_PresentationInterval != D3DPRESENT_INTERVAL_DEFAULT))
       return D3DERR_INVALIDCALL;
 
     m_presentParams = *pPresentationParameters;
@@ -429,7 +440,7 @@ namespace dxvk {
 
     if (likely(SUCCEEDED(res)))
       *ppVertexBuffer = ref(new D3D8VertexBuffer(this, std::move(pVertexBuffer9), Pool, Usage));
-  
+
     return res;
   }
 
@@ -446,10 +457,10 @@ namespace dxvk {
 
     Com<d3d9::IDirect3DIndexBuffer9> pIndexBuffer9 = nullptr;
     HRESULT res = GetD3D9()->CreateIndexBuffer(Length, Usage, d3d9::D3DFORMAT(Format), d3d9::D3DPOOL(Pool), &pIndexBuffer9, NULL);
-    
+
     if (likely(SUCCEEDED(res)))
       *ppIndexBuffer = ref(new D3D8IndexBuffer(this, std::move(pIndexBuffer9), Pool, Usage));
-    
+
     return res;
   }
 
@@ -476,7 +487,7 @@ namespace dxvk {
       Height,
       d3d9::D3DFORMAT(Format),
       d3d9::D3DMULTISAMPLE_TYPE(MultiSample),
-      0,    // TODO: CreateRenderTarget MultisampleQuality
+      0,
       Lockable,
       &pSurf9,
       NULL);
@@ -509,8 +520,8 @@ namespace dxvk {
       Height,
       d3d9::D3DFORMAT(Format),
       d3d9::D3DMULTISAMPLE_TYPE(MultiSample),
-      0,    // TODO: CreateDepthStencilSurface MultisampleQuality
-      true, // TODO: CreateDepthStencilSurface Discard
+      0,
+      FALSE, // z-buffer discarding is not used in D3D8
       &pSurf9,
       NULL);
 
@@ -535,7 +546,6 @@ namespace dxvk {
     if (unlikely(ppSurface == nullptr))
       return D3DERR_INVALIDCALL;
 
-    // FIXME: Handle D3DPOOL_SCRATCH in CopyRects
     D3DPOOL pool = isUnsupportedSurfaceFormat(Format) ? D3DPOOL_SCRATCH : D3DPOOL_SYSTEMMEM;
 
     Com<d3d9::IDirect3DSurface9> pSurf = nullptr;
@@ -570,7 +580,7 @@ namespace dxvk {
     res = src->LockRect(&srcLocked, &srcRect, D3DLOCK_READONLY);
     if (FAILED(res))
       return res;
-    
+
     res = dst->LockRect(&dstLocked, &dstRect, 0);
     if (FAILED(res)) {
       src->UnlockRect();
@@ -596,9 +606,8 @@ namespace dxvk {
       auto amplitude = cols * bpp;
 
       // Handle DXT compressed textures.
-      // TODO: Are rects always 4x4 aligned?
       if (compressed) {
-        // Assume that DXT blocks are 4x4 pixels.
+        // DXT blocks are always 4x4 pixels.
         constexpr UINT blockWidth  = 4;
         constexpr UINT blockHeight = 4;
 
@@ -640,14 +649,14 @@ namespace dxvk {
    * The following table shows the possible combinations of source
    * and destination surface pools, and how we handle each of them.
    *
-   *     ┌────────────┬───────────────────────────┬───────────────────────┬───────────────────────┬──────────┐
-   *     │ Src/Dst    │ DEFAULT                   │ MANAGED               │ SYSTEMMEM             │ SCRATCH  │
-   *     ├────────────┼───────────────────────────┼───────────────────────┼───────────────────────┼──────────┤
-   *     │ DEFAULT    │  StretchRect              │  GetRenderTargetData  │  GetRenderTargetData  │ -        │
-   *     │ MANAGED    │  UpdateTextureFromBuffer  │  memcpy               │  memcpy               │ -        │
-   *     │ SYSTEMMEM  │  UpdateSurface            │  memcpy               │  memcpy               │ -        │
-   *     │ SCRATCH    │  -                        │  -                    │  -                    │ -        │
-   *     └────────────┴───────────────────────────┴───────────────────────┴───────────────────────┴──────────┘
+   *     ┌────────────┬───────────────────────────┬───────────────────────┬───────────────────────┬──────────────────────┐
+   *     │ Src/Dst    │ DEFAULT                   │ MANAGED               │ SYSTEMMEM             │ SCRATCH              │
+   *     ├────────────┼───────────────────────────┼───────────────────────┼───────────────────────┼──────────────────────┤
+   *     │ DEFAULT    │  StretchRect              │  GetRenderTargetData  │  GetRenderTargetData  │ GetRenderTargetData  │
+   *     │ MANAGED    │  UpdateTextureFromBuffer  │  memcpy               │  memcpy               │ memcpy               │
+   *     │ SYSTEMMEM  │  UpdateSurface            │  memcpy               │  memcpy               │ memcpy               │
+   *     │ SCRATCH    │  memcpy + UpdateSurface   │  memcpy               │  memcpy               │ memcpy               │
+   *     └────────────┴───────────────────────────┴───────────────────────┴───────────────────────┴──────────────────────┘
    */
   HRESULT STDMETHODCALLTYPE D3D8Device::CopyRects(
           IDirect3DSurface8*  pSourceSurface,
@@ -729,8 +738,8 @@ namespace dxvk {
 
       POINT dstPt = { dstRect.left, dstRect.top };
 
-      auto unhandled = [&] {
-        Logger::warn(str::format("D3D8Device::CopyRects: Unhandled case from src pool ", srcDesc.Pool, " to dst pool ", dstDesc.Pool));
+      auto unsupported = [&] {
+        Logger::err(str::format("D3D8Device::CopyRects: Unsupported case from src pool ", srcDesc.Pool, " to dst pool ", dstDesc.Pool));
         return D3DERR_INVALIDCALL;
       };
 
@@ -776,19 +785,52 @@ namespace dxvk {
                 &dstPt
               ));
             }
-            case d3d9::D3DPOOL_SCRATCH:
+            case d3d9::D3DPOOL_SCRATCH: {
+              // SCRATCH -> DEFAULT: memcpy to a SYSTEMMEM temporary buffer and use UpdateSurface
+
+              // UpdateSurface will not work on surface formats unsupported by D3DPOOL_DEFAULT
+              if (unlikely(isUnsupportedSurfaceFormat(D3DFORMAT(srcDesc.Format)))) {
+                return logError(D3DERR_INVALIDCALL);
+              }
+
+              Com<IDirect3DSurface8> pTempImageSurface;
+              // The temporary image surface is guaranteed to end up in SYSTEMMEM for supported formats
+              HRESULT res = CreateImageSurface(
+                srcDesc.Width,
+                srcDesc.Height,
+                D3DFORMAT(srcDesc.Format),
+                &pTempImageSurface
+              );
+
+              if (FAILED(res)) {
+                return logError(res);
+              }
+
+              Com<D3D8Surface> pBlitImage = static_cast<D3D8Surface*>(pTempImageSurface.ptr());
+              // Temporary image surface dimensions are identical, so we can reuse srcDesc/Rect
+              res = copyTextureBuffers(src.ptr(), pBlitImage.ptr(), srcDesc, srcDesc, srcRect, srcRect);
+
+              if (FAILED(res)) {
+                return logError(res);
+              }
+
+              return logError(GetD3D9()->UpdateSurface(
+                pBlitImage->GetD3D9(),
+                &srcRect,
+                dst->GetD3D9(),
+                &dstPt
+              ));
+            }
             default: {
-              // TODO: Unhandled case.
-              return unhandled();
+              return unsupported();
             }
           } break;
 
         // Dest: MANAGED
         case d3d9::D3DPOOL_MANAGED:
           switch (srcDesc.Pool) {
+            // TODO: Copy on GPU (handle MANAGED similarly to SYSTEMMEM for now)
             case d3d9::D3DPOOL_DEFAULT: {
-              // TODO: Copy on GPU (handle MANAGED similarly to SYSTEMMEM for now)
-
               // Get temporary off-screen surface for stretching.
               Com<d3d9::IDirect3DSurface9> pBlitImage = dst->GetBlitImage();
 
@@ -808,8 +850,9 @@ namespace dxvk {
               return logError(GetD3D9()->GetRenderTargetData(pBlitImage.ptr(), dst->GetD3D9()));
             }
             case d3d9::D3DPOOL_MANAGED:
-            case d3d9::D3DPOOL_SYSTEMMEM: {
-              // SYSTEMMEM -> MANAGED: LockRect / memcpy
+            case d3d9::D3DPOOL_SYSTEMMEM:
+            case d3d9::D3DPOOL_SCRATCH: {
+              // MANAGED/SYSMEM/SCRATCH -> MANAGED: LockRect / memcpy
 
               if (stretch) {
                 return logError(D3DERR_INVALIDCALL);
@@ -817,10 +860,8 @@ namespace dxvk {
 
               return logError(copyTextureBuffers(src.ptr(), dst.ptr(), srcDesc, dstDesc, srcRect, dstRect));
             }
-            case d3d9::D3DPOOL_SCRATCH:
             default: {
-              // TODO: Unhandled case.
-              return unhandled();
+              return unsupported();
             }
           } break;
 
@@ -852,6 +893,7 @@ namespace dxvk {
                 pBlitImage.ptr(),
                 &dstRect,
                 d3d9::D3DTEXF_NONE);
+
               if (FAILED(res)) {
                 return logError(res);
               }
@@ -859,29 +901,75 @@ namespace dxvk {
               // Now sync the rendertarget data into main memory.
               return logError(GetD3D9()->GetRenderTargetData(pBlitImage.ptr(), dst->GetD3D9()));
             }
-
-            // SYSMEM/MANAGED -> SYSMEM: LockRect / memcpy
+            // MANAGED/SYSMEM/SCRATCH -> SYSMEM: LockRect / memcpy
             case d3d9::D3DPOOL_MANAGED:
-            case d3d9::D3DPOOL_SYSTEMMEM: {
+            case d3d9::D3DPOOL_SYSTEMMEM:
+            case d3d9::D3DPOOL_SCRATCH: {
               if (stretch) {
                 return logError(D3DERR_INVALIDCALL);
               }
 
               return logError(copyTextureBuffers(src.ptr(), dst.ptr(), srcDesc, dstDesc, srcRect, dstRect));
             }
-            case d3d9::D3DPOOL_SCRATCH:
             default: {
-              // TODO: Unhandled case.
-              return unhandled();
+              return unsupported();
             }
           } break;
         }
 
         // DEST: SCRATCH
-        case d3d9::D3DPOOL_SCRATCH:
+        case d3d9::D3DPOOL_SCRATCH: {
+
+          // RT (DEFAULT) -> SCRATCH: Use GetRenderTargetData as fast path if possible
+          if ((srcDesc.Usage & D3DUSAGE_RENDERTARGET || m_renderTarget == src.ptr())) {
+
+            // GetRenderTargetData works if the formats and sizes match
+            if (srcDesc.MultiSampleType == d3d9::D3DMULTISAMPLE_NONE
+                && srcDesc.Width  == dstDesc.Width
+                && srcDesc.Height == dstDesc.Height
+                && srcDesc.Format == dstDesc.Format
+                && !asymmetric) {
+              return logError(GetD3D9()->GetRenderTargetData(src->GetD3D9(), dst->GetD3D9()));
+            }
+          }
+
+          switch (srcDesc.Pool) {
+            case d3d9::D3DPOOL_DEFAULT: {
+              // Get temporary off-screen surface for stretching.
+              Com<d3d9::IDirect3DSurface9> pBlitImage = dst->GetBlitImage();
+
+              // Stretch the source RT to the temporary surface.
+              HRESULT res = GetD3D9()->StretchRect(
+                src->GetD3D9(),
+                &srcRect,
+                pBlitImage.ptr(),
+                &dstRect,
+                d3d9::D3DTEXF_NONE);
+
+              if (FAILED(res)) {
+                return logError(res);
+              }
+
+              // Now sync the rendertarget data into main memory.
+              return logError(GetD3D9()->GetRenderTargetData(pBlitImage.ptr(), dst->GetD3D9()));
+            }
+            // MANAGED/SYSMEM/SCRATCH -> SCRATCH: LockRect / memcpy
+            case d3d9::D3DPOOL_MANAGED:
+            case d3d9::D3DPOOL_SYSTEMMEM:
+            case d3d9::D3DPOOL_SCRATCH: {
+              if (stretch) {
+                return logError(D3DERR_INVALIDCALL);
+              }
+
+              return logError(copyTextureBuffers(src.ptr(), dst.ptr(), srcDesc, dstDesc, srcRect, dstRect));
+            }
+            default: {
+              return unsupported();
+            }
+          } break;
+        }
         default: {
-          // TODO: Unhandled case.
-          return unhandled();
+          return unsupported();
         }
       }
     }
@@ -1012,7 +1100,7 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Device::BeginScene() { return GetD3D9()->BeginScene(); }
-  
+
   HRESULT STDMETHODCALLTYPE D3D8Device::EndScene() { StateChange(); return GetD3D9()->EndScene(); }
 
   HRESULT STDMETHODCALLTYPE D3D8Device::Clear(
@@ -1115,7 +1203,7 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D8Device::GetClipPlane(DWORD Index, float* pPlane) {
     return GetD3D9()->GetClipPlane(Index, pPlane);
   }
-  
+
   HRESULT STDMETHODCALLTYPE D3D8Device::CreateStateBlock(
           D3DSTATEBLOCKTYPE     Type,
           DWORD*                pToken) {
@@ -1404,7 +1492,7 @@ namespace dxvk {
     m_streams[0] = D3D8VBO {nullptr, 0};
     m_indices = nullptr;
     m_baseVertexIndex = 0;
-    
+
     return GetD3D9()->DrawIndexedPrimitiveUP(
       d3d9::D3DPRIMITIVETYPE(PrimitiveType),
       MinVertexIndex,
@@ -1490,12 +1578,12 @@ namespace dxvk {
 
     if (unlikely(StreamNumber >= d8caps::MAX_STREAMS))
       return D3DERR_INVALIDCALL;
-    
+
     const D3D8VBO& vbo = m_streams[StreamNumber];
 
     *ppStreamData = vbo.buffer.ref();
     *pStride      = vbo.stride;
-    
+
     return D3D_OK;
   }
 
@@ -1573,7 +1661,7 @@ namespace dxvk {
 
   // Render States //
 
-  // ZBIAS can be an integer from 0 to 1 and needs to be remapped to float
+  // ZBIAS can be an integer from 0 to 16 and needs to be remapped to float
   static constexpr float ZBIAS_SCALE     = -0.000005f;
   static constexpr float ZBIAS_SCALE_INV = 1 / ZBIAS_SCALE;
 
@@ -1588,26 +1676,26 @@ namespace dxvk {
       default:
         break;
 
-      // TODO: D3DRS_LINEPATTERN - vkCmdSetLineRasterizationModeEXT
-      case D3DRS_LINEPATTERN: {
-        [[maybe_unused]]
-        D3DLINEPATTERN pattern = bit::cast<D3DLINEPATTERN>(Value);
-        stateChange = false;
-      } break;
+      // TODO: Implement D3DRS_LINEPATTERN - vkCmdSetLineRasterizationModeEXT
+      // and advertise support with D3DPRASTERCAPS_PAT once that is done
+      case D3DRS_LINEPATTERN:
+        Logger::warn("D3D8Device::SetRenderState: Unimplemented render state D3DRS_LINEPATTERN");
+        m_linePattern = bit::cast<D3DLINEPATTERN>(Value);
+        return D3D_OK;
 
-      // Not supported by D3D8.
+      // Not supported by D3D8, but its value is stored.
       case D3DRS_ZVISIBLE:
-        stateChange = false;
-        break;
+        m_zVisible = Value;
+        return D3D_OK;
 
-      // TODO: Not implemented by D9VK. Try anyway.
+      // TODO: Implement D3DRS_ANTIALIASEDLINEENABLE in D9VK.
       case D3DRS_EDGEANTIALIAS:
         State9 = d3d9::D3DRS_ANTIALIASEDLINEENABLE;
         break;
 
       case D3DRS_ZBIAS:
         State9 = d3d9::D3DRS_DEPTHBIAS;
-        Value  = bit::cast<DWORD>(float(Value) * ZBIAS_SCALE);
+        Value  = bit::cast<DWORD>(static_cast<float>(Value) * ZBIAS_SCALE);
         break;
 
       case D3DRS_SOFTWAREVERTEXPROCESSING:
@@ -1621,10 +1709,11 @@ namespace dxvk {
 
         return GetD3D9()->SetSoftwareVertexProcessing(Value);
 
-      // TODO: D3DRS_PATCHSEGMENTS
+      // TODO: Implement D3DRS_PATCHSEGMENTS
       case D3DRS_PATCHSEGMENTS:
-        stateChange = false;
-        break;
+        Logger::warn("D3D8Device::SetRenderState: Unimplemented render state D3DRS_PATCHSEGMENTS");
+        m_patchSegments = bit::cast<float>(Value);
+        return D3D_OK;
     }
 
     if (stateChange) {
@@ -1653,31 +1742,33 @@ namespace dxvk {
       default:
         break;
 
-      // TODO: D3DRS_LINEPATTERN
       case D3DRS_LINEPATTERN:
-        break;
+        *pValue = bit::cast<DWORD>(m_linePattern);
+        return D3D_OK;
 
-      // Not supported by D3D8.
+      // Not supported by D3D8, but its value is stored.
       case D3DRS_ZVISIBLE:
-        break;
+        *pValue = m_zVisible;
+        return D3D_OK;
 
       case D3DRS_EDGEANTIALIAS:
         State9 = d3d9::D3DRS_ANTIALIASEDLINEENABLE;
         break;
 
       case D3DRS_ZBIAS: {
-        float bias  = 0;
-        HRESULT res = GetD3D9()->GetRenderState(d3d9::D3DRS_DEPTHBIAS, (DWORD*)&bias);
-        *pValue     = bit::cast<DWORD>(bias * ZBIAS_SCALE_INV);
+        DWORD bias  = 0;
+        HRESULT res = GetD3D9()->GetRenderState(d3d9::D3DRS_DEPTHBIAS, &bias);
+        *pValue     = static_cast<DWORD>(bit::cast<float>(bias) * ZBIAS_SCALE_INV);
         return res;
       } break;
 
       case D3DRS_SOFTWAREVERTEXPROCESSING:
-        return GetD3D9()->GetSoftwareVertexProcessing();
+        *pValue = GetD3D9()->GetSoftwareVertexProcessing();
+        return D3D_OK;
 
-      // TODO: D3DRS_PATCHSEGMENTS
       case D3DRS_PATCHSEGMENTS:
-        break;
+        *pValue = bit::cast<DWORD>(m_patchSegments);
+        return D3D_OK;
     }
 
     // This call will never fail
@@ -1698,8 +1789,8 @@ namespace dxvk {
 
     // Validate VS version for non-FF shaders
     if (pFunction != nullptr) {
-      uint32_t majorVersion = (pFunction[0] >> 8) & 0xff;
-      uint32_t minorVersion = pFunction[0] & 0xff;
+      const uint32_t majorVersion = D3DSHADER_VERSION_MAJOR(pFunction[0]);
+      const uint32_t minorVersion = D3DSHADER_VERSION_MINOR(pFunction[0]);
 
       if (unlikely(majorVersion != 1 || minorVersion > 1)) {
         Logger::err(str::format("D3D8Device::CreateVertexShader: Unsupported VS version ", majorVersion, ".", minorVersion));
@@ -1719,7 +1810,7 @@ namespace dxvk {
         info.function.push_back(pFunction[i]);
       info.function.push_back(D3DVS_END());
     }
-    
+
     D3D9VertexShaderCode result = TranslateVertexShader8(pDeclaration, pFunction, m_d3d8Options);
 
     // Create vertex declaration
@@ -1821,7 +1912,7 @@ namespace dxvk {
 
     /*
     // Slow path. Use to debug cached shader validation. //
-    
+
     d3d9::IDirect3DVertexShader9* pVertexShader;
     HRESULT res = GetD3D9()->GetVertexShader(&pVertexShader);
 
@@ -1873,12 +1964,12 @@ namespace dxvk {
 
     if (unlikely(!pInfo))
       return D3DERR_INVALIDCALL;
-    
+
     UINT SizeOfData = *pSizeOfData;
-    
+
     // Get actual size
     UINT ActualSize = pInfo->declaration.size() * sizeof(DWORD);
-    
+
     if (pData == nullptr) {
       *pSizeOfData = ActualSize;
       return D3D_OK;
@@ -1903,12 +1994,12 @@ namespace dxvk {
 
     if (unlikely(!pInfo))
       return D3DERR_INVALIDCALL;
-    
+
     UINT SizeOfData = *pSizeOfData;
-    
+
     // Get actual size
     UINT ActualSize = pInfo->function.size() * sizeof(DWORD);
-    
+
     if (pData == nullptr) {
       *pSizeOfData = ActualSize;
       return D3D_OK;
@@ -1937,16 +2028,16 @@ namespace dxvk {
     if (unlikely(pFunction == nullptr || pHandle == nullptr))
       return D3DERR_INVALIDCALL;
 
-    uint32_t majorVersion = (pFunction[0] >> 8) & 0xff;
-    uint32_t minorVersion = pFunction[0] & 0xff;
+    const uint32_t majorVersion = D3DSHADER_VERSION_MAJOR(pFunction[0]);
+    const uint32_t minorVersion = D3DSHADER_VERSION_MINOR(pFunction[0]);
 
-    if (unlikely(majorVersion != 1 || minorVersion > 4)) {
+    if (unlikely(m_isFixedFunctionOnly || majorVersion != 1 || minorVersion > 4)) {
       Logger::err(str::format("D3D8Device::CreatePixelShader: Unsupported PS version ", majorVersion, ".", minorVersion));
       return D3DERR_INVALIDCALL;
     }
 
     d3d9::IDirect3DPixelShader9* pPixelShader;
-    
+
     HRESULT res = GetD3D9()->CreatePixelShader(pFunction, &pPixelShader);
 
     if (likely(SUCCEEDED(res))) {
@@ -1959,7 +2050,7 @@ namespace dxvk {
   }
 
   inline d3d9::IDirect3DPixelShader9* getPixelShaderPtr(D3D8Device* device, DWORD Handle) {
-    
+
     Handle = getShaderIndex(Handle);
 
     if (unlikely(Handle >= device->m_pixelShaders.size())) {
@@ -2045,11 +2136,11 @@ namespace dxvk {
       return D3DERR_INVALIDCALL;
 
     UINT SizeOfData = *pSizeOfData;
-    
+
     // Get actual size
     UINT ActualSize = 0;
     pPixelShader->GetFunction(nullptr, &ActualSize);
-    
+
     if (pData == nullptr) {
       *pSizeOfData = ActualSize;
       return D3D_OK;

@@ -22,9 +22,6 @@ namespace dxvk {
       m_container(pBaseTexture) {
     }
 
-    ~D3D8Subresource() {
-    }
-
     // Refing subresources implicitly refs the container texture,
     ULONG STDMETHODCALLTYPE AddRef() final {
       if (m_container != nullptr)
@@ -56,6 +53,7 @@ namespace dxvk {
   protected:
 
     IDirect3DBaseTexture8*  m_container;
+
   };
 
 }
