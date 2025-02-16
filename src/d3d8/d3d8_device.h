@@ -27,18 +27,19 @@ namespace dxvk {
   class D3D8Device final : public D3D8DeviceBase {
 
     friend class D3D8StateBlock;
+
   public:
 
     D3D8Device(
-      D3D8Interface*                pParent,
-      Com<d3d9::IDirect3DDevice9>&& pDevice,
-      D3DDEVTYPE                    DeviceType,
-      HWND                          hFocusWindow,
-      DWORD                         BehaviorFlags,
-      D3DPRESENT_PARAMETERS*        pParams);
+            D3D8Interface*                pParent,
+            Com<d3d9::IDirect3DDevice9>&& pDevice,
+            D3DDEVTYPE                    DeviceType,
+            HWND                          hFocusWindow,
+            DWORD                         BehaviorFlags,
+            D3DPRESENT_PARAMETERS*        pParams);
 
     ~D3D8Device();
-      
+
     HRESULT STDMETHODCALLTYPE TestCooperativeLevel();
 
     UINT    STDMETHODCALLTYPE GetAvailableTextureMem();
@@ -206,7 +207,7 @@ namespace dxvk {
     HRESULT STDMETHODCALLTYPE SetRenderState(D3DRENDERSTATETYPE State, DWORD Value);
 
     HRESULT STDMETHODCALLTYPE GetRenderState(D3DRENDERSTATETYPE State, DWORD* pValue);
-    
+
     HRESULT STDMETHODCALLTYPE CreateStateBlock(
             D3DSTATEBLOCKTYPE     Type,
             DWORD*                pToken);
@@ -306,7 +307,7 @@ namespace dxvk {
     HRESULT STDMETHODCALLTYPE GetVertexShaderConstant(DWORD Register, void* pConstantData, DWORD ConstantCount);
 
     HRESULT STDMETHODCALLTYPE GetVertexShaderDeclaration(DWORD Handle, void* pData, DWORD* pSizeOfData);
-    
+
     HRESULT STDMETHODCALLTYPE GetVertexShaderFunction(DWORD Handle, void* pData, DWORD* pSizeOfData);
 
     HRESULT STDMETHODCALLTYPE SetStreamSource(
@@ -326,7 +327,7 @@ namespace dxvk {
             UINT* pBaseVertexIndex);
 
     HRESULT STDMETHODCALLTYPE CreatePixelShader(
-      const DWORD* pFunction, 
+      const DWORD* pFunction,
             DWORD* pHandle);
 
     HRESULT STDMETHODCALLTYPE SetPixelShader(DWORD Handle);
@@ -356,8 +357,6 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE DeletePatch(UINT Handle);
 
-  public: // Internal Methods //
-
     const D3D8Options* GetOptions() const {
       return &m_d3d8Options;
     }
@@ -384,8 +383,6 @@ namespace dxvk {
       m_presentParams.BackBufferCount = std::max(m_presentParams.BackBufferCount, 1u);
 
       // Purge cached objects
-      // TODO: Some functions may need to be called here (e.g. SetTexture, etc.)
-      // in case Reset can be recorded by state blocks and other things.
       m_textures.fill(nullptr);
       m_streams.fill(D3D8VBO());
       m_indices = nullptr;
@@ -394,7 +391,7 @@ namespace dxvk {
 
       m_backBuffers.clear();
       m_backBuffers.resize(m_presentParams.BackBufferCount);
-      
+
       m_autoDepthStencil = nullptr;
     }
 
@@ -426,6 +423,16 @@ namespace dxvk {
     Com<D3D8Interface>    m_parent;
 
     D3DPRESENT_PARAMETERS m_presentParams;
+    
+    // Value of D3DRS_LINEPATTERN
+    D3DLINEPATTERN        m_linePattern   = {};
+    // Value of D3DRS_ZVISIBLE (although the RS is not supported, its value is stored)
+    DWORD                 m_zVisible      = 0;
+    // Value of D3DRS_PATCHSEGMENTS
+    float                 m_patchSegments = 1.0f;
+
+    // Controls fixed-function exclusive mode (no PS support)
+    bool                  m_isFixedFunctionOnly = false;
 
     D3D8StateBlock*                            m_recorder = nullptr;
     DWORD                                      m_recorderToken = 0;
@@ -437,15 +444,13 @@ namespace dxvk {
       Com<D3D8VertexBuffer, false>   buffer = nullptr;
       UINT                           stride = 0;
     };
-    
-    // Remember to fill() these in the constructor!
+
     std::array<Com<D3D8Texture2D, false>, d8caps::MAX_TEXTURE_STAGES>  m_textures;
     std::array<D3D8VBO, d8caps::MAX_STREAMS>                           m_streams;
 
     Com<D3D8IndexBuffer, false>        m_indices;
     UINT                               m_baseVertexIndex = 0;
 
-    // TODO: Which of these should be a private ref
     std::vector<Com<D3D8Surface, false>> m_backBuffers;
     Com<D3D8Surface, false>              m_autoDepthStencil;
 
