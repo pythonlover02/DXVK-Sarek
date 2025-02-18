@@ -454,7 +454,7 @@ namespace dxvk {
     }} },
     /* Styx: Shards of Darkness                    *
      * Render issues on D3D11                      */
-    { R"(\\Styx2\.exe$)", {{
+    { R"(\\Styx2-Win64-Shipping\.exe$)", {{
       { "d3d11.constantBufferRangeCheck",    "True" },
     }} },
     /* Far Cry 5 and New Dawn                      *
