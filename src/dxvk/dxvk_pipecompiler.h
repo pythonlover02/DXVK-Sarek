@@ -24,7 +24,7 @@ namespace dxvk {
   class DxvkPipelineCompiler : public RcObject {
 
   public:
-    DxvkPipelineCompiler(const DxvkDevice* device);
+    explicit DxvkPipelineCompiler(const DxvkDevice* device);
     ~DxvkPipelineCompiler();
 
     /**
@@ -37,18 +37,18 @@ namespace dxvk {
      * \param [in] renderPass The render pass object
      */
     void queueCompilation(
-      DxvkGraphicsPipeline*                   pipeline,
-      const DxvkGraphicsPipelineStateInfo&    state,
-      const DxvkRenderPass*                   renderPass);
+      DxvkGraphicsPipeline*                pipeline,
+      const DxvkGraphicsPipelineStateInfo& state,
+      const DxvkRenderPass*                renderPass);
 
   private:
     struct PipelineEntry {
-      DxvkGraphicsPipeline*                   pipeline = nullptr;
-      DxvkGraphicsPipelineStateInfo           state;
-      const DxvkRenderPass*                   renderPass = nullptr;
+      DxvkGraphicsPipeline*                pipeline{nullptr};
+      DxvkGraphicsPipelineStateInfo        state;
+      const DxvkRenderPass*                renderPass{nullptr};
     };
 
-    std::atomic<bool>           m_compilerStop { false };
+    std::atomic<bool>           m_compilerStop{false};
     std::mutex                  m_compilerLock;
     std::condition_variable     m_compilerCond;
     std::queue<PipelineEntry>   m_compilerQueue;
