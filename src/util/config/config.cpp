@@ -1047,6 +1047,20 @@ namespace dxvk {
     { R"(\\CivCity Rome\.exe$)", {{
       { "d3d9.customVendorId",              "10de" },
     }} },
+    /* Lego Indiana Jones: The Original Adventures *
+     * Fix UI performance                          */
+    { R"(\\LEGOIndy\.exe$)", {{
+      { "d3d9.cachedDynamicBuffers",        "True" },
+    }} },
+    /* Lego Batman: The Videogame                 *
+     * Fix UI performance                         */
+    { R"((\\LEGOBatman|LegoBatman\\Game)\.exe$)", {{
+      { "d3d9.cachedDynamicBuffers",        "True" },
+    }} },
+    /* Thumper - Fixes missing track              */
+    { R"(\\THUMPER_dx9\.exe$)", {{
+      { "d3d9.floatEmulation",              "Strict" },
+    }} },
 
     /**********************************************/
     /* D3D8 GAMES                                 */
