@@ -559,7 +559,7 @@ namespace dxvk {
        Needs NVAPI to avoid a forced AO + Smoke
        exploit so we must force AMD vendor ID.    */
     { R"(\\csgo\.exe$)", {{
-      { "d3d9.customVendorId",              "1002" },
+      { "d3d9.hideNvidiaGpu",               "True" },
     }} },
     /* Vampire - The Masquerade Bloodlines        */
     { R"(\\vampire\.exe$)", {{
