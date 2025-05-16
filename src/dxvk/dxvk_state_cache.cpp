@@ -984,7 +984,7 @@ namespace dxvk {
 
       // Reduce worker count on 32-bit to save adderss space
       if (env::is32BitHostPlatform())
-        workerCount = std::min(workerCount, 16u);
+        numWorkers = std::min(numWorkers, 16u);
 
       if (m_device->config().numCompilerThreads > 0)
         numWorkers = m_device->config().numCompilerThreads;
