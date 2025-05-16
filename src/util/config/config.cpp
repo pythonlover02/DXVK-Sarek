@@ -463,6 +463,12 @@ namespace dxvk {
     { R"(\\FarCry(5|NewDawn)\.exe$)", {{
       { "d3d11.zeroInitWorkgroupMemory",    "True" },
     }} },
+    /* Romancing Saga 3                            *
+     * Render issues on D3D11                      *
+     * Lets try with just constantBufferRangeCheck */
+    { R"(\\rs3.exe\.exe$)", {{
+      { "d3d11.constantBufferRangeCheck",    "True" },
+    }} },
 
     /**********************************************/
     /* D3D9 GAMES                                 */
