@@ -8,7 +8,8 @@ namespace dxvk {
     uint32_t numCpuCores = dxvk::thread::hardware_concurrency();
     uint32_t numWorkers = ((std::max(1u, numCpuCores) - 1) * 5) / 7;
     
-    numWorkers = std::clamp(numWorkers, 1u, 32u);
+    if (numWorkers <  1) numWorkers =  1;
+    if (numWorkers > 32) numWorkers = 32;
     
     if (device->config().numAsyncThreads > 0)
       numWorkers = device->config().numAsyncThreads;
