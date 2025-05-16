@@ -11,6 +11,10 @@ namespace dxvk {
     if (numWorkers <  1) numWorkers =  1;
     if (numWorkers > 32) numWorkers = 32;
     
+    // Reduce worker count on 32-bit to save adderss space
+    if (env::is32BitHostPlatform())
+      workerCount = std::min(workerCount, 16u);
+    
     if (device->config().numAsyncThreads > 0)
       numWorkers = device->config().numAsyncThreads;
 
