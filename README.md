@@ -127,6 +127,10 @@ The following environment variables can be used to control the cache:
 - `DXVK_STATE_CACHE=0` Disables the state cache.
 - `DXVK_STATE_CACHE_PATH=/some/directory` Specifies a directory where to put the cache files. Defaults to the current working directory of the application.
 
+### Shader compilation
+- `DXVK_ALL_CORES=1`
+When this env var is used, it overwrites the default way we assign cores to compile shaders. By default, DXVK-Sarek compiles D3D shaders at draw time, using half the available CPU cores and leaving the rest free for the game. The problem with this is that on CPUs with weak per core performance which rely on using all cores for good performance might experience longer loading times and a worse overall experience. When `DXVK_ALL_CORES=1` is set, DXVK-Sarek uses all available cores for both the game and shader compilation. This might cause the game to become unresponsive at times while compiling shaders. This non-default behavior may improve, worsen, or have no effect on performance, depending on the system. In the case you will use this env var i will recommend using it with the Async buil
+
 ### Debugging
 The following environment variables can be used for **debugging** purposes.
 - `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` Enables Vulkan debug layers. Highly recommended for troubleshooting rendering issues and driver crashes. Requires the Vulkan SDK to be installed on the host system.
