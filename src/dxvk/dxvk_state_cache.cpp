@@ -975,7 +975,7 @@ namespace dxvk {
 
   void DxvkStateCache::createWorkers() {
     if (m_workerThreads.empty()) {
-      // Use half the available CPU cores for pipeline compilation
+      std::string useAllCores = env::getEnvVar("DXVK_ALL_CORES");
       uint32_t numCpuCores = dxvk::thread::hardware_concurrency();
       uint32_t numWorkers  = ((std::max(1u, numCpuCores) - 1) * 5) / 7;
 
@@ -988,6 +988,9 @@ namespace dxvk {
 
       if (m_device->config().numCompilerThreads > 0)
         numWorkers = m_device->config().numCompilerThreads;
+
+      if (useAllCores == "1")
+        numWorkers = numCpuCores;
 
       Logger::info(str::format("DXVK: Using ", numWorkers, " compiler threads"));
 
