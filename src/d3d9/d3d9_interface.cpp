@@ -58,6 +58,9 @@ namespace dxvk {
       Logger::info("Process set as DPI aware");
       SetProcessDPIAware();
     }
+
+    if (unlikely(m_d3d9Options.shaderModel == 0))
+      Logger::warn("D3D9InterfaceEx: WARNING! Fixed-function exclusive mode is enabled.");
   }
 
 

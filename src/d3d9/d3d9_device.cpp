@@ -2882,6 +2882,20 @@ namespace dxvk {
     if (unlikely(ppShader == nullptr))
       return D3DERR_INVALIDCALL;
 
+    const uint32_t majorVersion = D3DSHADER_VERSION_MAJOR(pFunction[0]);
+    const uint32_t minorVersion = D3DSHADER_VERSION_MINOR(pFunction[0]);
+
+    // Late fixed-function capable hardware exposed support for VS 1.1
+    const uint32_t shaderModelVS = m_isD3D8Compatible ? 1u : std::max(1u, m_d3d9Options.shaderModel);
+
+    if (unlikely(majorVersion > shaderModelVS
+              || (majorVersion == 1 && minorVersion > 1)
+              // Skip checking the SM2 minor version, as it has a 2_x mode apparently
+              || (majorVersion == 3 && minorVersion != 0))) {
+      Logger::err(str::format("D3D9DeviceEx::CreateVertexShader: Unsupported VS version ", majorVersion, ".", minorVersion));
+      return D3DERR_INVALIDCALL;
+    }
+
     DxsoModuleInfo moduleInfo;
     moduleInfo.options = m_dxsoOptions;
 
@@ -3213,6 +3227,19 @@ namespace dxvk {
 
     if (unlikely(ppShader == nullptr))
       return D3DERR_INVALIDCALL;
+
+    const uint32_t majorVersion = D3DSHADER_VERSION_MAJOR(pFunction[0]);
+    const uint32_t minorVersion = D3DSHADER_VERSION_MINOR(pFunction[0]);
+
+    const uint32_t shaderModelPS = m_isD3D8Compatible ? std::min(1u, m_d3d9Options.shaderModel) : m_d3d9Options.shaderModel;
+
+    if (unlikely(majorVersion > shaderModelPS
+              || (majorVersion == 1 && minorVersion > 4)
+              // Skip checking the SM2 minor version, as it has a 2_x mode apparently
+              || (majorVersion == 3 && minorVersion != 0))) {
+      Logger::err(str::format("D3D9DeviceEx::CreatePixelShader: Unsupported PS version ", majorVersion, ".", minorVersion));
+      return D3DERR_INVALIDCALL;
+    }
 
     DxsoModuleInfo moduleInfo;
     moduleInfo.options = m_dxsoOptions;
