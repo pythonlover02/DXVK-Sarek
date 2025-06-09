@@ -1067,6 +1067,11 @@ namespace dxvk {
     { R"(\\THUMPER_dx9\.exe$)", {{
       { "d3d9.floatEmulation",              "Strict" },
     }} },
+    /* Pirate Huner - Prevents crash              */
+    { R"(\\PH\.exe$)", {{
+      { "d3d9.memoryTrackTest",             "True" },
+      { "d3d9.maxAvailableMemory",          "2048" },
+    }} },
 
     /**********************************************/
     /* D3D8 GAMES                                 */
