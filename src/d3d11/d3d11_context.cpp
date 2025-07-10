@@ -3863,12 +3863,12 @@ namespace dxvk {
     for (uint32_t i = 0; i < NumBuffers; i++) {
       auto newBuffer = static_cast<D3D11Buffer*>(ppConstantBuffers[i]);
       
-      UINT constantCount = 0;
-      
-      if (likely(newBuffer != nullptr))
-        constantCount = std::min(newBuffer->Desc()->ByteWidth / 16, UINT(D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT));
+      uint32_t constantCount = newBuffer
+        ? std::min(newBuffer->Desc()->ByteWidth / 16, UINT(D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT))
+        : 0u;
       
       if (Bindings[StartSlot + i].buffer         != newBuffer
+       || Bindings[StartSlot + i].constantOffset != 0
        || Bindings[StartSlot + i].constantCount  != constantCount) {
         Bindings[StartSlot + i].buffer         = newBuffer;
         Bindings[StartSlot + i].constantOffset = 0;
