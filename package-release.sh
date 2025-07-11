@@ -62,6 +62,7 @@ function build_arch {
         $opt_strip                                          \
         --bindir "x$1"                                      \
         --libdir "x$1"                                      \
+        -Db_ndebug=if-release                               \
         -Dbuild_id=$opt_buildid                             \
         "$DXVK_BUILD_DIR/build.$1"
 
@@ -69,34 +70,16 @@ function build_arch {
   ninja install
 
   if [ $opt_devbuild -eq 0 ]; then
-    # Ensure DLLs are present before packaging
-    if ls "$DXVK_BUILD_DIR/x$1/"*.dll 1> /dev/null 2>&1; then
-      echo "DLLs found in x$1 directory."
-    else
-      echo "Warning: No DLLs found in x$1 directory!"
-    fi
-
-    # Remove unnecessary .a files
-    rm -f "$DXVK_BUILD_DIR/x$1/"*.!(dll)
-    rm -rf "$DXVK_BUILD_DIR/build.$1"
+    # get rid of some useless .a files
+    rm "$DXVK_BUILD_DIR/x$1/"*.!(dll)
+    rm -R "$DXVK_BUILD_DIR/build.$1"
   fi
 }
 
 function package {
-  cd "$(dirname "$DXVK_BUILD_DIR")"
-
-  # Ensure DLLs exist before packaging
-  if find "$DXVK_BUILD_DIR" -name "*.dll" | grep -q .; then
-    echo "Packaging DXVK build..."
-    tar -czf "$DXVK_ARCHIVE_PATH" "$(basename "$DXVK_BUILD_DIR")"
-    echo "Package created at: $DXVK_ARCHIVE_PATH"
-  else
-    echo "Error: No DLL files found! Packaging aborted."
-    exit 1
-  fi
-
-  # Clean up after packaging
-  rm -rf "$DXVK_BUILD_DIR"
+  cd "$DXVK_BUILD_DIR/.."
+  tar -czf "$DXVK_ARCHIVE_PATH" "dxvk-$DXVK_VERSION"
+  rm -R "dxvk-$DXVK_VERSION"
 }
 
 build_arch 64
