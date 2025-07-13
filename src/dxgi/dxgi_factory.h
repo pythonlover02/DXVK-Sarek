@@ -149,9 +149,7 @@ namespace dxvk {
     DxgiMonitorInfo  m_monitorInfo;
     DxgiOptions      m_options;
     UINT             m_flags;
-    
-    HWND m_associatedWindow = nullptr;
-    
+
   };
   
 }
