@@ -1,4 +1,5 @@
 #include "d3d9_format.h"
+#include "d3d9_names.h"
 
 namespace dxvk {
 
@@ -168,6 +169,16 @@ namespace dxvk {
         // Convert -> float (this is a mixed snorm and unorm type)
           VK_FORMAT_R16G16B16A16_SFLOAT } };
 
+      case D3D9Format::W11V11U10: return {
+        VK_FORMAT_B10G11R11_UFLOAT_PACK32,
+        VK_FORMAT_UNDEFINED,
+        VK_IMAGE_ASPECT_COLOR_BIT,
+        { VK_COMPONENT_SWIZZLE_R, VK_COMPONENT_SWIZZLE_G,
+          VK_COMPONENT_SWIZZLE_B, VK_COMPONENT_SWIZZLE_ONE },
+        { D3D9ConversionFormat_W11V11U10,
+        // can't use B10G11R11 because this is a snorm type
+          VK_FORMAT_R16G16B16A16_SNORM } };
+
       case D3D9Format::UYVY: return {
         VK_FORMAT_B8G8R8A8_UNORM,
         VK_FORMAT_UNDEFINED,
@@ -257,15 +268,9 @@ namespace dxvk {
         VK_FORMAT_UNDEFINED,
         VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT };
 
-      case D3D9Format::D32_LOCKABLE: return {
-        VK_FORMAT_D32_SFLOAT,
-        VK_FORMAT_UNDEFINED,
-        VK_IMAGE_ASPECT_DEPTH_BIT };
+      case D3D9Format::D32_LOCKABLE: return {}; // Unsupported (everywhere)
 
-      case D3D9Format::S8_LOCKABLE: return {
-        VK_FORMAT_S8_UINT,
-        VK_FORMAT_UNDEFINED,
-        VK_IMAGE_ASPECT_STENCIL_BIT };
+      case D3D9Format::S8_LOCKABLE: return {}; // Unsupported (everywhere)
 
       case D3D9Format::L16: return {
         VK_FORMAT_R16_UNORM,
@@ -338,10 +343,7 @@ namespace dxvk {
 
       case D3D9Format::A1: return {}; // Unsupported
 
-      case D3D9Format::A2B10G10R10_XR_BIAS: return {
-        VK_FORMAT_A2B10G10R10_SNORM_PACK32,
-        VK_FORMAT_UNDEFINED,
-        VK_IMAGE_ASPECT_COLOR_BIT };
+      case D3D9Format::A2B10G10R10_XR_BIAS: return {}; // Unsupported (everywhere)
 
       case D3D9Format::BINARYBUFFER: return {
         VK_FORMAT_R8_UINT,
@@ -392,6 +394,8 @@ namespace dxvk {
 
       case D3D9Format::ATOC: return {}; // Driver hack, handled elsewhere
 
+      case D3D9Format::SSAA: return {}; // Driver hack, handled elsewhere
+
       case D3D9Format::INTZ: return {
         VK_FORMAT_D24_UNORM_S8_UINT,
         VK_FORMAT_UNDEFINED,
@@ -418,6 +422,29 @@ namespace dxvk {
       };
 
       case D3D9Format::RAWZ: return {}; // Unsupported
+
+      // EXT1, FXT1, GXT1 and HXT1 are checked for support
+      // by D3D9 SAGE engine games (e.g. Command & Conquer 3)
+
+      case D3D9Format::EXT1: return {}; // Unsupported (everywhere)
+
+      case D3D9Format::FXT1: return {}; // Unsupported (everywhere)
+
+      case D3D9Format::GXT1: return {}; // Unsupported (everywhere)
+
+      case D3D9Format::HXT1: return {}; // Unsupported (everywhere)
+
+      // AL16 and R16 FOURCCs are often checked for support by
+      // various D3D8 and early D3D9 games. AR16 and L16 (FOURCC)
+      // are also checked for support, but to a lesser extent.
+
+      case D3D9Format::AL16: return {}; // Unsupported (everywhere)
+
+      case D3D9Format::AR16: return {}; // Unsupported (everywhere)
+
+      case D3D9Format::R16:  return {}; // Unsupported (everywhere)
+
+      case D3D9Format::L16_FOURCC:  return {}; // Unsupported (everywhere)
 
       default:
         Logger::warn(str::format("ConvertFormat: Unknown format encountered: ", Format));
