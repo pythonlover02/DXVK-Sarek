@@ -33,6 +33,7 @@ namespace dxvk {
       ENUM_NAME(D3D9Format::X8L8V8U8);
       ENUM_NAME(D3D9Format::Q8W8V8U8);
       ENUM_NAME(D3D9Format::V16U16);
+      ENUM_NAME(D3D9Format::W11V11U10);
       ENUM_NAME(D3D9Format::A2W10V10U10);
       ENUM_NAME(D3D9Format::UYVY);
       ENUM_NAME(D3D9Format::R8G8_B8G8);
@@ -99,18 +100,24 @@ namespace dxvk {
       ENUM_NAME(D3D9Format::YV12);
       ENUM_NAME(D3D9Format::OPAQUE_420);
 
+      // Not supported but exist
       ENUM_NAME(D3D9Format::AI44);
       ENUM_NAME(D3D9Format::IA44);
+      ENUM_NAME(D3D9Format::CENT);
       ENUM_NAME(D3D9Format::R2VB);
       ENUM_NAME(D3D9Format::COPM);
       ENUM_NAME(D3D9Format::SSAA);
-      ENUM_NAME(D3D9Format::AL16);
-      ENUM_NAME(D3D9Format::R16);
+      ENUM_NAME(D3D9Format::NVHS);
+      ENUM_NAME(D3D9Format::NVHU);
 
       ENUM_NAME(D3D9Format::EXT1);
       ENUM_NAME(D3D9Format::FXT1);
       ENUM_NAME(D3D9Format::GXT1);
       ENUM_NAME(D3D9Format::HXT1);
+      ENUM_NAME(D3D9Format::AL16);
+      ENUM_NAME(D3D9Format::AR16);
+      ENUM_NAME(D3D9Format::R16);
+      ENUM_NAME(D3D9Format::L16_FOURCC);
 
       ENUM_DEFAULT(e);
     }
