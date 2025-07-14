@@ -40,6 +40,7 @@ namespace dxvk {
     X8L8V8U8 = 62,
     Q8W8V8U8 = 63,
     V16U16 = 64,
+    W11V11U10 = 65,
     A2W10V10U10 = 67,
     UYVY = MAKEFOURCC('U', 'Y', 'V', 'Y'),
     R8G8_B8G8 = MAKEFOURCC('R', 'G', 'B', 'G'),
@@ -109,16 +110,21 @@ namespace dxvk {
     // Not supported but exist
     AI44 = MAKEFOURCC('A', 'I', '4', '4'),
     IA44 = MAKEFOURCC('I', 'A', '4', '4'),
+    CENT = MAKEFOURCC('C', 'E', 'N', 'T'),
     R2VB = MAKEFOURCC('R', '2', 'V', 'B'),
     COPM = MAKEFOURCC('C', 'O', 'P', 'M'),
     SSAA = MAKEFOURCC('S', 'S', 'A', 'A'),
-    AL16 = MAKEFOURCC('A', 'L', '1', '6'),
-    R16  = MAKEFOURCC(' ', 'R', '1', '6'),
+    NVHS = MAKEFOURCC('N', 'V', 'H', 'S'),
+    NVHU = MAKEFOURCC('N', 'V', 'H', 'U'),
 
     EXT1 = MAKEFOURCC('E', 'X', 'T', '1'),
     FXT1 = MAKEFOURCC('F', 'X', 'T', '1'),
     GXT1 = MAKEFOURCC('G', 'X', 'T', '1'),
     HXT1 = MAKEFOURCC('H', 'X', 'T', '1'),
+    AL16 = MAKEFOURCC('A', 'L', '1', '6'),
+    AR16 = MAKEFOURCC('A', 'R', '1', '6'),
+    R16  = MAKEFOURCC(' ', 'R', '1', '6'),
+    L16_FOURCC = MAKEFOURCC(' ', 'L', '1', '6'),
   };
 
   inline D3D9Format EnumerateFormat(D3DFORMAT format) {
@@ -134,6 +140,7 @@ namespace dxvk {
     D3D9ConversionFormat_L6V5U5,
     D3D9ConversionFormat_X8L8V8U8,
     D3D9ConversionFormat_A2W10V10U10,
+    D3D9ConversionFormat_W11V11U10,
     D3D9ConversionFormat_NV12,
     D3D9ConversionFormat_YV12,
     D3D9ConversionFormat_Count
