@@ -1327,7 +1327,7 @@ namespace dxvk {
       const Rc<DxvkBuffer>&           buffer,
             VkDeviceSize              copySize);
 
-    bool checkAsyncCompilationCompat();
+    [[nodiscard]] bool checkAsyncCompilationCompat() const;
 
     DxvkGraphicsPipeline* lookupGraphicsPipeline(
       const DxvkGraphicsPipelineShaders&  shaders);

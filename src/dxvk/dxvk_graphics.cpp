@@ -63,7 +63,7 @@ namespace dxvk {
   VkPipeline DxvkGraphicsPipeline::getPipelineHandle(
     const DxvkGraphicsPipelineStateInfo& state,
     const DxvkRenderPass*                renderPass,
-          bool                           async) {
+    const bool                           async) {
     DxvkGraphicsPipelineInstance* instance = this->findInstance(state, renderPass);
 
     if (unlikely(!instance)) {
