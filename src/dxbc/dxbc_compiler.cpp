@@ -3937,7 +3937,6 @@ namespace dxvk {
     
     // Close the current 'case' block
     m_module.opBranch(block.b_switch.labelBreak);
-    m_module.opLabel (block.b_switch.labelBreak);
     
     // Insert the 'switch' statement. For that, we need to
     // gather all the literal-label pairs for the construct.
@@ -3964,6 +3963,9 @@ namespace dxvk {
     
     while (caseLabel != nullptr)
       delete std::exchange(caseLabel, caseLabel->next);
+
+    // Begin new block after switch blocks
+    m_module.opLabel(block.b_switch.labelBreak);
   }
   
     
