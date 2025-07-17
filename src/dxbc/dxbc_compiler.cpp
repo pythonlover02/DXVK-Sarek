@@ -6098,7 +6098,7 @@ namespace dxvk {
 
     if (hasTgsm) {
       m_module.opControlBarrier(
-        m_module.constu32(spv::ScopeInvocation),
+        m_module.constu32(spv::ScopeWorkgroup),
         m_module.constu32(spv::ScopeWorkgroup),
         m_module.constu32(spv::MemorySemanticsWorkgroupMemoryMask
                         | spv::MemorySemanticsAcquireReleaseMask));
