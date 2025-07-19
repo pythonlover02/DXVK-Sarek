@@ -469,6 +469,11 @@ namespace dxvk {
     { R"(\\rs3.exe\.exe$)", {{
       { "d3d11.constantBufferRangeCheck",    "True" },
     }} },
+    /* Wargame: European Escalation: Broken gamma   *
+     * ramp when nvapi is available for some reason */
+    { R"(\\Wargame European Escalation\\WarGame\.exe$)", {{
+      { "dxgi.hideNvidiaGpu",               "True" },
+    }} },
 
     /**********************************************/
     /* D3D9 GAMES                                 */
