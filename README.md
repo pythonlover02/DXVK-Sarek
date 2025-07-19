@@ -15,7 +15,7 @@ Also, a huge thank you to the following contributors for their invaluable help i
 
 Your contributions are greatly appreciated!
 
-All credits to doitsujin/ドイツ人 (Philip Rebohle), you can find the original repository here: [dxvk](https://github.com/doitsujin/dxvk).
+Full credit goes to doitsujin/ドイツ人 (Philip Rebohle) and everyone that have worked on the dxvk project. You can find the original DXVK repository here: [dxvk](https://github.com/doitsujin/dxvk).
 
 
 ----
@@ -45,11 +45,11 @@ In order to pull in all submodules that are needed for building, clone the repos
 
 For Normal DXVK:
 ```
-git clone --branch 1.10.x-Proton-Sarek --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK
+git clone --branch Sarek --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK
 ```
 For DXVK with Async Patch:
 ```
-git clone --branch 1.10.x-Proton-Sarek-Async --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK-Async
+git clone --branch Sarek-Async --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK-Async
 ```
 
 ### Requirements:
@@ -129,7 +129,10 @@ The following environment variables can be used to control the cache:
 
 ### Shader compilation
 - `DXVK_ALL_CORES=1`
-When this env var is used, it overwrites the default way we assign cores to compile shaders. By default, DXVK-Sarek compiles D3D shaders at draw time, using half the available CPU cores and leaving the rest free for the game. The problem with this is that on CPUs with weak per core performance which rely on using all cores for good performance might experience longer loading times and a worse overall experience. When `DXVK_ALL_CORES=1` is set, DXVK-Sarek uses all available cores for both the game and shader compilation. This might cause the game to become unresponsive at times while compiling shaders. This non-default behavior may improve, worsen, or have no effect on performance, depending on the system. In the case you will use this env var i will recommend using it with the Async buil
+When this env var is used, it overwrites the default way we assign cores to compile shaders. By default, DXVK-Sarek compiles D3D shaders at draw time, using half the available CPU cores and leaving the rest free for the game. The problem with this is that on CPUs with weak per core performance which rely on using all cores for good performance might experience longer loading times and a worse overall experience. When `DXVK_ALL_CORES=1` is set, DXVK-Sarek uses all available cores for both the game and shader compilation. This might cause the game to become unresponsive at times while compiling shaders. This non-default behavior may improve, worsen, or have no effect on performance, depending on the system. In the case you will use this env var i will recommend using it with the Async build.
+
+- `ASYNC_DRAW_CALL_THRESHOLD=value>=1` (For the Async Build only)
+This env var allows the user to configure how many draw calls a shader must be involved in before it's eligible for asynchronous pipeline compilation. This helps balance compilation latency and runtime performance by prioritizing commonly used shaders. The value should be bigger or equal than `1`.
 
 ### Debugging
 The following environment variables can be used for **debugging** purposes.
