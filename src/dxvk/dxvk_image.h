@@ -580,7 +580,17 @@ namespace dxvk {
      * \returns \c true if async compilation is supported
      */
     bool getRtBindingAsyncCompilationCompat() const {
-      return m_rtBindingFrameCount >= 5;
+      // Get configurable draw call threshold from environment variable
+      std::string drawCallThresholdStr = env::getEnvVar("ASYNC_DRAW_CALL_THRESHOLD");
+      uint32_t drawCallThreshold = (!drawCallThresholdStr.empty() && std::stoi(drawCallThresholdStr) >= 1) ? std::stoi(drawCallThresholdStr) : 5;
+      
+      // Log the draw call threshold being used (only once, i dont want to log spam)
+      static bool logged = false;
+      if (!logged) {
+          Logger::info(str::format("DXVK: Async compilation draw call threshold set to ", drawCallThreshold));
+          logged = true;
+      }
+      return m_rtBindingFrameCount >= drawCallThreshold;
     }
 
   private:
