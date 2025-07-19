@@ -474,6 +474,16 @@ namespace dxvk {
     { R"(\\Wargame European Escalation\\WarGame\.exe$)", {{
       { "dxgi.hideNvidiaGpu",               "True" },
     }} },
+    /* VLADiK BRUTAL                                *
+     * totally broken with NVAPI                    */
+    { R"(\\VLADiK_BRUTAL-Win64-Shipping\.exe$)", {{
+      { "dxgi.hideNvidiaGpu",               "True" },
+    }} },
+    /* ASTRONEER                                    *
+     * totally broken with NVAPI                    */
+    { R"(\\Astro-Win64-Shipping\.exe$)", {{
+      { "dxgi.hideNvidiaGpu",               "True" },
+    }} },
 
     /**********************************************/
     /* D3D9 GAMES                                 */
