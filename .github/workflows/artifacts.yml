@@ -30,6 +30,6 @@ jobs:
       id: upload-artifacts
       uses: actions/upload-artifact@v4
       with:
-        name: dxvk-sarek-${{ env.VERSION_NAME }}
+        name: dxvk-${{ env.VERSION_NAME }}
         path: build/dxvk-${{ env.VERSION_NAME }}
         if-no-files-found: error
