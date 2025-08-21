@@ -1153,7 +1153,7 @@ namespace dxvk {
     { R"(\\nfs4\.exe$)", {{
       { "d3d9.cachedDynamicBuffers",        "True" },
       { "d3d9.memoryTrackTest",             "True" },
-      { "d3d9.maxAvailableMemory",           "256" },
+      { "d3d9.maxAvailableMemory",          "1024" },
       { "d3d8.batching",                    "True" },
     }} },
     /* Need for Speed: Hot Pursuit 2              */
@@ -1182,7 +1182,7 @@ namespace dxvk {
      * while loading the main menu otherwise      */
     { R"(\\Soldiers\.exe$)", {{
       { "d3d9.memoryTrackTest",             "True" },
-      { "d3d9.maxAvailableMemory",          "512"  },
+      { "d3d9.maxAvailableMemory",           "512" },
     }} },
     /* Cossacks II: Napoleonic Wars &             *
      * Battle for Europe                          */
@@ -1248,10 +1248,52 @@ namespace dxvk {
       { "d3d8.forceLegacyDiscard",          "True" },
     }} },
     /* Tom Clancy's Splinter Cell                 *
-     * Fixes shadow buffers and alt-tab           */
-    { R"(\\splintercell\.exe$)", {{
+     * Fixes shadow buffers, broken physics       *
+     * above 60 FPS and game freezing on alt-tab  */
+     { R"(\\splintercell\.exe$)", {{
+      { "d3d9.customVendorId",              "10de" },
+      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.deviceLossOnFocusLoss",       "True" },
       { "d3d8.scaleDref",                     "24" },
       { "d3d8.shadowPerspectiveDivide",     "True" },
+    }} },
+    /* Trainz v1.3 (2001)                         *
+     * Fixes black screen after alt-tab           */
+    { R"(\\bin\\trainz\.exe$)", {{
+      { "d3d9.deviceLossOnFocusLoss",       "True" },
+    }} },
+    /* A.I.M.: Artificial Intelligence Machine    *
+     * Fixes black screen after the options       *
+     * window is closed or on alt-tab             */
+    { R"(\\AIM\.exe$)", {{
+      { "d3d9.deviceLossOnFocusLoss",       "True" },
+    }} },
+    /* Star Trek: Starfleet Command III           *
+     * The GOG release ships with a D3D8 to D3D9  *
+     * wrapper that leaks several surfaces.       */
+    { R"(\\SFC3\.exe$)", {{
+      { "d3d9.countLosableResources",      "False" },
+    }} },
+    /* GTR - FIA GT Racing Game                   *
+     * Vram complaint & restricted resolutions    *
+     * Performance                                */
+    { R"(\\GTR (- FIA GT Rac(e)?ing Game|Demo)\\(GTR(Demo)?|(3D)?Config)\.exe$)", {{
+      { "d3d9.maxAvailableMemory",          "1024" },
+      { "d3d9.memoryTrackTest",             "True" },
+      { "d3d9.cachedDynamicBuffers",        "True" },
+    }} },
+    /* Comanche 4 - Only enables the FSAA option  *
+     * if it detects a device ID of 0x025x.       */
+     { R"(\\c4(lan)?\.exe$)", {{
+      { "d3d9.customVendorId",              "10de" },
+      { "d3d9.customDeviceId",              "0250" },
+      { "d3d9.customDeviceDesc", "NVIDIA GeForce4 Ti 4600" },
+    }} },
+    /* Top Spin (2005)                            *
+     * Missing geometry and textures without      *
+     * legacy DISCARD behavior                    */
+    { R"(\\TopSpin\.exe$)", {{
+      { "d3d8.forceLegacyDiscard",          "True" },
     }} },
   }};
 

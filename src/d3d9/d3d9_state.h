@@ -227,6 +227,8 @@ namespace dxvk {
     std::vector<std::optional<D3DLIGHT9>>            lights;
     std::array<DWORD, caps::MaxEnabledLights>        enabledLightIndices;
 
+    float                                            nPatchSegments = 0.0f;
+
     bool IsLightEnabled(DWORD Index) {
       const auto& indices = enabledLightIndices;
       return std::find(indices.begin(), indices.end(), Index) != indices.end();
