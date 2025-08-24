@@ -26,18 +26,12 @@ Full credit goes to doitsujin/ドイツ人 (Philip Rebohle) and everyone that ha
 
 ----
 
-## How to use
-In order to install a DXVK package obtained from the [release](https://github.com/pythonlover02/DXVK-Sarek/releases) page into a given wine prefix, copy or symlink the DLLs into the following directories as follows, then open `winecfg` and manually add DLL overrides for `d3d11`, `d3d10core`, `dxgi`, and `d3d9`:
-```
-WINEPREFIX=/path/to/wineprefix
-cp x64/*.dll $WINEPREFIX/drive_c/windows/system32
-cp x32/*.dll $WINEPREFIX/drive_c/windows/syswow64
-winecfg
-```
+## How to Use
+Please follow the official guide from the [upstream DXVK README](https://github.com/doitsujin/dxvk?tab=readme-ov-file#how-to-use).
 
-Verify that your application uses DXVK instead of wined3d by enabling the HUD (see notes below).
+Keep in mind that this is a manual installation method, which isn’t the most convenient. An easier approach is to use a Linux game launcher such as Lutris, Heroic, or similar. There you can simply select DXVK-Sarek as the DXVK version (for Wine) or Proton-Sarek (for Proton).  
 
-In order to remove DXVK from a prefix, remove the DLLs and DLL overrides, and run `wineboot -u` to restore the original DLL files.
+If they’re not available by default, you can easily install them using [ProtonPlus](https://flathub.org/apps/com.vysp3r.ProtonPlus) and [ProtonUpQT](https://flathub.org/apps/net.davidotek.pupgui2).
 
 ## Build instructions
 
