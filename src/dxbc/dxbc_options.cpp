@@ -14,6 +14,10 @@ namespace dxvk {
 
     const DxvkDeviceFeatures& devFeatures = device->features();
     const DxvkDeviceInfo& devInfo = adapter->devicePropertiesExt();
+    const VkPhysicalDeviceProperties& devProps = adapter->deviceProperties();
+
+    // Disable unbound texture optimization on Mali GPUs due to black screen issues
+    disableUnboundTextureOptimization = (devProps.vendorID == 0x13B5); // ARM Mali
 
     useDepthClipWorkaround
       = !devFeatures.extDepthClipEnable.depthClipEnable;
