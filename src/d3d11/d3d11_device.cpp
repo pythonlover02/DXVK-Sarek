@@ -1942,12 +1942,12 @@ namespace dxvk {
     DxvkDeviceFeatures supported = adapter->features();
     DxvkDeviceFeatures enabled   = {};
 
-    enabled.core.features.geometryShader                          = VK_TRUE;
-    enabled.core.features.robustBufferAccess                      = VK_TRUE;
-    enabled.core.features.shaderStorageImageWriteWithoutFormat    = VK_TRUE;
+    enabled.core.features.geometryShader                          = supported.core.features.geometryShader;
+    enabled.core.features.robustBufferAccess                      = supported.core.features.robustBufferAccess;
+    enabled.core.features.shaderStorageImageWriteWithoutFormat    = supported.core.features.shaderStorageImageWriteWithoutFormat;
     enabled.core.features.depthBounds                             = supported.core.features.depthBounds;
 
-    enabled.shaderDrawParameters.shaderDrawParameters             = VK_TRUE;
+    enabled.shaderDrawParameters.shaderDrawParameters             = supported.shaderDrawParameters.shaderDrawParameters;
 
     enabled.khrTimelineSemaphore.timelineSemaphore                = supported.khrTimelineSemaphore.timelineSemaphore;
 
@@ -1963,8 +1963,8 @@ namespace dxvk {
     enabled.extVertexAttributeDivisor.vertexAttributeInstanceRateZeroDivisor  = supported.extVertexAttributeDivisor.vertexAttributeInstanceRateZeroDivisor;
     
     if (supported.extCustomBorderColor.customBorderColorWithoutFormat) {
-      enabled.extCustomBorderColor.customBorderColors             = VK_TRUE;
-      enabled.extCustomBorderColor.customBorderColorWithoutFormat = VK_TRUE;
+      enabled.extCustomBorderColor.customBorderColors             = supported.extCustomBorderColor.customBorderColors;
+      enabled.extCustomBorderColor.customBorderColorWithoutFormat = supported.extCustomBorderColor.customBorderColorWithoutFormat;
     }
 
     if (featureLevel >= D3D_FEATURE_LEVEL_9_1) {
@@ -1972,28 +1972,28 @@ namespace dxvk {
       enabled.core.features.depthBiasClamp                        = supported.core.features.depthBiasClamp;
       enabled.core.features.fillModeNonSolid                      = supported.core.features.fillModeNonSolid;
       enabled.core.features.pipelineStatisticsQuery               = supported.core.features.pipelineStatisticsQuery;
-      enabled.core.features.sampleRateShading                     = VK_TRUE;
+      enabled.core.features.sampleRateShading                     = supported.core.features.sampleRateShading;
       enabled.core.features.samplerAnisotropy                     = supported.core.features.samplerAnisotropy;
       enabled.core.features.shaderClipDistance                    = supported.core.features.shaderClipDistance;
       enabled.core.features.shaderCullDistance                    = supported.core.features.shaderCullDistance;
       enabled.core.features.textureCompressionBC                  = supported.core.features.textureCompressionBC;
       enabled.extDepthClipEnable.depthClipEnable                  = supported.extDepthClipEnable.depthClipEnable;
-      enabled.extHostQueryReset.hostQueryReset                    = VK_TRUE;
+      enabled.extHostQueryReset.hostQueryReset                    = supported.extHostQueryReset.hostQueryReset;
     }
     
     if (featureLevel >= D3D_FEATURE_LEVEL_9_2) {
-      enabled.core.features.occlusionQueryPrecise                 = VK_TRUE;
+      enabled.core.features.occlusionQueryPrecise                 = supported.core.features.occlusionQueryPrecise;
     }
     
     if (featureLevel >= D3D_FEATURE_LEVEL_9_3) {
-      enabled.core.features.independentBlend                      = VK_TRUE;
+      enabled.core.features.independentBlend                      = supported.core.features.independentBlend;
       enabled.core.features.multiViewport                         = supported.core.features.multiViewport;
     }
     
     if (featureLevel >= D3D_FEATURE_LEVEL_10_0) {
-      enabled.core.features.fullDrawIndexUint32                   = VK_TRUE;
+      enabled.core.features.fullDrawIndexUint32                   = supported.core.features.fullDrawIndexUint32;
       enabled.core.features.logicOp                               = supported.core.features.logicOp;
-      enabled.core.features.shaderImageGatherExtended             = VK_TRUE;
+      enabled.core.features.shaderImageGatherExtended             = supported.core.features.shaderImageGatherExtended;
       enabled.core.features.variableMultisampleRate               = supported.core.features.variableMultisampleRate;
       enabled.extTransformFeedback.transformFeedback              = supported.extTransformFeedback.transformFeedback;
       enabled.extTransformFeedback.geometryStreams                = supported.extTransformFeedback.geometryStreams;
@@ -2001,23 +2001,23 @@ namespace dxvk {
     
     if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
       enabled.core.features.dualSrcBlend                          = supported.core.features.dualSrcBlend;
-      enabled.core.features.imageCubeArray                        = VK_TRUE;
+      enabled.core.features.imageCubeArray                        = supported.core.features.imageCubeArray;
     }
     
     if (featureLevel >= D3D_FEATURE_LEVEL_11_0) {
-      enabled.core.features.drawIndirectFirstInstance             = VK_TRUE;
-      enabled.core.features.fragmentStoresAndAtomics              = VK_TRUE;
-      enabled.core.features.multiDrawIndirect                     = VK_TRUE;
+      enabled.core.features.drawIndirectFirstInstance             = supported.core.features.drawIndirectFirstInstance;
+      enabled.core.features.fragmentStoresAndAtomics              = supported.core.features.fragmentStoresAndAtomics;
+      enabled.core.features.multiDrawIndirect                     = supported.core.features.multiDrawIndirect;
       enabled.core.features.shaderFloat64                         = supported.core.features.shaderFloat64;
       enabled.core.features.shaderInt64                           = supported.core.features.shaderInt64;
       enabled.core.features.shaderStorageImageReadWithoutFormat   = supported.core.features.shaderStorageImageReadWithoutFormat;
-      enabled.core.features.tessellationShader                    = VK_TRUE;
+      enabled.core.features.tessellationShader                    = supported.core.features.tessellationShader;
     }
     
     if (featureLevel >= D3D_FEATURE_LEVEL_11_1) {
       enabled.core.features.logicOp                               = supported.core.features.logicOp;
-      enabled.core.features.variableMultisampleRate               = VK_TRUE;
-      enabled.core.features.vertexPipelineStoresAndAtomics        = VK_TRUE;
+      enabled.core.features.variableMultisampleRate               = supported.core.features.variableMultisampleRate;
+      enabled.core.features.vertexPipelineStoresAndAtomics        = supported.core.features.vertexPipelineStoresAndAtomics;
     }
     
     return enabled;

@@ -4104,8 +4104,8 @@ namespace dxvk {
     DxvkDeviceFeatures enabled = {};
 
     // Geometry shaders are used for some meta ops
-    enabled.core.features.geometryShader = VK_TRUE;
-    enabled.core.features.robustBufferAccess = VK_TRUE;
+    enabled.core.features.geometryShader = supported.core.features.geometryShader;
+    enabled.core.features.robustBufferAccess = supported.core.features.robustBufferAccess;
     enabled.extRobustness2.robustBufferAccess2 = supported.extRobustness2.robustBufferAccess2;
 
     enabled.extMemoryPriority.memoryPriority = supported.extMemoryPriority.memoryPriority;
@@ -4122,15 +4122,15 @@ namespace dxvk {
     enabled.core.features.vertexPipelineStoresAndAtomics = supported.core.features.vertexPipelineStoresAndAtomics;
 
     // DXVK Meta
-    enabled.core.features.shaderStorageImageWriteWithoutFormat = VK_TRUE;
-    enabled.core.features.imageCubeArray = VK_TRUE;
+    enabled.core.features.shaderStorageImageWriteWithoutFormat = supported.core.features.shaderStorageImageWriteWithoutFormat;
+    enabled.core.features.imageCubeArray = supported.core.features.imageCubeArray;
 
     // SM1 level hardware
     enabled.core.features.depthClamp = supported.core.features.depthClamp;
     enabled.core.features.depthBiasClamp = supported.core.features.depthBiasClamp;
     enabled.core.features.fillModeNonSolid = supported.core.features.fillModeNonSolid;
     enabled.core.features.pipelineStatisticsQuery = supported.core.features.pipelineStatisticsQuery;
-    enabled.core.features.sampleRateShading = VK_TRUE;
+    enabled.core.features.sampleRateShading = supported.core.features.sampleRateShading;
     enabled.core.features.samplerAnisotropy = supported.core.features.samplerAnisotropy;
     enabled.core.features.shaderClipDistance = supported.core.features.shaderClipDistance;
     enabled.core.features.shaderCullDistance = supported.core.features.shaderCullDistance;
@@ -4139,24 +4139,24 @@ namespace dxvk {
     enabled.core.features.textureCompressionBC = supported.core.features.textureCompressionBC;
 
     enabled.extDepthClipEnable.depthClipEnable = supported.extDepthClipEnable.depthClipEnable;
-    enabled.extHostQueryReset.hostQueryReset = VK_TRUE;
+    enabled.extHostQueryReset.hostQueryReset = supported.extHostQueryReset.hostQueryReset;
 
     // SM2 level hardware
-    enabled.core.features.occlusionQueryPrecise = VK_TRUE;
+    enabled.core.features.occlusionQueryPrecise = supported.core.features.occlusionQueryPrecise;
 
     // SM3 level hardware
     enabled.core.features.multiViewport = supported.core.features.multiViewport;
-    enabled.core.features.independentBlend = VK_TRUE;
+    enabled.core.features.independentBlend = supported.core.features.independentBlend;
 
     // D3D10 level hardware supports this in D3D9 native.
-    enabled.core.features.fullDrawIndexUint32 = VK_TRUE;
+    enabled.core.features.fullDrawIndexUint32 = supported.core.features.fullDrawIndexUint32;
 
     // Enable depth bounds test if we support it.
     enabled.core.features.depthBounds = supported.core.features.depthBounds;
 
     if (supported.extCustomBorderColor.customBorderColorWithoutFormat) {
-      enabled.extCustomBorderColor.customBorderColors             = VK_TRUE;
-      enabled.extCustomBorderColor.customBorderColorWithoutFormat = VK_TRUE;
+      enabled.extCustomBorderColor.customBorderColors             = supported.extCustomBorderColor.customBorderColors;
+      enabled.extCustomBorderColor.customBorderColorWithoutFormat = supported.extCustomBorderColor.customBorderColorWithoutFormat;
     }
 
     enabled.extNonSeamlessCubeMap.nonSeamlessCubeMap = supported.extNonSeamlessCubeMap.nonSeamlessCubeMap;
