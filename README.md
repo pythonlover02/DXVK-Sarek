@@ -39,11 +39,11 @@ In order to pull in all submodules that are needed for building, clone the repos
 
 For Normal DXVK:
 ```
-git clone --branch Sarek --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK
+git clone --branch main --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK
 ```
 For DXVK with Async Patch:
 ```
-git clone --branch Sarek-Async --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK-Async
+git clone --branch async --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK-Async
 ```
 
 ### Requirements:
