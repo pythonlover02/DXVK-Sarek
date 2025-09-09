@@ -2499,15 +2499,16 @@ namespace dxvk {
     EmitCs([this,
       cPrimType    = PrimitiveType,
       cPrimCount   = PrimitiveCount,
-      cStartVertex = StartVertex,
-      cInstanceCount = GetInstanceCount()
+      cStartVertex = StartVertex
     ](DxvkContext* ctx) {
-      auto drawInfo = GenerateDrawInfo(cPrimType, cPrimCount, cInstanceCount);
+      uint32_t vertexCount = GetVertexCount(cPrimType, cPrimCount);
 
       ApplyPrimitiveType(ctx, cPrimType);
 
+      // Tests on Windows show that D3D9 does not do non-indexed instanced draws.
+
       ctx->draw(
-        drawInfo.vertexCount, drawInfo.instanceCount,
+        vertexCount, 1,
         cStartVertex, 0);
     });
 
@@ -2579,17 +2580,16 @@ namespace dxvk {
     EmitCs([this,
       cBufferSlice  = std::move(upSlice.slice),
       cPrimType     = PrimitiveType,
-      cPrimCount    = PrimitiveCount,
-      cInstanceCount = GetInstanceCount(),
-      cStride       = VertexStreamZeroStride
+      cStride       = VertexStreamZeroStride,
+      cVertexCount  = vertexCount
     ](DxvkContext* ctx) {
-      auto drawInfo = GenerateDrawInfo(cPrimType, cPrimCount, cInstanceCount);
-
       ApplyPrimitiveType(ctx, cPrimType);
+
+      // Tests on Windows show that D3D9 does not do non-indexed instanced draws.
 
       ctx->bindVertexBuffer(0, cBufferSlice, cStride);
       ctx->draw(
-        drawInfo.vertexCount, drawInfo.instanceCount,
+        cVertexCount, 1,
         0, 0);
       ctx->bindVertexBuffer(0, DxvkBufferSlice(), 0);
     });
@@ -2731,8 +2731,7 @@ namespace dxvk {
       cVertexCount   = VertexCount,
       cStartIndex    = SrcStartIndex,
       cInstanceCount = GetInstanceCount(),
-      cBufferSlice   = slice,
-      cIndexed       = m_state.indices != nullptr
+      cBufferSlice   = slice
     ](DxvkContext* ctx) {
       Rc<DxvkShader> shader = m_swvpEmulator.GetShaderModule(this, cDecl);
 
