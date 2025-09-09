@@ -2581,7 +2581,7 @@ namespace dxvk {
       cBufferSlice  = std::move(upSlice.slice),
       cPrimType     = PrimitiveType,
       cStride       = VertexStreamZeroStride,
-      cVertexCount  = vertexCount
+      cVertexCount  = drawInfo.vertexCount
     ](DxvkContext* ctx) {
       ApplyPrimitiveType(ctx, cPrimType);
 
