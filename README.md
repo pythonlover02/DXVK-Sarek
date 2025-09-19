@@ -2,9 +2,13 @@
 
 ### Why Does This Repo Exist?
 
-This repository was created to support users with Vulkan capable GPUs that do not meet the 1.3 requirement of the current builds. My goal is to ensure that everyone can benefit from the nice performance of DXVK, even if their hardware is slightly older.
+This repository was created to support users with Vulkan capable GPUs that do not meet the 1.3 requirement of the current builds. My goal is to ensure that everyone can benefit from the nice performance of DXVK, even if their hardware is slightly older. Backporting Quality of Life (QOL) patches, fixes and per game configurations from the latest versions to the 1.10.x branch.
 
-Additionally, this project is intended to be integrated into [Proton Sarek](https://github.com/pythonlover02/Proton-Sarek). The main idea is to backport Quality of Life (QOL) patches and per game configurations from the latest versions to the 1.10.x branch.
+This project is supported on [Proton Sarek](https://github.com/pythonlover02/Proton-Sarek) and [proton-cachyos](https://github.com/CachyOS/proton-cachyos), on this last you must add this env var to your launch options:
+
+```
+PROTON_DXVK_SAREK=1
+```
 
 Also, a huge thank you to the following contributors for their invaluable help in making this project a reality:
 
@@ -29,7 +33,7 @@ Full credit goes to doitsujin/ドイツ人 (Philip Rebohle) and everyone that ha
 ## How to Use
 Please follow the official guide from the [upstream DXVK README](https://github.com/doitsujin/dxvk?tab=readme-ov-file#how-to-use).
 
-Keep in mind that this is a manual installation method, which isn’t the most convenient. An easier approach is to use a Linux game launcher such as Lutris, Heroic, or similar. There you can simply select DXVK-Sarek as the DXVK version (for Wine) or Proton-Sarek (for Proton).  
+Keep in mind that this is a manual installation method, which isn’t the most convenient. An easier approach is to use a Linux game launcher such as Lutris, Heroic, or similar. There you can simply select DXVK-Sarek as the DXVK version (for Wine) or Proton-Sarek (for Proton).
 
 If they’re not available by default, you can easily install them using [ProtonPlus](https://flathub.org/apps/com.vysp3r.ProtonPlus) and [ProtonUpQT](https://flathub.org/apps/net.davidotek.pupgui2).
 
