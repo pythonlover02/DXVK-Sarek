@@ -48,6 +48,10 @@ namespace dxvk {
     /// with storage buffers for tight bounds checking
     bool dynamicIndexedConstantBufferAsSsbo = false;
 
+    /// Disable unbound texture optimization on Mali GPUs
+    /// to prevent black screen issues due to strict binding validation
+    bool disableUnboundTextureOptimization = false;
+    
     /// Clear thread-group shared memory to zero
     bool zeroInitWorkgroupMemory = false;
 
