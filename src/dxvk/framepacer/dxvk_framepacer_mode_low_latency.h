@@ -53,8 +53,8 @@ namespace dxvk {
     using time_point = high_resolution_clock::time_point;
   public:
 
-    LowLatencyMode(Mode mode, LatencyMarkersStorage* storage, const DxvkOptions& options, uint64_t firstFrameId, int refreshRate = 0)
-    : FramePacerMode(mode, storage, firstFrameId),
+    LowLatencyMode(Mode mode, LatencyMarkersStorage* storage, FrameSync* frameSync, const DxvkOptions& options, uint64_t firstFrameId, int refreshRate = 0)
+    : FramePacerMode(mode, mode == LOW_LATENCY ? "low-latency" : "low-latency-vrr", storage, frameSync, firstFrameId),
       m_lowLatencyOffset(getLowLatencyOffset(options)),
       m_allowCpuFramesOverlap(options.lowLatencyAllowCpuFramesOverlap),
       m_presentationStats(5000),
@@ -78,12 +78,12 @@ namespace dxvk {
       using std::chrono::duration_cast;
 
       if (!m_allowCpuFramesOverlap)
-        m_fenceCsFinished.wait( frameId-1 );
+        m_frameSync->m_fenceCsFinished.wait( frameId-1 );
 
-      m_fenceGpuStart.wait( frameId-1 );
+      m_frameSync->m_fenceGpuStart.wait( frameId-1 );
 
       if (m_mode == LOW_LATENCY_VRR)
-        m_fenceFrameFinished.wait( frameId-2 );
+        m_frameSync->m_fenceFrameFinished.wait( frameId-2 );
 
       time_point now = high_resolution_clock::now();
       const LatencyMarkers* m = m_latencyMarkersStorage->getConstMarkers(frameId-1);
@@ -129,9 +129,9 @@ namespace dxvk {
       }
       else {
         if (m_mode == LOW_LATENCY_VRR) {
-          m_fenceFrameFinished.wait( frameId-1 );
+          m_frameSync->m_fenceFrameFinished.wait( frameId-1 );
         } else {
-          m_fenceGpuFinished.wait( frameId-1 );
+          m_frameSync->m_fenceGpuFinished.wait( frameId-1 );
           lastFrameFinish = high_resolution_clock::now();
         }
       }

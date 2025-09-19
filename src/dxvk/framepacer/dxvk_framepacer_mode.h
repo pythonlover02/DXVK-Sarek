@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dxvk_latency_markers.h"
+#include "dxvk_frame_sync.h"
 #include "../../util/sync/sync_signal.h"
 #include "../../util/util_env.h"
 #include "../../util/util_time.h"
@@ -24,11 +25,12 @@ namespace dxvk {
       MIN_LATENCY
     };
 
-    FramePacerMode( Mode mode, LatencyMarkersStorage* markerStorage, uint64_t firstFrameId, uint32_t maxFrameLatency=1 )
+    FramePacerMode( Mode mode, const char* name, LatencyMarkersStorage* markerStorage, FrameSync* frameSync, uint64_t firstFrameId )
     : m_mode( mode ),
-      m_waitLatency( maxFrameLatency+1 ),
+      m_name( name ),
       m_firstFrameId( firstFrameId ),
-      m_latencyMarkersStorage( markerStorage ) {
+      m_latencyMarkersStorage( markerStorage ),
+      m_frameSync( frameSync ) {
       setFpsLimitFrametimeFromEnv();
     }
 
@@ -50,27 +52,15 @@ namespace dxvk {
 
     uint32_t getPresentMode() { return m_presentMode; }
 
-    void waitRenderFinished( uint64_t frameId ) {
-      if (m_mode) m_fenceGpuFinished.wait(frameId-m_waitLatency); }
-
-    void signalRenderFinished( uint64_t frameId ) {
-      if (m_mode) m_fenceGpuFinished.signal(frameId); }
-
-    void signalFrameFinished( uint64_t frameId ) {
-      if (m_mode) m_fenceFrameFinished.signal(frameId); }
-
-    void signalGpuStart( uint64_t frameId ) {
-      if (m_mode) m_fenceGpuStart.signal(frameId); }
-
-    void signalCsFinished( uint64_t frameId ) {
-      if (m_mode) m_fenceCsFinished.signal(frameId); }
-
-    void setTargetFrameRate( double frameRate ) {
+    virtual void setTargetFrameRate( double frameRate ) {
       if (!m_fpsLimitEnvOverride && frameRate > 1.0)
         m_fpsLimitFrametime.store( 1'000'000/frameRate );
     }
 
     const Mode m_mode;
+
+    const char* getName() const
+      { return m_name; }
 
     static bool getDoubleFromEnv( const char* name, double* result );
     static bool getIntFromEnv( const char* name, int* result );
@@ -79,17 +69,13 @@ namespace dxvk {
 
     void setFpsLimitFrametimeFromEnv();
 
-    const uint32_t m_waitLatency;
-    const uint64_t m_firstFrameId;
-    LatencyMarkersStorage* m_latencyMarkersStorage;
-    std::atomic<uint32_t> m_presentMode;
-    std::atomic<int32_t> m_fpsLimitFrametime = { 0 };
-    bool m_fpsLimitEnvOverride = { false };
-
-    sync::Fence m_fenceGpuStart;
-    sync::Fence m_fenceGpuFinished;
-    sync::Fence m_fenceFrameFinished;
-    sync::Fence m_fenceCsFinished;
+    const char*             m_name;
+    const uint64_t          m_firstFrameId;
+    LatencyMarkersStorage*  m_latencyMarkersStorage;
+    FrameSync*              m_frameSync;
+    std::atomic<uint32_t>   m_presentMode;
+    std::atomic<int32_t>    m_fpsLimitFrametime = { 0 };
+    bool                    m_fpsLimitEnvOverride = { false };
 
   };
 

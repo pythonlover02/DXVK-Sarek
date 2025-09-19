@@ -16,8 +16,8 @@ namespace dxvk {
 
   public:
 
-    MinLatencyMode(Mode mode, LatencyMarkersStorage* storage, uint64_t firstFrameId)
-    : FramePacerMode(mode, storage, firstFrameId, 0) {}
+    MinLatencyMode(Mode mode, LatencyMarkersStorage* storage, FrameSync* frameSync, uint64_t firstFrameId)
+    : FramePacerMode(mode, "min-latency", storage, frameSync, firstFrameId) {}
 
     ~MinLatencyMode() {}
 

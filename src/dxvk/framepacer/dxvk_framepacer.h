@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dxvk_framepacer_mode.h"
+#include "dxvk_frame_sync.h"
 #include "dxvk_latency_markers.h"
 #include "dxvk_latency_stats.h"
 #include "../dxvk_latency.h"
@@ -30,7 +31,7 @@ namespace dxvk {
             uint64_t                  frameId,
             double                    maxFrameRate) override {
       // wait for finished rendering of a previous frame, typically the one before last
-      m_mode->waitRenderFinished(frameId);
+      m_frameSync.waitRenderFinished(frameId);
       // potentially wait some more if the cpu gets too much ahead
       m_mode->startFrame(frameId);
       m_latencyMarkersStorage.registerFrameStart(frameId);
@@ -40,7 +41,7 @@ namespace dxvk {
       // the frame has been displayed to the screen
       m_latencyMarkersStorage.registerFrameEnd(frameId);
       m_mode->endFrame(frameId);
-      m_mode->signalFrameFinished(frameId);
+      m_frameSync.signalFrameFinished(frameId);
       m_gpuStarts[ (frameId-1) % m_gpuStarts.size() ].store(0);
       trackStats(frameId);
     }
@@ -55,7 +56,7 @@ namespace dxvk {
       auto now = high_resolution_clock::now();
       LatencyMarkers* m = m_latencyMarkersStorage.getMarkers(frameId);
       m->csFinished = std::chrono::duration_cast<microseconds>(now - m->start).count();
-      m_mode->signalCsFinished( frameId );
+      m_frameSync.signalCsFinished( frameId );
     }
 
     void notifySubmit( uint64_t frameId ) override {
@@ -122,7 +123,7 @@ namespace dxvk {
 
         m_latencyMarkersStorage.m_timeline.gpuFinished.store(frameId);
         m_mode->finishRender(frameId);
-        m_mode->signalRenderFinished(frameId);
+        m_frameSync.signalRenderFinished(frameId);
       }
     }
 
@@ -143,6 +144,7 @@ namespace dxvk {
     }
 
     LatencyMarkersStorage m_latencyMarkersStorage;
+    FrameSync m_frameSync;
 
 
     // not implemented methods
@@ -174,7 +176,7 @@ namespace dxvk {
     void signalGpuStart( uint64_t frameId, LatencyMarkers* m, const high_resolution_clock::time_point& t ) {
       m->gpuStart = std::chrono::duration_cast<microseconds>(t - m->start).count();
       m_latencyMarkersStorage.m_timeline.gpuStart.store(frameId);
-      m_mode->signalGpuStart(frameId);
+      m_frameSync.signalGpuStart(frameId);
     }
 
     void queueSubmitCheckGpuStart( uint64_t frameId, LatencyMarkers* m, const high_resolution_clock::time_point& t ) {

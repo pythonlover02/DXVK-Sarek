@@ -51,28 +51,31 @@ namespace dxvk {
     switch (mode) {
       case FramePacerMode::MAX_FRAME_LATENCY:
         Logger::info( "Frame pace: max-frame-latency" );
-        m_mode = std::make_unique<FramePacerMode>(FramePacerMode::MAX_FRAME_LATENCY, &m_latencyMarkersStorage, firstFrameId);
+        m_frameSync.m_waitIsActive = false;
+        m_frameSync.m_signalIsActive = false;
+        m_mode = std::make_unique<FramePacerMode>(FramePacerMode::MAX_FRAME_LATENCY, "max-frame-latency", &m_latencyMarkersStorage, &m_frameSync, firstFrameId);
         break;
 
       case FramePacerMode::LOW_LATENCY:
         Logger::info( "Frame pace: low-latency" );
         GpuFlushTracker::m_minPendingSubmissions = 1;
         GpuFlushTracker::m_minChunkCount = 1;
-        m_mode = std::make_unique<LowLatencyMode>(mode, &m_latencyMarkersStorage, options, firstFrameId);
+        m_mode = std::make_unique<LowLatencyMode>(mode, &m_latencyMarkersStorage, &m_frameSync, options, firstFrameId);
         break;
 
       case FramePacerMode::LOW_LATENCY_VRR:
         Logger::info( "Frame pace: low-latency-vrr" );
         GpuFlushTracker::m_minPendingSubmissions = 1;
         GpuFlushTracker::m_minChunkCount = 1;
-        m_mode = std::make_unique<LowLatencyMode>(mode, &m_latencyMarkersStorage, options, firstFrameId, refreshRate);
+        m_mode = std::make_unique<LowLatencyMode>(mode, &m_latencyMarkersStorage, &m_frameSync, options, firstFrameId, refreshRate);
         break;
 
       case FramePacerMode::MIN_LATENCY:
         Logger::info( "Frame pace: min-latency" );
         GpuFlushTracker::m_minPendingSubmissions = 1;
         GpuFlushTracker::m_minChunkCount = 1;
-        m_mode = std::make_unique<MinLatencyMode>(mode, &m_latencyMarkersStorage, firstFrameId);
+        m_frameSync.m_waitLatency = 1;
+        m_mode = std::make_unique<MinLatencyMode>(mode, &m_latencyMarkersStorage, &m_frameSync, firstFrameId);
         break;
     }
 
@@ -93,10 +96,10 @@ namespace dxvk {
     timeline.gpuFinished.store   ( firstFrameId-1 );
     timeline.frameFinished.store ( firstFrameId-1 );
 
-    m_mode->signalGpuStart       ( firstFrameId-1 );
-    m_mode->signalRenderFinished ( firstFrameId-1 );
-    m_mode->signalFrameFinished  ( firstFrameId-1 );
-    m_mode->signalCsFinished     ( firstFrameId );
+    m_frameSync.signalGpuStart       ( firstFrameId-1 );
+    m_frameSync.signalRenderFinished ( firstFrameId-1 );
+    m_frameSync.signalFrameFinished  ( firstFrameId-1 );
+    m_frameSync.signalCsFinished     ( firstFrameId );
   }
 
 
