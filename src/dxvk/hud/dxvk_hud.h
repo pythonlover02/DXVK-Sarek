@@ -84,7 +84,6 @@ namespace dxvk::hud {
     HudItemSet            m_hudItems;
 
     float                 m_scale;
-    float                 m_opacity;
 
     void setupRendererState(
       const Rc<DxvkContext>&  ctx,

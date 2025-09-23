@@ -42,7 +42,7 @@ namespace dxvk {
     this->maxFrameLatency               = config.getOption<int32_t>     ("d3d9.maxFrameLatency",               0);
     this->maxFrameRate                  = config.getOption<int32_t>     ("d3d9.maxFrameRate",                  0);
     this->presentInterval               = config.getOption<int32_t>     ("d3d9.presentInterval",               -1);
-    this->shaderModel                   = config.getOption<int32_t>     ("d3d9.shaderModel",                   3u);
+    this->shaderModel                   = config.getOption<int32_t>     ("d3d9.shaderModel",                   3);
     this->evictManagedOnUnlock          = config.getOption<bool>        ("d3d9.evictManagedOnUnlock",          false);
     this->dpiAware                      = config.getOption<bool>        ("d3d9.dpiAware",                      true);
     this->strictConstantCopies          = config.getOption<bool>        ("d3d9.strictConstantCopies",          false);
@@ -70,16 +70,11 @@ namespace dxvk {
     this->longMad                       = config.getOption<bool>        ("d3d9.longMad",                       false);
     this->tearFree                      = config.getOption<Tristate>    ("d3d9.tearFree",                      Tristate::Auto);
     this->alphaTestWiggleRoom           = config.getOption<bool>        ("d3d9.alphaTestWiggleRoom",           false);
-    this->cachedDynamicBuffers          = config.getOption<bool>        ("d3d9.cachedDynamicBuffers",          false);
+    this->apitraceMode                  = config.getOption<bool>        ("d3d9.apitraceMode",                  false);
     this->deviceLocalConstantBuffers    = config.getOption<bool>        ("d3d9.deviceLocalConstantBuffers",    false);
     this->allowDirectBufferMapping      = config.getOption<bool>        ("d3d9.allowDirectBufferMapping",      true);
     this->seamlessCubes                 = config.getOption<bool>        ("d3d9.seamlessCubes",                 false);
 
-    // D3D8 options
-    this->drefScaling                   = config.getOption<int32_t>     ("d3d8.scaleDref",                     0);
-
-    // Clamp the shader model value between 0 and 3
-    this->shaderModel    = dxvk::clamp(this->shaderModel, 0u, 3u);
     // If we are not Nvidia, enable general hazards.
     this->generalHazards = adapter != nullptr
                         && !adapter->matchesDriver(

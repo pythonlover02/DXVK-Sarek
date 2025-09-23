@@ -97,7 +97,7 @@ namespace dxvk {
 
     struct QueueItem {
       QueueItem() { }
-      QueueItem(uint64_t v, DxvkFenceEvent&& e)
+      QueueItem(uint32_t v, DxvkFenceEvent&& e)
       : value(v), event(std::move(e)) { }
 
       uint64_t        value;

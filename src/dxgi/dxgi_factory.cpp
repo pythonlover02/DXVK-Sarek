@@ -286,8 +286,7 @@ namespace dxvk {
     if (pWindowHandle == nullptr)
       return DXGI_ERROR_INVALID_CALL;
     
-    // Wine tests show that this is always null for whatever reason
-    *pWindowHandle = nullptr;
+    *pWindowHandle = m_associatedWindow;
     return S_OK;
   }
   
@@ -302,6 +301,7 @@ namespace dxvk {
   
   HRESULT STDMETHODCALLTYPE DxgiFactory::MakeWindowAssociation(HWND WindowHandle, UINT Flags) {
     Logger::warn("DXGI: MakeWindowAssociation: Ignoring flags");
+    m_associatedWindow = WindowHandle;
     return S_OK;
   }
   

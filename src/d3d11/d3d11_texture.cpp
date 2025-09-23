@@ -45,22 +45,13 @@ namespace dxvk {
     if (hSharedHandle == nullptr)
       hSharedHandle = INVALID_HANDLE_VALUE;
 
-    const auto sharingFlags = D3D11_RESOURCE_MISC_SHARED|D3D11_RESOURCE_MISC_SHARED_NTHANDLE|D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX;
-
-    if (m_desc.MiscFlags & sharingFlags) {
-      if (pDevice->GetFeatureLevel() < D3D_FEATURE_LEVEL_10_0 ||
-          (m_desc.MiscFlags & (D3D11_RESOURCE_MISC_SHARED|D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX)) == (D3D11_RESOURCE_MISC_SHARED|D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX) ||
-          (m_desc.MiscFlags & sharingFlags) == D3D11_RESOURCE_MISC_SHARED_NTHANDLE)
-        throw DxvkError(str::format("D3D11: Cannot create shared texture:",
-          "\n  MiscFlags:  ", m_desc.MiscFlags,
-          "\n  FeatureLevel:  ", pDevice->GetFeatureLevel()));
-          
+    if (m_desc.MiscFlags & (D3D11_RESOURCE_MISC_SHARED|D3D11_RESOURCE_MISC_SHARED_NTHANDLE)) {
       if (m_desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX)
         Logger::warn("D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX: not supported.");
 
       imageInfo.shared = true;
       imageInfo.sharing.mode = hSharedHandle == INVALID_HANDLE_VALUE ? DxvkSharedHandleMode::Export : DxvkSharedHandleMode::Import;
-      imageInfo.sharing.type = (m_desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE)
+      imageInfo.sharing.type = m_desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE
         ? VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_BIT
         : VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT;
       imageInfo.sharing.handle = hSharedHandle;
@@ -613,10 +604,10 @@ namespace dxvk {
   void D3D11CommonTexture::ExportImageInfo() {
     HANDLE hSharedHandle;
 
-    if (m_desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE)
-      hSharedHandle = m_image->sharedHandle();
-    else
+    if (m_desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED)
       hSharedHandle = openKmtHandle( m_image->sharedHandle() );
+    else
+      hSharedHandle = m_image->sharedHandle();
 
     DxvkSharedTextureMetadata metadata;
 
@@ -1139,24 +1130,27 @@ namespace dxvk {
   
   
   ULONG STDMETHODCALLTYPE D3D11Texture2D::AddRef() {
-    uint32_t refCount = D3D11DeviceChild<ID3D11Texture2D1>::AddRef();
+    uint32_t refCount = m_refCount++;
 
-    if (unlikely(m_swapChain != nullptr)) {
-      if (refCount == 1)
+    if (unlikely(!refCount)) {
+      if (m_swapChain)
         m_swapChain->AddRef();
+
+      AddRefPrivate();
     }
 
-    return refCount;
+    return refCount + 1;
   }
   
 
   ULONG STDMETHODCALLTYPE D3D11Texture2D::Release() {
-    IUnknown* swapChain = m_swapChain;
-    uint32_t refCount = D3D11DeviceChild<ID3D11Texture2D1>::Release();
+    uint32_t refCount = --m_refCount;
 
-    if (unlikely(swapChain != nullptr)) {
-      if (refCount == 0)
-        swapChain->Release();
+    if (unlikely(!refCount)) {
+      if (m_swapChain)
+        m_swapChain->Release();
+
+      ReleasePrivate();
     }
 
     return refCount;

@@ -215,11 +215,6 @@ namespace dxvk {
 
 
   D3D9SwapChainEx::~D3D9SwapChainEx() {
-    // Avoids hanging when in this state, see comment
-    // in DxvkDevice::~DxvkDevice.
-    if (this_thread::isInModuleDetachment())
-      return;
-
     DestroyBackBuffers();
 
     ResetWindowProc(m_window);
@@ -282,8 +277,6 @@ namespace dxvk {
     recreate   |= m_presenter == nullptr;
     recreate   |= window != m_window;    
     recreate   |= m_dialog != m_lastDialog;
-    if (options->deferSurfaceCreation)
-      recreate |= m_parent->IsDeviceReset();
 
     m_window    = window;
 
@@ -960,6 +953,7 @@ namespace dxvk {
       presenterDesc);
 
     m_presenter->setFrameRateLimit(m_parent->GetOptions()->maxFrameRate);
+    m_presenter->setFrameRateLimiterRefreshRate(m_displayRefreshRate);
 
     CreateRenderTargetViews();
   }
@@ -1183,6 +1177,9 @@ namespace dxvk {
   void D3D9SwapChainEx::NotifyDisplayRefreshRate(
           double                  RefreshRate) {
     m_displayRefreshRate = RefreshRate;
+
+    if (m_presenter != nullptr)
+      m_presenter->setFrameRateLimiterRefreshRate(RefreshRate);
   }
 
 
@@ -1371,8 +1368,7 @@ namespace dxvk {
 
 
   std::string D3D9SwapChainEx::GetApiName() {
-    return this->GetParent()->IsD3D8Compatible() ? "D3D8" :
-           this->GetParent()->IsExtended() ? "D3D9Ex" : "D3D9";
+    return this->GetParent()->IsExtended() ? "D3D9Ex" : "D3D9";
   }
 
 }

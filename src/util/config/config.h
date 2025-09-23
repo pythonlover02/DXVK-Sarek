@@ -8,7 +8,7 @@ namespace dxvk {
 
   /**
    * \brief Tri-state
-   * 
+   *
    * Used to conditionally override
    * booleans if desired.
    */
@@ -20,7 +20,7 @@ namespace dxvk {
 
   /**
    * \brief Config option set
-   * 
+   *
    * Stores configuration options
    * as a set of key-value pairs.
    */
@@ -34,7 +34,7 @@ namespace dxvk {
 
     /**
      * \brief Merges two configuration sets
-     * 
+     *
      * Options specified in this config object will
      * not be overridden if they are specified in
      * the second config object.
@@ -44,7 +44,7 @@ namespace dxvk {
 
     /**
      * \brief Sets an option
-     * 
+     *
      * \param [in] key Option name
      * \param [in] value Option value
      */
@@ -60,7 +60,7 @@ namespace dxvk {
      * If parsing the string fails because it is either
      * invalid or if the option is not defined, this
      * method will return a fallback value.
-     * 
+     *
      * Currently, this supports the types \c bool,
      * \c int32_t, and \c std::string.
      * \tparam T Return value type
@@ -80,15 +80,15 @@ namespace dxvk {
 
     /**
      * \brief Logs option values
-     * 
+     *
      * Prints the effective configuration
-     * to the log for debugging purposes. 
+     * to the log for debugging purposes.
      */
     void logOptions() const;
 
     /**
      * \brief Retrieves default options for an app
-     * 
+     *
      * \param [in] appName Name of the application
      * \returns Default options for the application
      */
@@ -96,7 +96,7 @@ namespace dxvk {
 
     /**
      * \brief Retrieves user configuration
-     * 
+     *
      * Reads options from the configuration file,
      * if it can be found, or an empty option set.
      * \returns User-defined configuration options
@@ -123,7 +123,7 @@ namespace dxvk {
     static bool parseOptionValue(
       const std::string&  value,
             int32_t&      result);
-    
+
     static bool parseOptionValue(
       const std::string&  value,
             Tristate&     result);
@@ -140,7 +140,7 @@ namespace dxvk {
 
   /**
    * \brief Applies tristate option
-   * 
+   *
    * Overrides the given value if \c state is
    * \c True or \c False, and leaves it intact
    * otherwise.

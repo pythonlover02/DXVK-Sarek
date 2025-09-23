@@ -117,7 +117,6 @@ namespace dxvk {
   struct DxvkXfbState {
     std::array<DxvkBufferSlice, MaxNumXfbBuffers> buffers;
     std::array<DxvkBufferSlice, MaxNumXfbBuffers> counters;
-    std::array<DxvkBufferSlice, MaxNumXfbBuffers> activeCounters;
   };
   
   

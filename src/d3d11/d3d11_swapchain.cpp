@@ -35,11 +35,6 @@ namespace dxvk {
 
 
   D3D11SwapChain::~D3D11SwapChain() {
-    // Avoids hanging when in this state, see comment
-    // in DxvkDevice::~DxvkDevice.
-    if (this_thread::isInModuleDetachment())
-      return;
-
     m_device->waitForSubmission(&m_presentStatus);
     m_device->waitForIdle();
     
@@ -252,6 +247,9 @@ namespace dxvk {
       DXGI_RATIONAL rate = pDisplayMode->RefreshRate;
       m_displayRefreshRate = double(rate.Numerator) / double(rate.Denominator);
     }
+
+    if (m_presenter != nullptr)
+      m_presenter->setFrameRateLimiterRefreshRate(m_displayRefreshRate);
   }
 
 
@@ -403,6 +401,7 @@ namespace dxvk {
       presenterDesc);
     
     m_presenter->setFrameRateLimit(m_parent->GetOptions()->maxFrameRate);
+    m_presenter->setFrameRateLimiterRefreshRate(m_displayRefreshRate);
 
     CreateRenderTargetViews();
   }

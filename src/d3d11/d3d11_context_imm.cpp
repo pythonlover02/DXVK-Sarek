@@ -40,11 +40,6 @@ namespace dxvk {
   
   
   D3D11ImmediateContext::~D3D11ImmediateContext() {
-    // Avoids hanging when in this state, see comment
-    // in DxvkDevice::~DxvkDevice.
-    if (this_thread::isInModuleDetachment())
-      return;
-
     Flush();
     SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
     SynchronizeDevice();
@@ -284,14 +279,23 @@ namespace dxvk {
     D3D11_RESOURCE_DIMENSION resourceDim = D3D11_RESOURCE_DIMENSION_UNKNOWN;
     pResource->GetType(&resourceDim);
 
+    HRESULT hr;
+    
     if (likely(resourceDim == D3D11_RESOURCE_DIMENSION_BUFFER)) {
-      return MapBuffer(
+      hr = MapBuffer(
         static_cast<D3D11Buffer*>(pResource),
         MapType, MapFlags, pMappedResource);
     } else {
-      return MapImage(GetCommonTexture(pResource),
-        Subresource, MapType, MapFlags, pMappedResource);
+      hr = MapImage(
+        GetCommonTexture(pResource),
+        Subresource, MapType, MapFlags,
+        pMappedResource);
     }
+
+    if (unlikely(FAILED(hr)))
+      *pMappedResource = D3D11_MAPPED_SUBRESOURCE();
+
+    return hr;
   }
   
   
@@ -375,7 +379,6 @@ namespace dxvk {
 
     if (unlikely(pResource->GetMapMode() == D3D11_COMMON_BUFFER_MAP_MODE_NONE)) {
       Logger::err("D3D11: Cannot map a device-local buffer");
-      *pMappedResource = D3D11_MAPPED_SUBRESOURCE();
       return E_INVALIDARG;
     }
 
@@ -448,10 +451,8 @@ namespace dxvk {
         pMappedResource->DepthPitch = bufferSize;
         return S_OK;
       } else {
-        if (!WaitForResource(buffer, sequenceNumber, MapType, MapFlags)) {
-          *pMappedResource = D3D11_MAPPED_SUBRESOURCE();
+        if (!WaitForResource(buffer, sequenceNumber, MapType, MapFlags))
           return DXGI_ERROR_WAS_STILL_DRAWING;
-        }
 
         DxvkBufferSliceHandle physSlice = pResource->GetMappedSlice();
         pMappedResource->pData      = physSlice.mapPtr;
@@ -473,9 +474,6 @@ namespace dxvk {
     const Rc<DxvkBuffer> mappedBuffer = pResource->GetMappedBuffer(Subresource);
 
     auto mapMode = pResource->GetMapMode();
-
-    if (pMappedResource)
-      *pMappedResource = D3D11_MAPPED_SUBRESOURCE();
     
     if (unlikely(mapMode == D3D11_COMMON_TEXTURE_MAP_MODE_NONE)) {
       Logger::err("D3D11: Cannot map a device-local image");
@@ -522,13 +520,6 @@ namespace dxvk {
       constexpr uint32_t DoPreserve   = (1u << 1);
       constexpr uint32_t DoWait       = (1u << 2);
       uint32_t doFlags;
-
-      if (mapMode == D3D11_COMMON_TEXTURE_MAP_MODE_BUFFER) {
-        // If the image can be written by the GPU, we need to update the
-        // mapped staging buffer to reflect the current image contents.
-        if (pResource->Desc()->Usage == D3D11_USAGE_DEFAULT)
-          ReadbackImageBuffer(pResource, Subresource);
-      }
 
       if (MapType == D3D11_MAP_READ) {
         // Reads will not change the image content, so we only need
@@ -635,7 +626,8 @@ namespace dxvk {
     // the given subresource is actually mapped right now
     m_mappedImageCount -= 1;
 
-    if ((mapType != D3D11_MAP_READ) && (pResource->GetMapMode() == D3D11_COMMON_TEXTURE_MAP_MODE_BUFFER)) {
+    if ((mapType != D3D11_MAP_READ) &&
+        (pResource->GetMapMode() == D3D11_COMMON_TEXTURE_MAP_MODE_BUFFER)) {
       // Now that data has been written into the buffer,
       // we need to copy its contents into the image
       VkImageAspectFlags aspectMask = imageFormatInfo(pResource->GetPackedFormat())->aspectMask;
@@ -645,40 +637,6 @@ namespace dxvk {
         pResource->MipLevelExtent(subresource.mipLevel),
         DxvkBufferSlice(pResource->GetMappedBuffer(Subresource)));
     }
-  }
-  
-
-  void D3D11ImmediateContext::ReadbackImageBuffer(
-          D3D11CommonTexture*         pResource,
-          UINT                        Subresource) {
-    VkImageAspectFlags aspectMask = imageFormatInfo(pResource->GetPackedFormat())->aspectMask;
-    VkImageSubresource subresource = pResource->GetSubresourceFromIndex(aspectMask, Subresource);
-
-    EmitCs([
-      cSrcImage           = pResource->GetImage(),
-      cSrcSubresource     = vk::makeSubresourceLayers(subresource),
-      cDstBuffer          = pResource->GetMappedBuffer(Subresource),
-      cPackedFormat       = pResource->GetPackedFormat()
-    ] (DxvkContext* ctx) {
-      VkOffset3D offset = { 0, 0, 0 };
-      VkExtent3D extent = cSrcImage->mipLevelExtent(cSrcSubresource.mipLevel);
-
-      if (cSrcSubresource.aspectMask != (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
-        ctx->copyImageToBuffer(cDstBuffer, 0, 0, 0,
-          cSrcImage, cSrcSubresource, offset, extent);
-      } else {
-        ctx->copyDepthStencilImageToPackedBuffer(cDstBuffer, 0,
-          VkOffset2D { 0, 0 },
-          VkExtent2D { extent.width, extent.height },
-          cSrcImage, cSrcSubresource,
-          VkOffset2D { 0, 0 },
-          VkExtent2D { extent.width, extent.height },
-          cPackedFormat);
-      }
-    });
-
-    if (pResource->HasSequenceNumber())
-      TrackTextureSequenceNumber(pResource, Subresource);
   }
   
   

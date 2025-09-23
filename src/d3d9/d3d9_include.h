@@ -85,6 +85,7 @@ namespace dxvk {
     char dummy;
   } D3DDEVINFO_RESOURCEMANAGER, * LPD3DDEVINFO_RESOURCEMANAGER;
 }
+
 #ifndef __WINE__
 extern "C" WINUSERAPI WINBOOL WINAPI SetProcessDPIAware(VOID);
 #endif

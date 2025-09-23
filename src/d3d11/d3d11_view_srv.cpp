@@ -205,7 +205,7 @@ namespace dxvk {
      || riid == __uuidof(ID3D10View)
      || riid == __uuidof(ID3D10ShaderResourceView)
      || riid == __uuidof(ID3D10ShaderResourceView1)) {
-      *ppvObject = ref(&m_d3d10);
+      *ppvObject = ref(this);
       return S_OK;
     }
     

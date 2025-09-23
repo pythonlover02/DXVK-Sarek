@@ -591,10 +591,7 @@ namespace dxvk {
           ID3D11InputLayout**         ppInputLayout) {
     InitReturnPtr(ppInputLayout);
 
-    // This check is somehow even correct, passing null with zero
-    // size will always fail but passing non-null with zero size
-    // works, provided the shader does not have any actual inputs
-    if (!pInputElementDescs)
+    if (pInputElementDescs == nullptr)
       return E_INVALIDARG;
     
     try {
@@ -606,7 +603,6 @@ namespace dxvk {
 
       uint32_t attrMask = 0;
       uint32_t bindMask = 0;
-      uint32_t locationMask = 0;
       
       std::array<DxvkVertexAttribute, D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT> attrList;
       std::array<DxvkVertexBinding,   D3D11_IA_VERTEX_INPUT_RESOURCE_SLOT_COUNT> bindList;
@@ -687,17 +683,7 @@ namespace dxvk {
         if (entry != nullptr) {
           attrMask |= 1u << i;
           bindMask |= 1u << binding.binding;
-          locationMask |= 1u << attrib.location;
         }
-      }
-
-      // Ensure that all inputs used by the shader are defined
-      for (auto i = inputSignature->begin(); i != inputSignature->end(); i++) {
-        bool isBuiltIn = DxbcIsgn::compareSemanticNames(i->semanticName, "sv_instanceid")
-                      || DxbcIsgn::compareSemanticNames(i->semanticName, "sv_vertexid");
-
-        if (!isBuiltIn && !(locationMask & (1u << i->registerId)))
-          return E_INVALIDARG;
       }
 
       // Compact the attribute and binding lists to filter
@@ -816,6 +802,8 @@ namespace dxvk {
     InitReturnPtr(ppGeometryShader);
     D3D11CommonShader module;
 
+    if (!m_dxvkDevice->features().extTransformFeedback.transformFeedback)
+      return DXGI_ERROR_INVALID_CALL;
 
     // Zero-init some counterss so that we can increment
     // them while walking over the stream output entries
@@ -1968,15 +1956,15 @@ namespace dxvk {
     }
 
     if (featureLevel >= D3D_FEATURE_LEVEL_9_1) {
-      enabled.core.features.depthClamp                            = supported.core.features.depthClamp;
-      enabled.core.features.depthBiasClamp                        = supported.core.features.depthBiasClamp;
-      enabled.core.features.fillModeNonSolid                      = supported.core.features.fillModeNonSolid;
+      enabled.core.features.depthClamp                            = VK_TRUE;
+      enabled.core.features.depthBiasClamp                        = VK_TRUE;
+      enabled.core.features.fillModeNonSolid                      = VK_TRUE;
       enabled.core.features.pipelineStatisticsQuery               = supported.core.features.pipelineStatisticsQuery;
       enabled.core.features.sampleRateShading                     = VK_TRUE;
       enabled.core.features.samplerAnisotropy                     = supported.core.features.samplerAnisotropy;
-      enabled.core.features.shaderClipDistance                    = supported.core.features.shaderClipDistance;
-      enabled.core.features.shaderCullDistance                    = supported.core.features.shaderCullDistance;
-      enabled.core.features.textureCompressionBC                  = supported.core.features.textureCompressionBC;
+      enabled.core.features.shaderClipDistance                    = VK_TRUE;
+      enabled.core.features.shaderCullDistance                    = VK_TRUE;
+      enabled.core.features.textureCompressionBC                  = VK_TRUE;
       enabled.extDepthClipEnable.depthClipEnable                  = supported.extDepthClipEnable.depthClipEnable;
       enabled.extHostQueryReset.hostQueryReset                    = VK_TRUE;
     }
@@ -1987,7 +1975,7 @@ namespace dxvk {
     
     if (featureLevel >= D3D_FEATURE_LEVEL_9_3) {
       enabled.core.features.independentBlend                      = VK_TRUE;
-      enabled.core.features.multiViewport                         = supported.core.features.multiViewport;
+      enabled.core.features.multiViewport                         = VK_TRUE;
     }
     
     if (featureLevel >= D3D_FEATURE_LEVEL_10_0) {
@@ -1995,12 +1983,12 @@ namespace dxvk {
       enabled.core.features.logicOp                               = supported.core.features.logicOp;
       enabled.core.features.shaderImageGatherExtended             = VK_TRUE;
       enabled.core.features.variableMultisampleRate               = supported.core.features.variableMultisampleRate;
-      enabled.extTransformFeedback.transformFeedback              = supported.extTransformFeedback.transformFeedback;
-      enabled.extTransformFeedback.geometryStreams                = supported.extTransformFeedback.geometryStreams;
+      enabled.extTransformFeedback.transformFeedback              = VK_TRUE;
+      enabled.extTransformFeedback.geometryStreams                = VK_TRUE;
     }
     
     if (featureLevel >= D3D_FEATURE_LEVEL_10_1) {
-      enabled.core.features.dualSrcBlend                          = supported.core.features.dualSrcBlend;
+      enabled.core.features.dualSrcBlend                          = VK_TRUE;
       enabled.core.features.imageCubeArray                        = VK_TRUE;
     }
     
@@ -2015,7 +2003,7 @@ namespace dxvk {
     }
     
     if (featureLevel >= D3D_FEATURE_LEVEL_11_1) {
-      enabled.core.features.logicOp                               = supported.core.features.logicOp;
+      enabled.core.features.logicOp                               = VK_TRUE;
       enabled.core.features.variableMultisampleRate               = VK_TRUE;
       enabled.core.features.vertexPipelineStoresAndAtomics        = VK_TRUE;
     }
@@ -2323,10 +2311,6 @@ namespace dxvk {
     d3d11Desc.CPUAccessFlags = metadata.CPUAccessFlags;
     d3d11Desc.MiscFlags      = metadata.MiscFlags;
     d3d11Desc.TextureLayout  = metadata.TextureLayout;
-    if ((d3d11Desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE) && !(d3d11Desc.MiscFlags & (D3D11_RESOURCE_MISC_SHARED | D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX))) {
-      Logger::warn("Fixing up wrong MiscFlags");
-      d3d11Desc.MiscFlags |= D3D11_RESOURCE_MISC_SHARED;
-    }
 
     // Only 2D textures may be shared
     try {

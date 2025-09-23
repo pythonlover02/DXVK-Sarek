@@ -137,7 +137,7 @@ namespace dxvk {
     if (riid == __uuidof(ID3D10DeviceChild)
      || riid == __uuidof(ID3D10View)
      || riid == __uuidof(ID3D10RenderTargetView)) {
-      *ppvObject = ref(&m_d3d10);
+      *ppvObject = ref(this);
       return S_OK;
     }
     

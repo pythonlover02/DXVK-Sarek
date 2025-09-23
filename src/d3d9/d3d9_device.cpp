@@ -39,20 +39,18 @@ namespace dxvk {
           HWND                   hFocusWindow,
           DWORD                  BehaviorFlags,
           Rc<DxvkDevice>         dxvkDevice)
-    : m_parent             ( pParent )
-    , m_deviceType         ( DeviceType )
-    , m_window             ( hFocusWindow )
-    , m_behaviorFlags      ( BehaviorFlags )
-    , m_adapter            ( pAdapter )
-    , m_dxvkDevice         ( dxvkDevice )
-    , m_shaderModules      ( new D3D9ShaderModuleSet )
-    , m_d3d9Options        ( dxvkDevice, pParent->GetInstance()->config() )
-    , m_multithread        ( BehaviorFlags & D3DCREATE_MULTITHREADED )
-    , m_isSWVP             ( (BehaviorFlags & D3DCREATE_SOFTWARE_VERTEXPROCESSING) ? true : false )
-    , m_isD3D8Compatible   ( pParent->IsD3D8Compatible() )
-    , m_csThread           ( dxvkDevice, dxvkDevice->createContext() )
-    , m_csChunk            ( AllocCsChunk() )
-    , m_d3d8Bridge         ( this ) {
+    : m_parent         ( pParent )
+    , m_deviceType     ( DeviceType )
+    , m_window         ( hFocusWindow )
+    , m_behaviorFlags  ( BehaviorFlags )
+    , m_adapter        ( pAdapter )
+    , m_dxvkDevice     ( dxvkDevice )
+    , m_shaderModules  ( new D3D9ShaderModuleSet )
+    , m_d3d9Options    ( dxvkDevice, pParent->GetInstance()->config() )
+    , m_multithread    ( BehaviorFlags & D3DCREATE_MULTITHREADED )
+    , m_isSWVP         ( (BehaviorFlags & D3DCREATE_SOFTWARE_VERTEXPROCESSING) ? true : false )
+    , m_csThread       ( dxvkDevice, dxvkDevice->createContext() )
+    , m_csChunk        ( AllocCsChunk() ) {
     // If we can SWVP, then we use an extended constant set
     // as SWVP has many more slots available than HWVP.
     bool canSWVP = CanSWVP();
@@ -147,11 +145,6 @@ namespace dxvk {
 
 
   D3D9DeviceEx::~D3D9DeviceEx() {
-    // Avoids hanging when in this state, see comment
-    // in DxvkDevice::~DxvkDevice.
-    if (this_thread::isInModuleDetachment())
-      return;
-
     Flush();
     SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
 
@@ -178,11 +171,6 @@ namespace dxvk {
      || riid == __uuidof(IDirect3DDevice9)
      || extended) {
       *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    if (riid == __uuidof(IDxvkD3D8Bridge)) {
-      *ppvObject = ref(&m_d3d8Bridge);
       return S_OK;
     }
 
@@ -232,15 +220,7 @@ namespace dxvk {
 
 
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::GetDeviceCaps(D3DCAPS9* pCaps) {
-    if (pCaps == nullptr)
-      return D3DERR_INVALIDCALL;
-
-    m_adapter->GetDeviceCaps(m_deviceType, pCaps);
-
-    // When in SWVP mode, 256 matrices can be used for indexed vertex blending
-    pCaps->MaxVertexBlendMatrixIndex = m_isSWVP ? 255 : 8;
-
-    return D3D_OK;
+    return m_adapter->GetDeviceCaps(m_deviceType, pCaps);
   }
 
 
@@ -281,38 +261,21 @@ namespace dxvk {
     uint32_t inputWidth  = cursorTex->Desc()->Width;
     uint32_t inputHeight = cursorTex->Desc()->Height;
 
-    // Check if surface dimensions are powers of two.
-    if ((inputWidth  && (inputWidth  & (inputWidth  - 1)))
-     || (inputHeight && (inputHeight & (inputHeight - 1))))
-      return D3DERR_INVALIDCALL;
-
-    // It makes no sense to have a hotspot outside of the bitmap.
-    if ((inputWidth  && (XHotSpot > inputWidth  - 1))
-     || (inputHeight && (YHotSpot > inputHeight - 1)))
-      return D3DERR_INVALIDCALL;
-
-    D3DPRESENT_PARAMETERS params;
-    m_implicitSwapchain->GetPresentParameters(&params);
-
-    if (inputWidth  > params.BackBufferWidth
-     || inputHeight > params.BackBufferHeight)
-      return D3DERR_INVALIDCALL;
-
     // Always use a hardware cursor when windowed.
-    bool hwCursor  = params.Windowed;
+    bool hwCursor  = m_presentParams.Windowed;
 
     // Always use a hardware cursor w/h <= 32 px
     hwCursor |= inputWidth  <= HardwareCursorWidth
              || inputHeight <= HardwareCursorHeight;
 
-    D3DLOCKED_BOX lockedBox;
-    HRESULT hr = LockImage(cursorTex, 0, 0, &lockedBox, nullptr, D3DLOCK_READONLY);
-    if (FAILED(hr))
-      return hr;
-
-    const uint8_t* data  = reinterpret_cast<const uint8_t*>(lockedBox.pBits);
-
     if (hwCursor) {
+      D3DLOCKED_BOX lockedBox;
+      HRESULT hr = LockImage(cursorTex, 0, 0, &lockedBox, nullptr, D3DLOCK_READONLY);
+      if (FAILED(hr))
+        return hr;
+
+      const uint8_t* data  = reinterpret_cast<const uint8_t*>(lockedBox.pBits);
+
       // Windows works with a stride of 128, lets respect that.
       // Copy data to the bitmap...
       CursorBitmap bitmap = { 0 };
@@ -327,33 +290,10 @@ namespace dxvk {
 
       // Set this as our cursor.
       return m_cursor.SetHardwareCursor(XHotSpot, YHotSpot, bitmap);
-    } else {
-      uint32_t copyPitch = inputWidth * HardwareCursorFormatSize;
-
-      // Create a texture buffer to copy the cursor bitmap into
-      Com<IDirect3DTexture9> tex;
-      HRESULT hr = CreateTexture(inputWidth, inputHeight, 0, D3DUSAGE_DYNAMIC, D3DFMT_A8R8G8B8, D3DPOOL_DEFAULT, &tex, NULL);
-      if (FAILED(hr))
-        return hr;
-
-      auto* destTex = GetCommonTexture(tex.ptr());
-
-      D3DLOCKED_BOX lockedBoxDest;
-      hr = LockImage(destTex, 0, 0, &lockedBoxDest, nullptr, D3DLOCK_DISCARD);
-      if (FAILED(hr))
-        return hr;
-
-      uint8_t* dataDest = reinterpret_cast<uint8_t*>(lockedBoxDest.pBits);
-
-      for (uint32_t h = 0; h < inputHeight; h++)
-        std::memcpy(&dataDest[h * copyPitch], &data[h * lockedBox.RowPitch], copyPitch);
-
-      UnlockImage(cursorTex, 0, 0);
-      UnlockImage(destTex, 0, 0);
-
-      return m_cursor.SetSoftwareCursor(XHotSpot, YHotSpot, tex);
     }
 
+    // Software Cursor...
+    Logger::warn("D3D9DeviceEx::SetCursorProperties: Software cursor not implemented.");
     return D3D_OK;
   }
 
@@ -416,9 +356,6 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::Reset(D3DPRESENT_PARAMETERS* pPresentationParameters) {
     D3D9DeviceLock lock = LockDevice();
 
-    m_flags.clr(D3D9DeviceFlag::InScene);
-    m_cursor.ResetCursor();
-
     HRESULT hr = ResetSwapChain(pPresentationParameters, nullptr);
     if (FAILED(hr))
       return hr;
@@ -429,9 +366,6 @@ namespace dxvk {
 
     Flush();
     SynchronizeCsThread(DxvkCsThread::SynchronizeAll);
-
-    if (m_d3d9Options.deferSurfaceCreation)
-      m_deviceHasBeenReset = true;
 
     return D3D_OK;
   }
@@ -795,12 +729,6 @@ namespace dxvk {
     if (unlikely(srcTextureInfo->Desc()->Format != dstTextureInfo->Desc()->Format))
       return D3DERR_INVALIDCALL;
 
-    if (unlikely(srcTextureInfo->Desc()->MultiSample != D3DMULTISAMPLE_NONE))
-      return D3DERR_INVALIDCALL;
-
-    if (unlikely(dstTextureInfo->Desc()->MultiSample != D3DMULTISAMPLE_NONE))
-      return D3DERR_INVALIDCALL;
-
     const DxvkFormatInfo* formatInfo = imageFormatInfo(dstTextureInfo->GetFormatMapping().FormatColor);
 
     VkOffset3D srcOffset = { 0u, 0u, 0u };
@@ -878,19 +806,9 @@ namespace dxvk {
     uint32_t mipLevels = dstTexInfo->IsAutomaticMip() ? 1 : dstTexInfo->Desc()->MipLevels;
     uint32_t arraySlices = std::min(srcTexInfo->Desc()->ArraySize, dstTexInfo->Desc()->ArraySize);
 
-    uint32_t srcMipOffset = 0;
-    VkExtent3D srcFirstMipExtent = srcTexInfo->GetExtent();
+    uint32_t srcMipOffset = srcTexInfo->Desc()->MipLevels - mipLevels;
+    VkExtent3D srcFirstMipExtent = util::computeMipLevelExtent(srcTexInfo->GetExtent(), srcMipOffset);
     VkExtent3D dstFirstMipExtent = dstTexInfo->GetExtent();
-
-    if (srcFirstMipExtent != dstFirstMipExtent) {
-      // UpdateTexture can be used with textures that have different mip lengths.
-      // It will either match the the top mips or the bottom ones.
-
-      srcMipOffset = srcTexInfo->Desc()->MipLevels - mipLevels;
-      srcFirstMipExtent = util::computeMipLevelExtent(srcTexInfo->GetExtent(), srcMipOffset);
-      dstFirstMipExtent = dstTexInfo->GetExtent();
-    }
-
     if (srcFirstMipExtent != dstFirstMipExtent)
       return D3DERR_INVALIDCALL;
 
@@ -1425,8 +1343,7 @@ namespace dxvk {
     m_flags.set(D3D9DeviceFlag::DirtyFramebuffer);
 
     if (ds != nullptr) {
-      const int32_t vendorId = m_dxvkDevice->adapter()->deviceProperties().vendorID;
-      float rValue = GetDepthBufferRValue(ds->GetCommonTexture()->GetFormatMapping().FormatColor, vendorId);
+      float rValue = GetDepthBufferRValue(ds->GetCommonTexture()->GetFormatMapping().FormatColor);
       if (m_depthBiasScale != rValue) {
         m_depthBiasScale = rValue;
         m_flags.set(D3D9DeviceFlag::DirtyDepthBias);
@@ -2327,8 +2244,13 @@ namespace dxvk {
     if (unlikely(pValue == nullptr))
       return D3DERR_INVALIDCALL;
 
-    Stage = std::min(Stage, DWORD(caps::TextureStageCount - 1));
-    dxvkType = std::min(dxvkType, D3D9TextureStageStateTypes(DXVK_TSS_COUNT - 1));
+    *pValue = 0;
+
+    if (unlikely(Stage >= caps::TextureStageCount))
+      return D3DERR_INVALIDCALL;
+
+    if (unlikely(dxvkType >= TextureStageStateCount))
+      return D3DERR_INVALIDCALL;
 
     *pValue = m_state.textureStages[Stage][dxvkType];
 
@@ -2443,7 +2365,7 @@ namespace dxvk {
 
 
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::SetSoftwareVertexProcessing(BOOL bSoftware) {
-    D3D9DeviceLock lock = LockDevice();
+    auto lock = LockDevice();
 
     if (bSoftware && !CanSWVP())
       return D3DERR_INVALIDCALL;
@@ -2455,25 +2377,19 @@ namespace dxvk {
 
 
   BOOL    STDMETHODCALLTYPE D3D9DeviceEx::GetSoftwareVertexProcessing() {
-    D3D9DeviceLock lock = LockDevice();
+    auto lock = LockDevice();
 
     return m_isSWVP;
   }
 
 
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::SetNPatchMode(float nSegments) {
-    D3D9DeviceLock lock = LockDevice();
-
-    m_state.nPatchSegments = nSegments;
-
     return D3D_OK;
   }
 
 
   float   STDMETHODCALLTYPE D3D9DeviceEx::GetNPatchMode() {
-    D3D9DeviceLock lock = LockDevice();
-
-    return m_state.nPatchSegments;
+    return 0.0f;
   }
 
 
@@ -2494,16 +2410,15 @@ namespace dxvk {
     EmitCs([this,
       cPrimType    = PrimitiveType,
       cPrimCount   = PrimitiveCount,
-      cStartVertex = StartVertex
+      cStartVertex = StartVertex,
+      cInstanceCount = GetInstanceCount()
     ](DxvkContext* ctx) {
-      uint32_t vertexCount = GetVertexCount(cPrimType, cPrimCount);
+      auto drawInfo = GenerateDrawInfo(cPrimType, cPrimCount, cInstanceCount);
 
       ApplyPrimitiveType(ctx, cPrimType);
 
-      // Tests on Windows show that D3D9 does not do non-indexed instanced draws.
-
       ctx->draw(
-        vertexCount, 1,
+        drawInfo.vertexCount, drawInfo.instanceCount,
         cStartVertex, 0);
     });
 
@@ -2575,16 +2490,17 @@ namespace dxvk {
     EmitCs([this,
       cBufferSlice  = std::move(upSlice.slice),
       cPrimType     = PrimitiveType,
-      cStride       = VertexStreamZeroStride,
-      cVertexCount  = drawInfo.vertexCount
+      cPrimCount    = PrimitiveCount,
+      cInstanceCount = GetInstanceCount(),
+      cStride       = VertexStreamZeroStride
     ](DxvkContext* ctx) {
-      ApplyPrimitiveType(ctx, cPrimType);
+      auto drawInfo = GenerateDrawInfo(cPrimType, cPrimCount, cInstanceCount);
 
-      // Tests on Windows show that D3D9 does not do non-indexed instanced draws.
+      ApplyPrimitiveType(ctx, cPrimType);
 
       ctx->bindVertexBuffer(0, cBufferSlice, cStride);
       ctx->draw(
-        cVertexCount, 1,
+        drawInfo.vertexCount, drawInfo.instanceCount,
         0, 0);
       ctx->bindVertexBuffer(0, DxvkBufferSlice(), 0);
     });
@@ -2674,17 +2590,8 @@ namespace dxvk {
           DWORD                        Flags) {
     D3D9DeviceLock lock = LockDevice();
 
-    if (unlikely(pDestBuffer == nullptr))
+    if (unlikely(pDestBuffer == nullptr || pVertexDecl == nullptr))
       return D3DERR_INVALIDCALL;
-
-    // When vertex shader 3.0 or above is set as the current vertex shader,
-    // the output vertex declaration must be present.
-    if (UseProgrammableVS()) {
-      const auto& programInfo = GetCommonShader(m_state.vertexShader)->GetInfo();
-
-      if (unlikely(programInfo.majorVersion() >= 3) && (pVertexDecl == nullptr))
-        return D3DERR_INVALIDCALL;
-    }
 
     if (!SupportsSWVP()) {
       static bool s_errorShown = false;
@@ -2726,7 +2633,8 @@ namespace dxvk {
       cVertexCount   = VertexCount,
       cStartIndex    = SrcStartIndex,
       cInstanceCount = GetInstanceCount(),
-      cBufferSlice   = slice
+      cBufferSlice   = slice,
+      cIndexed       = m_state.indices != nullptr
     ](DxvkContext* ctx) {
       Rc<DxvkShader> shader = m_swvpEmulator.GetShaderModule(this, cDecl);
 
@@ -2896,20 +2804,6 @@ namespace dxvk {
 
     if (unlikely(ppShader == nullptr))
       return D3DERR_INVALIDCALL;
-
-    const uint32_t majorVersion = D3DSHADER_VERSION_MAJOR(pFunction[0]);
-    const uint32_t minorVersion = D3DSHADER_VERSION_MINOR(pFunction[0]);
-
-    // Late fixed-function capable hardware exposed support for VS 1.1
-    const uint32_t shaderModelVS = m_isD3D8Compatible ? 1u : std::max(1u, m_d3d9Options.shaderModel);
-
-    if (unlikely(majorVersion > shaderModelVS
-              || (majorVersion == 1 && minorVersion > 1)
-              // Skip checking the SM2 minor version, as it has a 2_x mode apparently
-              || (majorVersion == 3 && minorVersion != 0))) {
-      Logger::err(str::format("D3D9DeviceEx::CreateVertexShader: Unsupported VS version ", majorVersion, ".", minorVersion));
-      return D3DERR_INVALIDCALL;
-    }
 
     DxsoModuleInfo moduleInfo;
     moduleInfo.options = m_dxsoOptions;
@@ -3111,11 +3005,6 @@ namespace dxvk {
 
       vbo.offset = OffsetInBytes;
       vbo.stride = Stride;
-    } else {
-      // D3D9 doesn't actually unbind any vertex buffer when passing null.
-      // Operation Flashpoint: Red River relies on this behavior.
-      needsUpdate = false;
-      vbo.offset = 0;
     }
 
     if (needsUpdate)
@@ -3221,8 +3110,7 @@ namespace dxvk {
 
     m_state.indices = buffer;
 
-    if (buffer != nullptr)
-      BindIndices();
+    BindIndices();
 
     return D3D_OK;
   }
@@ -3248,19 +3136,6 @@ namespace dxvk {
 
     if (unlikely(ppShader == nullptr))
       return D3DERR_INVALIDCALL;
-
-    const uint32_t majorVersion = D3DSHADER_VERSION_MAJOR(pFunction[0]);
-    const uint32_t minorVersion = D3DSHADER_VERSION_MINOR(pFunction[0]);
-
-    const uint32_t shaderModelPS = m_isD3D8Compatible ? std::min(1u, m_d3d9Options.shaderModel) : m_d3d9Options.shaderModel;
-
-    if (unlikely(majorVersion > shaderModelPS
-              || (majorVersion == 1 && minorVersion > 4)
-              // Skip checking the SM2 minor version, as it has a 2_x mode apparently
-              || (majorVersion == 3 && minorVersion != 0))) {
-      Logger::err(str::format("D3D9DeviceEx::CreatePixelShader: Unsupported PS version ", majorVersion, ".", minorVersion));
-      return D3DERR_INVALIDCALL;
-    }
 
     DxsoModuleInfo moduleInfo;
     moduleInfo.options = m_dxsoOptions;
@@ -3578,86 +3453,6 @@ namespace dxvk {
           HWND hDestWindowOverride,
     const RGNDATA* pDirtyRegion,
           DWORD dwFlags) {
-    D3D9_SOFTWARE_CURSOR* pSoftwareCursor = m_cursor.GetSoftwareCursor();
-
-    if (pSoftwareCursor->Bitmap != nullptr && m_cursor.IsCursorVisible()) {
-      D3DSURFACE_DESC srcDesc;
-      pSoftwareCursor->Bitmap->GetLevelDesc(0, &srcDesc);
-      D3DSURFACE_DESC dstDesc;
-      m_state.renderTargets[0]->GetDesc(&dstDesc);
-
-      // Calculate cursor quad vertex coordinates based on render target edges and the win32 cursor position
-      const float dstLeft   = pSoftwareCursor->X - static_cast<float>(pSoftwareCursor->XHotSpot);
-      const float dstTop    = pSoftwareCursor->Y - static_cast<float>(pSoftwareCursor->YHotSpot);
-      const float dstRight  = std::min(dstLeft + static_cast<float>(srcDesc.Width),  static_cast<float>(dstDesc.Width));
-      const float dstBottom = std::min(dstTop + static_cast<float>(srcDesc.Height), static_cast<float>(dstDesc.Height));
-      // Calculate cursor texture coordinates based on quad rendering coordinates and render target edges
-      const float srcRight   = dstRight  == static_cast<float>(dstDesc.Width)  ?
-                          dstRight  - dstLeft : static_cast<float>(srcDesc.Width);
-      const float srcBottom  = dstBottom == static_cast<float>(dstDesc.Height) ?
-                          dstBottom - dstTop : static_cast<float>(srcDesc.Height);
-      // Calculate normalized texture coordinates (will be < 1.0f to handle right/bottom edge cursor clipping)
-      const float normSrcRight  = srcRight / static_cast<float>(srcDesc.Width);
-      const float normSrcBottom = srcBottom / static_cast<float>(srcDesc.Height);
-
-      std::array<SWCursorVertex, 4> quadVertices = {{
-        { dstLeft,  dstTop, 0.0f, 1.0f, 0.0f, 0.0f },
-        { dstRight, dstTop, 0.0f, 1.0f, normSrcRight, 0.0f },
-        { dstLeft,  dstBottom, 0.0f, 1.0f, 0.0f, normSrcBottom },
-        { dstRight, dstBottom, 0.0f, 1.0f, normSrcRight, normSrcBottom },
-      }};
-      const size_t quadVerticesSize = quadVertices.size() * sizeof(SWCursorVertex);
-
-      Com<IDirect3DVertexBuffer9> pVertexBuffer;
-      CreateVertexBuffer(quadVerticesSize, D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY,
-                         D3DFVF_XYZRHW | D3DFVF_TEX1, D3DPOOL_DEFAULT, &pVertexBuffer, NULL);
-
-      void* pVertices;
-      pVertexBuffer->Lock(0, quadVerticesSize, (void**)&pVertices, D3DLOCK_DISCARD);
-      memcpy(pVertices, quadVertices.data(), quadVerticesSize);
-      pVertexBuffer->Unlock();
-
-      // Capture pre-cursor draw state
-      DWORD alphaBlend;
-      GetRenderState(D3DRS_ALPHABLENDENABLE, &alphaBlend);
-      DWORD culling;
-      GetRenderState(D3DRS_CULLMODE, &culling);
-      DWORD fvf;
-      GetFVF(&fvf);
-      DWORD minFilter;
-      GetSamplerState(0, D3DSAMP_MINFILTER, &minFilter);
-      DWORD magFilter;
-      GetSamplerState(0, D3DSAMP_MAGFILTER, &magFilter);
-      Com<IDirect3DBaseTexture9> tex;
-      GetTexture(0, &tex);
-
-      // Temporarily enable alpha blending for the cursor texture
-      SetRenderState(D3DRS_ALPHABLENDENABLE, TRUE);
-      // Temporarily disable culling while drawing the cursor quad,
-      // as some games may not render it at all otherwise
-      SetRenderState(D3DRS_CULLMODE, D3DCULL_NONE);
-      SetFVF(D3DFVF_XYZRHW | D3DFVF_TEX1);
-      // Filtering is not needed since the dimensions are
-      // exact and it only makes the cursor look blurry
-      SetSamplerState(0, D3DSAMP_MINFILTER, D3DTEXF_NONE);
-      SetSamplerState(0, D3DSAMP_MAGFILTER, D3DTEXF_NONE);
-      HRESULT hr = SetTexture(0, pSoftwareCursor->Bitmap.ptr());
-      if (FAILED(hr))
-        Logger::err("D3D9DeviceEx::PresentEx: Failed setting software cursor texture");
-
-      hr = DrawPrimitiveUP(D3DPT_TRIANGLESTRIP, 2, pVertices, sizeof(SWCursorVertex));
-      if (FAILED(hr))
-        Logger::err("D3D9DeviceEx::PresentEx: Failed software cursor draw call");
-
-      // Reinstate pre-cursor draw state
-      SetTexture(0, tex.ptr());
-      SetSamplerState(0, D3DSAMP_MINFILTER, minFilter);
-      SetSamplerState(0, D3DSAMP_MAGFILTER, magFilter);
-      SetFVF(fvf);
-      SetRenderState(D3DRS_CULLMODE, culling);
-      SetRenderState(D3DRS_ALPHABLENDENABLE, alphaBlend);
-    }
-
     return m_implicitSwapchain->Present(
       pSourceRect,
       pDestRect,
@@ -3972,19 +3767,12 @@ namespace dxvk {
         m_dirtySamplerStates |= 1u << StateSampler;
       }
 
-      if (unlikely(m_fetch4Enabled & (1u << StateSampler))) {
-        const bool samplerFetch4 = (m_fetch4 & (1u << StateSampler)) != 0;
-        const bool pointFilter = m_state.samplerStates[StateSampler][D3DSAMP_MAGFILTER] == D3DTEXF_POINT
-                                  && m_state.samplerStates[StateSampler][D3DSAMP_MINFILTER] == D3DTEXF_POINT;
-        const bool textureSupportsFetch4 = newTexture->SupportsFetch4();
-
-        if (unlikely(textureSupportsFetch4 && pointFilter && !samplerFetch4)) {
-          // We're swapping a multi channel texture for a single channel texture => turn on fetch4
+      if (unlikely(m_fetch4Enabled & (1u << StateSampler) && !(m_fetch4 & (1u << StateSampler)))) {
+        bool textureSupportsFetch4 = newTexture->SupportsFetch4();
+        if (textureSupportsFetch4
+          && m_state.samplerStates[StateSampler][D3DSAMP_MAGFILTER] == D3DTEXF_POINT
+          && m_state.samplerStates[StateSampler][D3DSAMP_MINFILTER] == D3DTEXF_POINT) {
           m_fetch4 |= 1u << StateSampler;
-          m_dirtySamplerStates |= 1u << StateSampler;
-        } else if (unlikely(!textureSupportsFetch4 && samplerFetch4)) {
-          // We're swapping a single channel texture for a multi channel one => turn off fetch4
-          m_fetch4 &= ~(1u << StateSampler);
           m_dirtySamplerStates |= 1u << StateSampler;
         }
       }
@@ -4026,13 +3814,13 @@ namespace dxvk {
           DWORD                      Stage,
           D3D9TextureStageStateTypes Type,
           DWORD                      Value) {
-    
-    // Clamp values instead of checking and returning INVALID_CALL
-    // Matches tests + Dawn of Magic 2 relies on it.
-    Stage = std::min(Stage, DWORD(caps::TextureStageCount - 1));
-    Type = std::min(Type, D3D9TextureStageStateTypes(DXVK_TSS_COUNT - 1));
-
     D3D9DeviceLock lock = LockDevice();
+
+    if (unlikely(Stage >= caps::TextureStageCount))
+      return D3DERR_INVALIDCALL;
+
+    if (unlikely(Type >= TextureStageStateCount))
+      return D3DERR_INVALIDCALL;
 
     if (unlikely(ShouldRecord()))
       return m_recorder->SetStateTextureStageState(Stage, Type, Value);
@@ -4126,17 +3914,17 @@ namespace dxvk {
     enabled.core.features.imageCubeArray = VK_TRUE;
 
     // SM1 level hardware
-    enabled.core.features.depthClamp = supported.core.features.depthClamp;
-    enabled.core.features.depthBiasClamp = supported.core.features.depthBiasClamp;
-    enabled.core.features.fillModeNonSolid = supported.core.features.fillModeNonSolid;
+    enabled.core.features.depthClamp = VK_TRUE;
+    enabled.core.features.depthBiasClamp = VK_TRUE;
+    enabled.core.features.fillModeNonSolid = VK_TRUE;
     enabled.core.features.pipelineStatisticsQuery = supported.core.features.pipelineStatisticsQuery;
     enabled.core.features.sampleRateShading = VK_TRUE;
     enabled.core.features.samplerAnisotropy = supported.core.features.samplerAnisotropy;
-    enabled.core.features.shaderClipDistance = supported.core.features.shaderClipDistance;
-    enabled.core.features.shaderCullDistance = supported.core.features.shaderCullDistance;
+    enabled.core.features.shaderClipDistance = VK_TRUE;
+    enabled.core.features.shaderCullDistance = VK_TRUE;
 
     // Ensure we support real BC formats and unofficial vendor ones.
-    enabled.core.features.textureCompressionBC = supported.core.features.textureCompressionBC;
+    enabled.core.features.textureCompressionBC = VK_TRUE;
 
     enabled.extDepthClipEnable.depthClipEnable = supported.extDepthClipEnable.depthClipEnable;
     enabled.extHostQueryReset.hostQueryReset = VK_TRUE;
@@ -4145,7 +3933,7 @@ namespace dxvk {
     enabled.core.features.occlusionQueryPrecise = VK_TRUE;
 
     // SM3 level hardware
-    enabled.core.features.multiViewport = supported.core.features.multiViewport;
+    enabled.core.features.multiViewport = VK_TRUE;
     enabled.core.features.independentBlend = VK_TRUE;
 
     // D3D10 level hardware supports this in D3D9 native.
@@ -4348,10 +4136,7 @@ namespace dxvk {
     if (unlikely(pResource->GetLocked(Subresource)))
       return D3DERR_INVALIDCALL;
 
-    auto& desc = *(pResource->Desc());
-
-    if (unlikely((Flags & (D3DLOCK_DISCARD | D3DLOCK_READONLY)) == (D3DLOCK_DISCARD | D3DLOCK_READONLY)
-               && desc.Pool == D3DPOOL_DEFAULT))
+    if (unlikely((Flags & (D3DLOCK_DISCARD | D3DLOCK_READONLY)) == (D3DLOCK_DISCARD | D3DLOCK_READONLY)))
       return D3DERR_INVALIDCALL;
 
     if (unlikely(!m_d3d9Options.allowDoNotWait))
@@ -4359,6 +4144,8 @@ namespace dxvk {
 
     if (unlikely((Flags & (D3DLOCK_DISCARD | D3DLOCK_NOOVERWRITE)) == (D3DLOCK_DISCARD | D3DLOCK_NOOVERWRITE)))
       Flags &= ~D3DLOCK_DISCARD;
+
+    auto& desc = *(pResource->Desc());
 
     bool alloced = pResource->CreateBufferSubresource(Subresource);
 
@@ -4727,9 +4514,6 @@ namespace dxvk {
         sliceAlignment = srcTexLevelExtentBlockCount.height * pitch;
       }
 
-
-      VkFormat packedFormat = GetPackedDepthStencilFormat(pDestTexture->Desc()->Format);
-
       EmitCs([
         cSrcSlice       = std::move(copySrcSlice),
         cDstImage       = image,
@@ -4737,25 +4521,13 @@ namespace dxvk {
         cDstLevelExtent = alignedExtent,
         cOffset         = alignedDestOffset,
         cRowAlignment   = rowAlignment,
-        cSliceAlignment = sliceAlignment,
-        cPackedFormat     = packedFormat
+        cSliceAlignment = sliceAlignment
       ] (DxvkContext* ctx) {
-        if (cDstLayers.aspectMask != (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) {
-          ctx->copyBufferToImage(
-            cDstImage,  cDstLayers,
-            cOffset, cDstLevelExtent,
-            cSrcSlice.buffer(), cSrcSlice.offset(),
-            cRowAlignment, cSliceAlignment);
-        } else {
-          ctx->copyPackedBufferToDepthStencilImage(
-                cDstImage, cDstLayers,
-                VkOffset2D { cOffset.x, cOffset.y },
-                VkExtent2D { cDstLevelExtent.width, cDstLevelExtent.height },
-                cSrcSlice.buffer(), cSrcSlice.offset(),
-                VkOffset2D { 0, 0 },
-                VkExtent2D { cDstLevelExtent.width, cDstLevelExtent.height },
-                cPackedFormat);
-        }
+        ctx->copyBufferToImage(
+          cDstImage,  cDstLayers,
+          cOffset, cDstLevelExtent,
+          cSrcSlice.buffer(), cSrcSlice.offset(),
+          cRowAlignment, cSliceAlignment);
       });
 
       TrackTextureMappingBufferSequenceNumber(pSrcTexture, SrcSubresource);
@@ -5849,23 +5621,12 @@ namespace dxvk {
     // Originally we did this only for powers of two
     // resolutions but since NEAREST filtering fixed to
     // truncate, we need to do this all the time now.
-    constexpr float cf = 0.5f - (1.0f / 128.0f);
-
-    // How much to bias MinZ by to avoid a depth
-    // degenerate viewport.
-    // Tests show that the bias is only applied below minZ values of 0.5
-    float zBias;
-    if (vp.MinZ >= 0.5f) {
-      zBias = 0.0f;
-    } else {
-      zBias = 0.001f;
-    }
+    float cf = 0.5f - (1.0f / 128.0f);
 
     viewport = VkViewport{
       float(vp.X)     + cf,    float(vp.Height + vp.Y) + cf,
       float(vp.Width),        -float(vp.Height),
-      std::clamp(vp.MinZ,                            0.0f, 1.0f),
-      std::clamp(std::max(vp.MaxZ, vp.MinZ + zBias), 0.0f, 1.0f),
+      vp.MinZ,                 vp.MaxZ,
     };
 
     // Scissor rectangles. Vulkan does not provide an easy way
@@ -7049,8 +6810,6 @@ namespace dxvk {
 
         stage.Projected      = (ttff & D3DTTFF_PROJECTED) ? 1      : 0;
         stage.ProjectedCount = (ttff & D3DTTFF_PROJECTED) ? count  : 0;
-
-        stage.SampleDref = (m_depthTextures & (1 << idx)) != 0;
       }
 
       auto& stage0 = key.Stages[0].Contents;
@@ -7409,7 +7168,7 @@ namespace dxvk {
     rs[D3DRS_POINTSCALE_B]               = bit::cast<DWORD>(0.0f);
     rs[D3DRS_POINTSCALE_C]               = bit::cast<DWORD>(0.0f);
     rs[D3DRS_POINTSIZE]                  = bit::cast<DWORD>(1.0f);
-    rs[D3DRS_POINTSIZE_MIN]              = m_isD3D8Compatible ? bit::cast<DWORD>(0.0f) : bit::cast<DWORD>(1.0f);
+    rs[D3DRS_POINTSIZE_MIN]              = bit::cast<DWORD>(1.0f);
     rs[D3DRS_POINTSIZE_MAX]              = bit::cast<DWORD>(64.0f);
     UpdatePushConstant<D3D9RenderStateItem::PointSize>();
     UpdatePushConstant<D3D9RenderStateItem::PointSizeMin>();
@@ -7490,7 +7249,7 @@ namespace dxvk {
       m_state.streamFreq[i] = 1;
 
     for (uint32_t i = 0; i < m_state.textures.size(); i++)
-      SetStateTexture(i, nullptr);
+      TextureChangePrivate(m_state.textures[i], nullptr);
 
     EmitCs([
       cSize = m_state.textures.size()
@@ -7539,11 +7298,6 @@ namespace dxvk {
     UpdateBoolSpecConstantVertex(0u);
     UpdateBoolSpecConstantPixel(0u);
     UpdateSamplerDepthModeSpecConstant(0u);
-
-    // In D3D8, this represents the value of D3DRS_PATCHSEGMENTS.
-    // It defaults to 1.0f and is reset as any other render state.
-    if (m_isD3D8Compatible)
-      m_state.nPatchSegments = 1.0f;
 
     return D3D_OK;
   }

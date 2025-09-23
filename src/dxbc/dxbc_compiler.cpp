@@ -768,13 +768,8 @@ namespace dxvk {
     // dcl_constant_buffer has one operand with two indices:
     //    (0) Constant buffer register ID (cb#)
     //    (1) Number of constants in the buffer
-    uint32_t bufferId     = ins.dst[0].idx[0].offset;
-    uint32_t elementCount = ins.dst[0].idx[1].offset;
-
-    // With dynamic indexing, games will often index constant buffers
-    // out of bounds. Declare an upper bound to stay within spec.
-    if (ins.controls.accessType() == DxbcConstantBufferAccessType::DynamicallyIndexed)
-      elementCount = 4096;
+    const uint32_t bufferId     = ins.dst[0].idx[0].offset;
+    const uint32_t elementCount = ins.dst[0].idx[1].offset;
 
     bool asSsbo = m_moduleInfo.options.dynamicIndexedConstantBufferAsSsbo
       && ins.controls.accessType() == DxbcConstantBufferAccessType::DynamicallyIndexed;
@@ -3438,14 +3433,9 @@ namespace dxvk {
     
     DxbcRegisterValue mergedResult;
     mergedResult.type = result.type;
-    // Skip unbound texture optimization on Mali GPUs to prevent black screens
-    if (m_moduleInfo.options.disableUnboundTextureOptimization) {
-      mergedResult.id = result.id;
-    } else {
-      mergedResult.id = m_module.opSelect(getVectorTypeId(mergedResult.type),
-        emitBuildVector(bound, result.type.ccount).id, result.id,
-        emitBuildZeroVector(result.type).id);
-    }
+    mergedResult.id = m_module.opSelect(getVectorTypeId(mergedResult.type),
+      emitBuildVector(bound, result.type.ccount).id, result.id,
+      emitBuildZeroVector(result.type).id);
     
     emitRegisterStore(ins.dst[0], mergedResult);
   }
@@ -3552,15 +3542,13 @@ namespace dxvk {
     result = emitRegisterSwizzle(result,
       textureReg.swizzle, ins.dst[0].mask);
     
-    if (!m_moduleInfo.options.disableUnboundTextureOptimization) {
-      DxbcRegisterValue bound;
-      bound.type = { DxbcScalarType::Bool, 1 };
-      bound.id = texture.specId;
-
-      result.id = m_module.opSelect(getVectorTypeId(result.type),
-        emitBuildVector(bound, result.type.ccount).id, result.id,
-        emitBuildZeroVector(result.type).id);
-    }
+    DxbcRegisterValue bound;
+    bound.type = { DxbcScalarType::Bool, 1 };
+    bound.id = texture.specId;
+    
+    result.id = m_module.opSelect(getVectorTypeId(result.type),
+      emitBuildVector(bound, result.type.ccount).id, result.id,
+      emitBuildZeroVector(result.type).id);
 
     emitRegisterStore(ins.dst[0], result);
   }
@@ -3709,16 +3697,13 @@ namespace dxvk {
         textureReg.swizzle, ins.dst[0].mask);
     }
     
-    // Skip unbound texture optimization on Mali GPUs to prevent black screens
-    if (!m_moduleInfo.options.disableUnboundTextureOptimization) {
-      DxbcRegisterValue bound;
-      bound.type = { DxbcScalarType::Bool, 1 };
-      bound.id = texture.specId;
-
-      result.id = m_module.opSelect(getVectorTypeId(result.type),
-        emitBuildVector(bound, result.type.ccount).id, result.id,
-        emitBuildZeroVector(result.type).id);
-    }
+    DxbcRegisterValue bound;
+    bound.type = { DxbcScalarType::Bool, 1 };
+    bound.id = texture.specId;
+    
+    result.id = m_module.opSelect(getVectorTypeId(result.type),
+      emitBuildVector(bound, result.type.ccount).id, result.id,
+      emitBuildZeroVector(result.type).id);
 
     emitRegisterStore(ins.dst[0], result);
   }
@@ -3952,6 +3937,7 @@ namespace dxvk {
     
     // Close the current 'case' block
     m_module.opBranch(block.b_switch.labelBreak);
+    m_module.opLabel (block.b_switch.labelBreak);
     
     // Insert the 'switch' statement. For that, we need to
     // gather all the literal-label pairs for the construct.
@@ -3978,9 +3964,6 @@ namespace dxvk {
     
     while (caseLabel != nullptr)
       delete std::exchange(caseLabel, caseLabel->next);
-
-    // Begin new block after switch blocks
-    m_module.opLabel(block.b_switch.labelBreak);
   }
   
     
@@ -6115,7 +6098,7 @@ namespace dxvk {
 
     if (hasTgsm) {
       m_module.opControlBarrier(
-        m_module.constu32(spv::ScopeWorkgroup),
+        m_module.constu32(spv::ScopeInvocation),
         m_module.constu32(spv::ScopeWorkgroup),
         m_module.constu32(spv::MemorySemanticsWorkgroupMemoryMask
                         | spv::MemorySemanticsAcquireReleaseMask));

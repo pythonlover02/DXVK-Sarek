@@ -32,7 +32,7 @@ namespace dxvk::bit {
     std::memcpy(&dst, &src, sizeof(T));
     return dst;
   }
-  
+
   template<typename T>
   T extract(T value, uint32_t fst, uint32_t lst) {
     return (value >> fst) & ~(~T(0) << (lst - fst + 1));
@@ -41,7 +41,7 @@ namespace dxvk::bit {
   inline uint32_t popcntStep(uint32_t n, uint32_t mask, uint32_t shift) {
     return (n & mask) + ((n & ~mask) >> shift);
   }
-  
+
   inline uint32_t popcnt(uint32_t n) {
     n = popcntStep(n, 0x55555555, 1);
     n = popcntStep(n, 0x33333333, 2);
@@ -50,7 +50,7 @@ namespace dxvk::bit {
     n = popcntStep(n, 0x0000FFFF, 16);
     return n;
   }
-  
+
   inline uint32_t tzcnt(uint32_t n) {
     #if defined(_MSC_VER) && !defined(__clang__)
     return _tzcnt_u32(n);

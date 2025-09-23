@@ -248,6 +248,11 @@ namespace dxvk::vk {
   }
 
 
+  void Presenter::setFrameRateLimiterRefreshRate(double refreshRate) {
+    m_fpsLimiter.setDisplayRefreshRate(refreshRate);
+  }
+
+
   VkResult Presenter::getSupportedFormats(std::vector<VkSurfaceFormatKHR>& formats, const PresenterDesc& desc) {
     uint32_t numFormats = 0;
 

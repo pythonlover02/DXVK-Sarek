@@ -33,14 +33,8 @@ namespace dxvk {
     /// Emulate UMA
     bool emulateUMA;
 
-    /// Reports Nvidia GPUs as a different vendor (usually AMD)
-    bool hideNvidiaGpu;
-
-    /// Reports AMD GPUs as a different vendor (usually Nvidia)
-    bool hideAmdGpu;
-    
-    /// Reports Intel GPUs as a different vendor (usually AMD)
-    bool hideIntelGpu;
+    /// Enables nvapi workaround
+    bool nvapiHack;
   };
   
 }

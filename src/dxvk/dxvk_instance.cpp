@@ -8,10 +8,10 @@
 #include <algorithm>
 
 namespace dxvk {
-
+  
   DxvkInstance::DxvkInstance() {
     Logger::info(str::format("Game: ", env::getExeName()));
-    Logger::info(str::format("DXVK-Sarek: ", DXVK_VERSION));
+    Logger::info(str::format("DXVK: ", DXVK_VERSION));
 
     m_config = Config::getUserConfig();
     m_config.merge(Config::getAppConfig(env::getExePath()));
@@ -31,9 +31,7 @@ namespace dxvk {
       provider->initInstanceExtensions();
 
     m_vkl = new vk::LibraryFn();
-    if (!m_vkl->valid())
-      throw DxvkError("Failed to load vulkan-1 library.");
-    m_vki = new vk::InstanceFn(m_vkl, true, this->createInstance());
+    m_vki = new vk::InstanceFn(true, this->createInstance());
 
     m_adapters = this->queryAdapters();
 
@@ -47,13 +45,13 @@ namespace dxvk {
       }
     }
   }
-
-
+  
+  
   DxvkInstance::~DxvkInstance() {
-
+    
   }
-
-
+  
+  
   Rc<DxvkAdapter> DxvkInstance::enumAdapters(uint32_t index) const {
     return index < m_adapters.size()
       ? m_adapters[index]
@@ -72,7 +70,7 @@ namespace dxvk {
     return nullptr;
   }
 
-
+  
   Rc<DxvkAdapter> DxvkInstance::findAdapterByDeviceId(uint16_t vendorId, uint16_t deviceId) const {
     for (const auto& adapter : m_adapters) {
       const auto& props = adapter->deviceProperties();
@@ -84,8 +82,8 @@ namespace dxvk {
 
     return nullptr;
   }
-
-
+  
+  
   VkInstance DxvkInstance::createInstance() {
     DxvkInstanceExtensions insExtensions;
 
@@ -96,7 +94,7 @@ namespace dxvk {
 
     // Hide VK_EXT_debug_utils behind an environment variable. This extension
     // adds additional overhead to winevulkan
-    if ((env::getEnvVar("DXVK_PERF_EVENTS") == "1") ||
+    if ((env::getEnvVar("DXVK_PERF_EVENTS") == "1") || 
       (m_options.enableDebugUtils)) {
         insExtensionList.push_back(&insExtensions.extDebugUtils);
         Logger::warn("DXVK: Debug Utils are enabled, perf events are ON. May affect performance!");
@@ -104,7 +102,7 @@ namespace dxvk {
 
     DxvkNameSet extensionsEnabled;
     DxvkNameSet extensionsAvailable = DxvkNameSet::enumInstanceExtensions(m_vkl);
-
+    
     if (!extensionsAvailable.enableExtensions(
           insExtensionList.size(),
           insExtensionList.data(),
@@ -118,21 +116,21 @@ namespace dxvk {
       extensionsEnabled.merge(provider->getInstanceExtensions());
 
     DxvkNameList extensionNameList = extensionsEnabled.toNameList();
-
+    
     Logger::info("Enabled instance extensions:");
     this->logNameList(extensionNameList);
 
     std::string appName = env::getExeName();
-
+    
     VkApplicationInfo appInfo;
     appInfo.sType                 = VK_STRUCTURE_TYPE_APPLICATION_INFO;
     appInfo.pNext                 = nullptr;
     appInfo.pApplicationName      = appName.c_str();
     appInfo.applicationVersion    = 0;
     appInfo.pEngineName           = "DXVK";
-    appInfo.engineVersion         = VK_MAKE_VERSION(1, 11, 0);
+    appInfo.engineVersion         = VK_MAKE_VERSION(1, 10, 3);
     appInfo.apiVersion            = VK_MAKE_VERSION(1, 1, 0);
-
+    
     VkInstanceCreateInfo info;
     info.sType                    = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
     info.pNext                    = nullptr;
@@ -142,22 +140,22 @@ namespace dxvk {
     info.ppEnabledLayerNames      = nullptr;
     info.enabledExtensionCount    = extensionNameList.count();
     info.ppEnabledExtensionNames  = extensionNameList.names();
-
+    
     VkInstance result = VK_NULL_HANDLE;
     VkResult status = m_vkl->vkCreateInstance(&info, nullptr, &result);
 
     if (status != VK_SUCCESS)
       throw DxvkError("DxvkInstance::createInstance: Failed to create Vulkan 1.1 instance");
-
+    
     return result;
   }
-
-
+  
+  
   std::vector<Rc<DxvkAdapter>> DxvkInstance::queryAdapters() {
     uint32_t numAdapters = 0;
     if (m_vki->vkEnumeratePhysicalDevices(m_vki->instance(), &numAdapters, nullptr) != VK_SUCCESS)
       throw DxvkError("DxvkInstance::enumAdapters: Failed to enumerate adapters");
-
+    
     std::vector<VkPhysicalDevice> adapters(numAdapters);
     if (m_vki->vkEnumeratePhysicalDevices(m_vki->instance(), &numAdapters, adapters.data()) != VK_SUCCESS)
       throw DxvkError("DxvkInstance::enumAdapters: Failed to enumerate adapters");
@@ -179,7 +177,7 @@ namespace dxvk {
       if (filter.testAdapter(deviceProperties[i]))
         result.push_back(new DxvkAdapter(m_vki, adapters[i]));
     }
-
+    
     std::stable_sort(result.begin(), result.end(),
       [] (const Rc<DxvkAdapter>& a, const Rc<DxvkAdapter>& b) -> bool {
         static const std::array<VkPhysicalDeviceType, 3> deviceTypes = {{
@@ -198,19 +196,19 @@ namespace dxvk {
 
         return aRank < bRank;
       });
-
+    
     if (result.size() == 0) {
       Logger::warn("DXVK: No adapters found. Please check your "
                    "device filter settings and Vulkan setup.");
     }
-
+    
     return result;
   }
-
-
+  
+  
   void DxvkInstance::logNameList(const DxvkNameList& names) {
     for (uint32_t i = 0; i < names.count(); i++)
       Logger::info(str::format("  ", names.name(i)));
   }
-
+  
 }

@@ -19,12 +19,6 @@ namespace dxvk::str {
   }
 
   std::wstring tows(const char* mbs);
-
-#ifdef _WIN32
-  inline std::wstring topath(const char* mbs) { return tows(mbs); }
-#else
-  inline std::string  topath(const char* mbs) { return std::string(mbs); }
-#endif
   
   inline void format1(std::stringstream&) { }
 
@@ -53,30 +47,4 @@ namespace dxvk::str {
       dst[count - 1] = '\0';
   }
   
-  /**
-   * \brief Split string at one or more delimiters characters
-   * 
-   * \param [in] string String to split
-   * \param [in] delims Delimiter characters
-   * \returns Vector of substring views
-  */
-  inline std::vector<std::string_view> split(std::string_view string, std::string_view delims = " ") {
-    std::vector<std::string_view> tokens;
-
-    for (size_t start = 0; start < string.size(); ) {
-      // Find first delimiter
-      const auto end = string.find_first_of(delims, start);
-
-      // Add non-empty tokens
-      if (start != end)
-        tokens.emplace_back(string.substr(start, end-start));
-
-      // Break at the end of string
-      if (end == std::string_view::npos)
-        break;
-
-      start = end + 1;
-    }
-    return tokens;
-  }
 }

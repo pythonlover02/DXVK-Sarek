@@ -1,59 +1,42 @@
-# DXVK-Sarek:
+# DXVK
 
-### Why Does This Repo Exist?
+A Vulkan-based translation layer for Direct3D 9/10/11 which allows running 3D applications on Linux using Wine.
 
-This repository was created to support users with Vulkan capable GPUs that do not meet the 1.3 requirement of the current builds. My goal is to ensure that everyone can benefit from the nice performance of DXVK, even if their hardware is slightly older. Backporting Quality of Life (QOL) patches, fixes and per game configurations from the latest versions to the 1.10.x branch.
+For the current status of the project, please refer to the [project wiki](https://github.com/doitsujin/dxvk/wiki).
 
-This project is supported on [Proton Sarek](https://github.com/pythonlover02/Proton-Sarek) and [proton-cachyos](https://github.com/CachyOS/proton-cachyos), on this last you must add this env var to your launch options:
+The most recent development builds can be found [here](https://github.com/doitsujin/dxvk/actions/workflows/artifacts.yml?query=branch%3Amaster).
+
+Release builds can be found [here](https://github.com/doitsujin/dxvk/releases).
+
+## How to use
+In order to install a DXVK package obtained from the [release](https://github.com/doitsujin/dxvk/releases) page into a given wine prefix, run the following commands from within the DXVK directory:
 
 ```
-PROTON_DXVK_SAREK=1
+export WINEPREFIX=/path/to/.wine-prefix
+./setup_dxvk.sh install
 ```
 
-Also, a huge thank you to the following contributors for their invaluable help in making this project a reality:
+This will **copy** the DLLs into the `system32` and `syswow64` directories of your wine prefix and set up the required DLL overrides. Pure 32-bit prefixes are also supported.
 
-- [Blisto91](https://github.com/Blisto91)
-- [AmerXz](https://github.com/AmerXz)
-- [Gcenx](https://github.com/Gcenx)
-- [WinterSnowfall](https://github.com/WinterSnowfall)
+The setup script optionally takes the following arguments:
+- `--symlink`: Create symbolic links to the DLL files instead of copying them. This is especially useful for development.
+- `--with-d3d10`: Install the `d3d10{_1}.dll` helper libraries.
+- `--without-dxgi`: Do not install DXVK's DXGI implementation and use the one provided by wine instead.
 
-Your contributions are greatly appreciated!
+Verify that your application uses DXVK instead of wined3d by checking for the presence of the log file `d3d9.log` or `d3d11.log` in the application's directory, or by enabling the HUD (see notes below).
 
-Full credit goes to doitsujin/ドイツ人 (Philip Rebohle) and everyone that have worked on the dxvk project. You can find the original DXVK repository here: [dxvk](https://github.com/doitsujin/dxvk).
-
-
-----
-
-![Badge Language](https://img.shields.io/github/languages/top/pythonlover02/DXVK-Sarek)
-[![Stars](https://img.shields.io/github/stars/pythonlover02/DXVK-Sarek?style=social)](https://github.com/pythonlover02/Proton-Sarek/stargazers)
-[![Static Badge](https://img.shields.io/badge/Avaliable_on-ProtonPlus-blue)](https://github.com/Vysp3r/ProtonPlus)
-
-----
-
-## How to Use
-Please follow the official guide from the [upstream DXVK README](https://github.com/doitsujin/dxvk?tab=readme-ov-file#how-to-use).
-
-Keep in mind that this is a manual installation method, which isn’t the most convenient. An easier approach is to use a Linux game launcher such as Lutris, Heroic, or similar. There you can simply select DXVK-Sarek as the DXVK version (for Wine) or Proton-Sarek (for Proton).
-
-If they’re not available by default, you can easily install them using [ProtonPlus](https://flathub.org/apps/com.vysp3r.ProtonPlus) and [ProtonUpQT](https://flathub.org/apps/net.davidotek.pupgui2).
+In order to remove DXVK from a prefix, run the following command:
+```
+export WINEPREFIX=/path/to/.wine-prefix
+./setup_dxvk.sh uninstall
+```
 
 ## Build instructions
 
-In order to pull in all submodules that are needed for building, clone the repository using the following command/commands:
-
-For Normal DXVK:
-```
-git clone --branch main --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK
-```
-For DXVK with Async Patch:
-```
-git clone --branch async --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK-Async
-```
-
 ### Requirements:
-- [wine 7.1](https://www.winehq.org/) or newer
+- [wine 3.10](https://www.winehq.org/) or newer
 - [Meson](https://mesonbuild.com/) build system (at least version 0.49)
-- [Mingw-w64](https://www.mingw-w64.org) compiler and headers (at least version 10.0)
+- [Mingw-w64](https://www.mingw-w64.org) compiler and headers (at least version 8.0)
 - [glslang](https://github.com/KhronosGroup/glslang) compiler
 
 ### Building DLLs
@@ -77,17 +60,18 @@ ninja install
 ```
 # 64-bit build. For 32-bit builds, replace
 # build-win64.txt with build-win32.txt
-meson setup --cross-file build-win64.txt --buildtype release --prefix /your/dxvk/directory build.w64
+meson --cross-file build-win64.txt --buildtype release --prefix /your/dxvk/directory build.w64
 cd build.w64
 ninja install
 ```
 
 The D3D9, D3D10, D3D11 and DXGI DLLs will be located in `/your/dxvk/directory/bin`. Setup has to be done manually in this case.
 
-### Logs
-When used with Wine, DXVK will print log messages to `stderr`. Additionally, standalone log files can optionally be generated by setting the `DXVK_LOG_PATH` variable, where log files in the given directory will be called `app_d3d11.log`, `app_dxgi.log` etc., where `app` is the name of the game executable.
+### Notes on Vulkan drivers
+Before reporting an issue, please check the [Wiki](https://github.com/doitsujin/dxvk/wiki/Driver-support) page on the current driver status and make sure you run a recent enough driver version for your hardware.
 
-On Windows, log files will be created in the game's working directory by default, which is usually next to the game executable.
+### Online multi-player games
+Manipulation of Direct3D libraries in multi-player games may be considered cheating and can get your account **banned**. This may also apply to single-player games with an embedded or dedicated multiplayer portion. **Use at your own risk.**
 
 ### HUD
 The `DXVK_HUD` environment variable controls a HUD which can display the framerate and some stat counters. It accepts a comma-separated list of the following options:
@@ -105,7 +89,6 @@ The `DXVK_HUD` environment variable controls a HUD which can display the framera
 - `compiler`: Shows shader compiler activity
 - `samplers`: Shows the current number of sampler pairs used *[D3D9 Only]*
 - `scale=x`: Scales the HUD by a factor of `x` (e.g. `1.5`)
-- `opacity=y`: Adjusts the HUD opacity by a factor of `y` (e.g. `0.5`, `1.0` being fully opaque).
 
 Additionally, `DXVK_HUD=1` has the same effect as `DXVK_HUD=devinfo,fps`, and `DXVK_HUD=full` enables all available HUD elements.
 
@@ -125,20 +108,12 @@ The following environment variables can be used to control the cache:
 - `DXVK_STATE_CACHE=0` Disables the state cache.
 - `DXVK_STATE_CACHE_PATH=/some/directory` Specifies a directory where to put the cache files. Defaults to the current working directory of the application.
 
-### Shader compilation
-- `DXVK_ALL_CORES=1`
-When this env var is used, it overwrites the default way we assign cores to compile shaders. By default, DXVK-Sarek compiles D3D shaders at draw time, using half the available CPU cores and leaving the rest free for the game. The problem with this is that on CPUs with weak per core performance which rely on using all cores for good performance might experience longer loading times and a worse overall experience. When `DXVK_ALL_CORES=1` is set, DXVK-Sarek uses all available cores for both the game and shader compilation. This might cause the game to become unresponsive at times while compiling shaders. This non-default behavior may improve, worsen, or have no effect on performance, depending on the system. In the case you will use this env var i will recommend using it with the Async build.
-
-- `ASYNC_DRAW_CALL_THRESHOLD=value>=1` (For the Async Build only)
-This env var allows the user to configure how many draw calls a shader must be involved in before it's eligible for asynchronous pipeline compilation. This helps balance compilation latency and runtime performance by prioritizing commonly used shaders. The value should be bigger or equal than `1`.
-
 ### Debugging
 The following environment variables can be used for **debugging** purposes.
 - `VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation` Enables Vulkan debug layers. Highly recommended for troubleshooting rendering issues and driver crashes. Requires the Vulkan SDK to be installed on the host system.
 - `DXVK_LOG_LEVEL=none|error|warn|info|debug` Controls message logging.
 - `DXVK_LOG_PATH=/some/directory` Changes path where log files are stored. Set to `none` to disable log file creation entirely, without disabling logging.
 - `DXVK_CONFIG_FILE=/xxx/dxvk.conf` Sets path to the configuration file.
-- `DXVK_CONFIG="dxgi.hideAmdGpu = True; dxgi.syncInterval = 0"` Can be used to set config variables through the environment instead of a configuration file using the same syntax. ; is used as a seperator.
 - `DXVK_PERF_EVENTS=1` Enables use of the VK_EXT_debug_utils extension for translating performance event markers.
 
 ## Troubleshooting
@@ -155,7 +130,7 @@ update-alternatives --config x86_64-w64-mingw32-g++
 update-alternatives --config i686-w64-mingw32-gcc
 update-alternatives --config i686-w64-mingw32-g++
 ```
-For non debian based distros, make sure that your mingw-w64-gcc cross compiler
+For non debian based distros, make sure that your mingw-w64-gcc cross compiler 
 does have `--enable-threads=posix` enabled during configure. If your distro does
 ship its mingw-w64-gcc binary with `--enable-threads=win32` you might have to
-recompile locally or open a bug at your distro's bugtracker to ask for it.
+recompile locally or open a bug at your distro's bugtracker to ask for it. 

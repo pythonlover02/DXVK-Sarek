@@ -40,20 +40,11 @@ namespace dxvk {
     this->maxDeviceMemory = VkDeviceSize(config.getOption<int32_t>("dxgi.maxDeviceMemory", 0)) << 20;
     this->maxSharedMemory = VkDeviceSize(config.getOption<int32_t>("dxgi.maxSharedMemory", 0)) << 20;
 
-    // Expose Nvidia GPUs properly if NvAPI is enabled in environment
-    this->hideNvidiaGpu = env::getEnvVar("DXVK_ENABLE_NVAPI") != "1";
-    Tristate hideNvidiaGpuOption = config.getOption<Tristate>("dxgi.hideNvidiaGpu", Tristate::Auto);
-    if (hideNvidiaGpuOption == Tristate::Auto && !config.getOption<bool>("dxgi.nvapiHack", true)) {
-      Logger::warn("dxgi.nvapiHack is deprecated, please set dxgi.hideNvidiaGpu instead.");
-      hideNvidiaGpuOption = Tristate::False;
-    }
-    applyTristate(this->hideNvidiaGpu, hideNvidiaGpuOption);
-
-    // Expose AMD and Intel GPU by default, unless a config override is active.
-    // Implement as a tristate so that we have the option to introduce similar
-    // logic to Nvidia later, if necessary.
-    this->hideAmdGpu = config.getOption<Tristate>("dxgi.hideAmdGpu", Tristate::Auto) == Tristate::True;
-    this->hideIntelGpu = config.getOption<Tristate>("dxgi.hideIntelGpu", Tristate::Auto) == Tristate::True;    
+    // Force nvapiHack to be disabled if NvAPI is enabled in environment
+    if (env::getEnvVar("DXVK_ENABLE_NVAPI") == "1")
+      this->nvapiHack = false;
+    else
+      this->nvapiHack = config.getOption<bool>("dxgi.nvapiHack", true);
   }
   
 }

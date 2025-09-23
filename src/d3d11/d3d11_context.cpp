@@ -560,15 +560,10 @@ namespace dxvk {
     const UINT                              Values[4]) {
     D3D10DeviceLock lock = LockContext();
 
-    if (!pUnorderedAccessView)
-      return;
-
-    Com<ID3D11UnorderedAccessView> qiUav;
+    auto uav = static_cast<D3D11UnorderedAccessView*>(pUnorderedAccessView);
     
-    if (FAILED(pUnorderedAccessView->QueryInterface(IID_PPV_ARGS(&qiUav))))
+    if (!uav)
       return;
-
-    auto uav = static_cast<D3D11UnorderedAccessView*>(qiUav.ptr());
     
     // Gather UAV format info. We'll use this to determine
     // whether we need to create a temporary view or not.
@@ -884,9 +879,9 @@ namespace dxvk {
 
     // Clear all the rectangles that are specified
     for (uint32_t i = 0; i < NumRects || i < 1; i++) {
-      if (NumRects) {
+      if (pRect) {
         if (pRect[i].left >= pRect[i].right
-         || pRect[i].top >= pRect[i].bottom)
+        || pRect[i].top >= pRect[i].bottom)
           continue;
       }
       
@@ -894,7 +889,7 @@ namespace dxvk {
         VkDeviceSize offset = 0;
         VkDeviceSize length = bufView->info().rangeLength / formatInfo->elementSize;
 
-        if (NumRects) {
+        if (pRect) {
           offset = pRect[i].left;
           length = pRect[i].right - pRect[i].left;
         }
@@ -917,7 +912,7 @@ namespace dxvk {
         VkOffset3D offset = { 0, 0, 0 };
         VkExtent3D extent = imgView->mipLevelExtent(0);
 
-        if (NumRects) {
+        if (pRect) {
           offset = { pRect[i].left, pRect[i].top, 0 };
           extent = {
             uint32_t(pRect[i].right - pRect[i].left),
@@ -2530,11 +2525,7 @@ namespace dxvk {
       m_state.om.dsState = depthStencilState;
       ApplyDepthStencilState();
     }
-
-    // The D3D11 runtime only appears to store the low 8 bits,
-    // and some games rely on this behaviour. Do the same here.
-    StencilRef &= 0xFF;
-
+    
     if (m_state.om.stencilRef != StencilRef) {
       m_state.om.stencilRef = StencilRef;
       ApplyStencilRef();
@@ -2647,17 +2638,6 @@ namespace dxvk {
     if (unlikely(NumViewports > m_state.rs.viewports.size()))
       return;
     
-    for (uint32_t i = 0; i < NumViewports; i++) {
-      const D3D11_VIEWPORT& vp = pViewports[i];
-
-      bool valid = vp.Width >= 0.0f && vp.Height >= 0.0f
-                && vp.MinDepth >= 0.0f && vp.MaxDepth <= 1.0f
-                && vp.MinDepth <= vp.MaxDepth;
-
-      if (!valid)
-        return;
-    }
-      
     bool dirty = m_state.rs.numViewports != NumViewports;
     m_state.rs.numViewports = NumViewports;
     
@@ -3879,12 +3859,12 @@ namespace dxvk {
     for (uint32_t i = 0; i < NumBuffers; i++) {
       auto newBuffer = static_cast<D3D11Buffer*>(ppConstantBuffers[i]);
       
-      uint32_t constantCount = newBuffer
-        ? std::min(newBuffer->Desc()->ByteWidth / 16, UINT(D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT))
-        : 0u;
+      UINT constantCount = 0;
+      
+      if (likely(newBuffer != nullptr))
+        constantCount = std::min(newBuffer->Desc()->ByteWidth / 16, UINT(D3D11_REQ_CONSTANT_BUFFER_ELEMENT_COUNT));
       
       if (Bindings[StartSlot + i].buffer         != newBuffer
-       || Bindings[StartSlot + i].constantOffset != 0
        || Bindings[StartSlot + i].constantCount  != constantCount) {
         Bindings[StartSlot + i].buffer         = newBuffer;
         Bindings[StartSlot + i].constantOffset = 0;

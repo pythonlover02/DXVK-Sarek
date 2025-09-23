@@ -1,6 +1,0 @@
-[submodule "include/spirv"]
-	path = include/spirv
-	url = https://github.com/KhronosGroup/SPIRV-Headers.git
-[submodule "include/vulkan"]
-	path = include/vulkan
-	url = https://github.com/KhronosGroup/Vulkan-Headers.git

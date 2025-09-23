@@ -121,13 +121,10 @@ namespace dxvk {
      || InterfaceName == __uuidof(ID3D10Device1))
       hr = S_OK;
 
-    // Windows drivers return something along the lines of 32.0.xxxxx.yyyy,
-    // so just be conservative here and return a high number. We cannot
-    // reconstruct meaningful UMD versions from Vulkan driver versions.
-    if (SUCCEEDED(hr) && pUMDVersion) {
-      pUMDVersion->HighPart = 0x00200000u;
-      pUMDVersion->LowPart  = 0xffffffffu;
-    }
+    // We can't really reconstruct the version numbers
+    // returned by Windows drivers from Vulkan data
+    if (SUCCEEDED(hr) && pUMDVersion)
+      pUMDVersion->QuadPart = ~0ull;
 
     if (FAILED(hr)) {
       Logger::err("DXGI: CheckInterfaceSupport: Unsupported interface");
@@ -261,31 +258,12 @@ namespace dxvk {
     if (!options->customDeviceDesc.empty())
       description = options->customDeviceDesc.c_str();
     
-    if (options->customVendorId < 0) {
-      uint16_t fallbackVendor = 0xdead;
-      uint16_t fallbackDevice = 0xbeef;
-
-      if (!options->hideAmdGpu) {
-        // AMD RX 6700XT
-        fallbackVendor = uint16_t(DxvkGpuVendor::Amd);
-        fallbackDevice = 0x73df;
-      } else if (!options->hideNvidiaGpu) {
-        // Nvidia RTX 3060
-        fallbackVendor = uint16_t(DxvkGpuVendor::Nvidia);
-        fallbackDevice = 0x2487;
-      }
-
-      bool hideGpu = (deviceProp.vendorID == uint16_t(DxvkGpuVendor::Nvidia) && options->hideNvidiaGpu)
-                  || (deviceProp.vendorID == uint16_t(DxvkGpuVendor::Amd) && options->hideAmdGpu)
-                  || (deviceProp.vendorID == uint16_t(DxvkGpuVendor::Intel) && options->hideIntelGpu);
-      if (hideGpu) {
-        deviceProp.vendorID = fallbackVendor;
-        
-        if (options->customDeviceId < 0)
-          deviceProp.deviceID = fallbackDevice;
-
-        Logger::info(str::format("DXGI: Hiding actual GPU, reporting vendor ID 0x", std::hex, deviceProp.vendorID, ", device ID ", deviceProp.deviceID));
-      }
+    // XXX nvapi workaround for a lot of Unreal Engine 4 games
+    if (options->customVendorId < 0 && options->customDeviceId < 0
+     && options->nvapiHack && deviceProp.vendorID == uint16_t(DxvkGpuVendor::Nvidia)) {
+      Logger::info("DXGI: NvAPI workaround enabled, reporting AMD GPU");
+      deviceProp.vendorID = uint16_t(DxvkGpuVendor::Amd);
+      deviceProp.deviceID = 0x67df; /* RX 480 */
     }
     
     // Convert device name

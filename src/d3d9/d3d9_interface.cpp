@@ -3,7 +3,6 @@
 #include "d3d9_monitor.h"
 #include "d3d9_caps.h"
 #include "d3d9_device.h"
-#include "d3d9_bridge.h"
 
 #include <algorithm>
 
@@ -11,7 +10,6 @@ namespace dxvk {
 
   D3D9InterfaceEx::D3D9InterfaceEx(bool bExtended)
     : m_instance    ( new DxvkInstance() )
-    , m_d3d8Bridge  ( this )
     , m_extended    ( bExtended ) 
     , m_d3d9Options ( nullptr, m_instance->config() ) {
     // D3D9 doesn't enumerate adapters like physical adapters...
@@ -58,9 +56,6 @@ namespace dxvk {
       Logger::info("Process set as DPI aware");
       SetProcessDPIAware();
     }
-
-    if (unlikely(m_d3d9Options.shaderModel == 0))
-      Logger::warn("D3D9InterfaceEx: WARNING! Fixed-function exclusive mode is enabled.");
   }
 
 
@@ -74,11 +69,6 @@ namespace dxvk {
      || riid == __uuidof(IDirect3D9)
      || (m_extended && riid == __uuidof(IDirect3D9Ex))) {
       *ppvObject = ref(this);
-      return S_OK;
-    }
-
-    if (riid == __uuidof(IDxvkD3D8InterfaceBridge)) {
-      *ppvObject = ref(&m_d3d8Bridge);
       return S_OK;
     }
 
@@ -333,12 +323,6 @@ namespace dxvk {
 
     if (ppReturnedDeviceInterface == nullptr
     || pPresentationParameters    == nullptr)
-      return D3DERR_INVALIDCALL;
-
-    // Creating a device with D3DCREATE_PUREDEVICE only works in conjunction
-    // with D3DCREATE_HARDWARE_VERTEXPROCESSING on native drivers.
-    if (unlikely(BehaviorFlags & D3DCREATE_PUREDEVICE &&
-               !(BehaviorFlags & D3DCREATE_HARDWARE_VERTEXPROCESSING)))
       return D3DERR_INVALIDCALL;
 
     auto* adapter = GetAdapter(Adapter);

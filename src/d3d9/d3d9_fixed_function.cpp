@@ -15,7 +15,6 @@ namespace dxvk {
 
   D3D9FixedFunctionOptions::D3D9FixedFunctionOptions(const D3D9Options* options) {
     invariantPosition = options->invariantPosition;
-    drefScaling = options->drefScaling;
   }
 
   uint32_t DoFixedFunctionFog(SpirvModule& spvModule, const D3D9FogContext& fogCtx) {
@@ -597,9 +596,6 @@ namespace dxvk {
 
     void alphaTestPS();
 
-    uint32_t emitMatrixTimesVector(uint32_t rowCount, uint32_t colCount, uint32_t matrix, uint32_t vector);
-    uint32_t emitVectorTimesMatrix(uint32_t rowCount, uint32_t colCount, uint32_t vector, uint32_t matrix);
-
     bool isVS() { return m_programType == DxsoProgramType::VertexShader; }
     bool isPS() { return !isVS(); }
 
@@ -809,8 +805,8 @@ namespace dxvk {
     if (!m_vsKey.Data.Contents.HasPositionT) {
       if (m_vsKey.Data.Contents.VertexBlendMode == D3D9FF_VertexBlendMode_Normal) {
         uint32_t blendWeightRemaining = m_module.constf32(1);
-        uint32_t vtxSum               = 0;
-        uint32_t nrmSum               = 0;
+        uint32_t vtxSum               = m_module.constvec4f32(0, 0, 0, 0);
+        uint32_t nrmSum               = m_module.constvec3f32(0, 0, 0);
 
         for (uint32_t i = 0; i <= m_vsKey.Data.Contents.VertexBlendCount; i++) {
           std::array<uint32_t, 2> arrayIndices;
@@ -837,7 +833,7 @@ namespace dxvk {
           }
           nrmMtx = m_module.opCompositeConstruct(m_mat3Type, mtxIndices.size(), mtxIndices.data());
 
-          uint32_t vtxResult = emitVectorTimesMatrix(4, 4, vtx, worldview);
+          uint32_t vtxResult = m_module.opVectorTimesMatrix(m_vec4Type, vtx, worldview);
           uint32_t nrmResult = m_module.opVectorTimesMatrix(m_vec3Type, normal, nrmMtx);
 
           uint32_t weight;
@@ -848,26 +844,18 @@ namespace dxvk {
           else
             weight = blendWeightRemaining;
 
-          std::array<uint32_t, 4> weightIds = { weight, weight, weight, weight };
-          uint32_t weightVec4 = m_module.opCompositeConstruct(m_vec4Type, 4, weightIds.data());
-          uint32_t weightVec3 = m_module.opCompositeConstruct(m_vec3Type, 3, weightIds.data());
+          vtxResult = m_module.opVectorTimesScalar(m_vec4Type, vtxResult, weight);
+          nrmResult = m_module.opVectorTimesScalar(m_vec3Type, nrmResult, weight);
 
-          vtxSum = vtxSum
-            ? m_module.opFFma(m_vec4Type, vtxResult, weightVec4, vtxSum)
-            : m_module.opFMul(m_vec4Type, vtxResult, weightVec4);
-
-          nrmSum = nrmSum
-            ? m_module.opFFma(m_vec3Type, nrmResult, weightVec3, nrmSum)
-            : m_module.opFMul(m_vec3Type, nrmResult, weightVec3);
-
-          m_module.decorate(vtxSum, spv::DecorationNoContraction);
+          vtxSum = m_module.opFAdd(m_vec4Type, vtxSum, vtxResult);
+          nrmSum = m_module.opFAdd(m_vec3Type, nrmSum, nrmResult);
         }
 
         vtx    = vtxSum;
         normal = nrmSum;
       }
       else {
-        vtx = emitVectorTimesMatrix(4, 4, vtx, m_vs.constants.worldview);
+        vtx = m_module.opVectorTimesMatrix(m_vec4Type, vtx, m_vs.constants.worldview);
 
         uint32_t nrmMtx = m_vs.constants.normal;
 
@@ -895,7 +883,7 @@ namespace dxvk {
         normal = m_module.opSelect(m_vec3Type, isZeroNormal3, m_module.constvec3f32(0.0f, 0.0f, 0.0f), normal);
       }
       
-      gl_Position = emitVectorTimesMatrix(4, 4, vtx, m_vs.constants.proj);
+      gl_Position = m_module.opVectorTimesMatrix(m_vec4Type, vtx, m_vs.constants.proj);
     } else {
       gl_Position = m_module.opFMul(m_vec4Type, gl_Position, m_vs.constants.invExtent);
       gl_Position = m_module.opFAdd(m_vec4Type, gl_Position, m_vs.constants.invOffset);
@@ -1599,11 +1587,6 @@ namespace dxvk {
         return coords;
       };
 
-      auto ScalarReplicate = [&](uint32_t reg) {
-        std::array<uint32_t, 4> replicant = { reg, reg, reg, reg };
-        return m_module.opCompositeConstruct(m_vec4Type, replicant.size(), replicant.data());
-      };
-
       auto GetTexture = [&]() {
         if (!processedTexture) {
           SpirvImageOperands imageOperands;
@@ -1623,16 +1606,21 @@ namespace dxvk {
           texcoord = m_module.opVectorShuffle(texcoord_t,
             texcoord, texcoord, texcoordCnt, indices.data());
 
-          bool shouldProject = m_fsKey.Stages[i].Contents.Projected;
+          uint32_t projIdx = m_fsKey.Stages[i].Contents.ProjectedCount;
+          if (projIdx == 0)
+            projIdx = texcoordCnt;
+          else
+            projIdx--;
+
           uint32_t projValue = 0;
 
-          if (shouldProject) {
-            // Always use w, the vertex shader puts the correct value there.
-            const uint32_t projIdx = 3;
+          if (m_fsKey.Stages[i].Contents.Projected) {
             projValue = m_module.opCompositeExtract(m_floatType, m_ps.in.TEXCOORD[i], 1, &projIdx);
             uint32_t insertIdx = texcoordCnt - 1;
             texcoord = m_module.opCompositeInsert(texcoord_t, projValue, texcoord, 1, &insertIdx);
           }
+
+          bool shouldProject = m_fsKey.Stages[i].Contents.Projected;
 
           if (i != 0 && (
             m_fsKey.Stages[i - 1].Contents.ColorOp == D3DTOP_BUMPENVMAP ||
@@ -1647,23 +1635,10 @@ namespace dxvk {
             shouldProject = false;
           }
 
-          if (unlikely(stage.SampleDref)) {
-            uint32_t component = 2;
-            uint32_t reference = m_module.opCompositeExtract(m_floatType, texcoord, 1, &component);
-
-            // [D3D8] Scale Dref to [0..(2^N - 1)] for D24S8 and D16 if Dref scaling is enabled
-            if (m_options.drefScaling) {
-              uint32_t maxDref = m_module.constf32(1.0f / (float(1 << m_options.drefScaling) - 1.0f));
-              reference        = m_module.opFMul(m_floatType, reference, maxDref);
-            }
-
-            texture = m_module.opImageSampleDrefImplicitLod(m_floatType, imageVarId, texcoord, reference, imageOperands);
-            texture = ScalarReplicate(texture);
-          } else if (shouldProject) {
+          if (shouldProject)
             texture = m_module.opImageSampleProjImplicitLod(m_vec4Type, imageVarId, texcoord, imageOperands);
-          } else {
+          else
             texture = m_module.opImageSampleImplicitLod(m_vec4Type, imageVarId, texcoord, imageOperands);
-          }
 
           if (i != 0 && m_fsKey.Stages[i - 1].Contents.ColorOp == D3DTOP_BUMPENVMAPLUMINANCE) {
             uint32_t index = m_module.constu32(D3D9SharedPSStages_Count * (i - 1) + D3D9SharedPSStages_BumpEnvLScale);
@@ -1695,6 +1670,11 @@ namespace dxvk {
         processedTexture = true;
 
         return texture;
+      };
+
+      auto ScalarReplicate = [&](uint32_t reg) {
+        std::array<uint32_t, 4> replicant = { reg, reg, reg, reg };
+        return m_module.opCompositeConstruct(m_vec4Type, replicant.size(), replicant.data());
       };
 
       auto AlphaReplicate = [&](uint32_t reg) {
@@ -2085,11 +2065,6 @@ namespace dxvk {
           dimensionality = spv::Dim2D;
           sampler.texcoordCnt = 2;
           viewType       = VK_IMAGE_VIEW_TYPE_2D;
-
-          // Z coordinate for Dref sampling
-          if (m_fsKey.Stages[i].Contents.SampleDref)
-            sampler.texcoordCnt++;
-
           break;
         case D3DRTYPE_CUBETEXTURE:
           dimensionality = spv::DimCube;
@@ -2162,7 +2137,7 @@ namespace dxvk {
 
 
   void D3D9FFShaderCompiler::emitVsClipping(uint32_t vtx) {
-    uint32_t worldPos = emitMatrixTimesVector(4, 4, m_vs.constants.inverseView, vtx);
+    uint32_t worldPos = m_module.opMatrixTimesVector(m_vec4Type, m_vs.constants.inverseView, vtx);
 
     uint32_t clipPlaneCountId = m_module.constu32(caps::MaxClipPlanes);
     
@@ -2330,38 +2305,6 @@ namespace dxvk {
 
     // end if (alpha_test)
     m_module.opLabel(atestSkipLabel);
-  }
-
-
-  uint32_t D3D9FFShaderCompiler::emitMatrixTimesVector(uint32_t rowCount, uint32_t colCount, uint32_t matrix, uint32_t vector) {
-    uint32_t f32Type = m_module.defFloatType(32);
-    uint32_t vecType = m_module.defVectorType(f32Type, rowCount);
-    uint32_t accum = 0;
-
-    for (uint32_t i = 0; i < colCount; i++) {
-      std::array<uint32_t, 4> indices = { i, i, i, i };
-
-      uint32_t a = m_module.opVectorShuffle(vecType, vector, vector, rowCount, indices.data());
-      uint32_t b = m_module.opCompositeExtract(vecType, matrix, 1, &i);
-
-      accum = accum
-        ? m_module.opFFma(vecType, a, b, accum)
-        : m_module.opFMul(vecType, a, b);
-
-      m_module.decorate(accum, spv::DecorationNoContraction);
-    }
-
-    return accum;
-  }
-
-
-  uint32_t D3D9FFShaderCompiler::emitVectorTimesMatrix(uint32_t rowCount, uint32_t colCount, uint32_t vector, uint32_t matrix) {
-    uint32_t f32Type = m_module.defFloatType(32);
-    uint32_t vecType = m_module.defVectorType(f32Type, colCount);
-    uint32_t matType = m_module.defMatrixType(vecType, rowCount);
-
-    matrix = m_module.opTranspose(matType, matrix);
-    return emitMatrixTimesVector(colCount, rowCount, matrix, vector);
   }
 
 

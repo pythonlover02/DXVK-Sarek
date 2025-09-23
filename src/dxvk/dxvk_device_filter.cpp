@@ -25,7 +25,9 @@ namespace dxvk {
     if (m_flags.test(DxvkDeviceFilterFlag::MatchDeviceName)) {
       if (std::string(properties.deviceName).find(m_matchDeviceName) == std::string::npos)
         return false;
-    } else if (m_flags.test(DxvkDeviceFilterFlag::SkipCpuDevices)) {
+    }
+
+    if (m_flags.test(DxvkDeviceFilterFlag::SkipCpuDevices)) {
       if (properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU) {
         Logger::warn(str::format("Skipping CPU adapter: ", properties.deviceName));
         return false;

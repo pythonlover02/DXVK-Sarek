@@ -38,7 +38,8 @@ namespace dxvk {
       return &m_desc;
     }
     
-    void BindToContext(DxvkContext* ctx);
+    void BindToContext(
+      const Rc<DxvkContext>&  ctx);
     
     D3D10RasterizerState* GetD3D10Iface() {
       return &m_d3d10;

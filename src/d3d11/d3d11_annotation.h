@@ -16,13 +16,13 @@ namespace dxvk {
     ~D3D11UserDefinedAnnotation();
 
     ULONG STDMETHODCALLTYPE AddRef();
-    
+
     ULONG STDMETHODCALLTYPE Release();
-    
+
     HRESULT STDMETHODCALLTYPE QueryInterface(
             REFIID                  riid,
             void**                  ppvObject);
-    
+
     INT STDMETHODCALLTYPE BeginEvent(
             D3DCOLOR                Color,
             LPCWSTR                 Name);
@@ -37,7 +37,7 @@ namespace dxvk {
 
   private:
 
-    D3D11DeviceContext*  m_container = nullptr;
+    D3D11DeviceContext*  m_container;
 
     // Stack depth for non-finalized BeginEvent calls
     int32_t m_eventDepth;

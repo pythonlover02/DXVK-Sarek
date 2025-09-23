@@ -37,8 +37,9 @@ namespace dxvk {
       RegisterUserDefinedAnnotation<true>(this);
   }
 
-  D3D11UserDefinedAnnotation::D3D11UserDefinedAnnotation(const D3D11UserDefinedAnnotation&)
-  {
+  D3D11UserDefinedAnnotation::D3D11UserDefinedAnnotation(const D3D11UserDefinedAnnotation& other)
+  : m_container(other.m_container),
+    m_eventDepth(other.m_eventDepth) {
     if (m_container && m_container->IsAnnotationEnabled())
       RegisterUserDefinedAnnotation<true>(this);
   }
@@ -53,18 +54,18 @@ namespace dxvk {
     return m_container->AddRef();
   }
 
-  
+
   ULONG STDMETHODCALLTYPE D3D11UserDefinedAnnotation::Release() {
     return m_container->Release();
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11UserDefinedAnnotation::QueryInterface(
           REFIID                  riid,
           void**                  ppvObject) {
     return m_container->QueryInterface(riid, ppvObject);
   }
-  
+
 
   INT STDMETHODCALLTYPE D3D11UserDefinedAnnotation::BeginEvent(
           D3DCOLOR                Color,

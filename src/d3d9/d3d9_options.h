@@ -34,7 +34,7 @@ namespace dxvk {
     int32_t maxFrameRate;
 
     /// Set the max shader model the device can support in the caps.
-    uint32_t shaderModel;
+    int32_t shaderModel;
 
     /// Whether or not managed resources should stay in memory until unlock, or until manually evicted.
     bool evictManagedOnUnlock;
@@ -149,8 +149,8 @@ namespace dxvk {
     /// misc. imprecision on some vendors
     bool alphaTestWiggleRoom;
 
-    /// Cached dynamic buffers: Maps all buffers in cached memory.
-    bool cachedDynamicBuffers;
+    /// Apitrace mode: Maps all buffers in cached memory.
+    bool apitraceMode;
 
     /// Use device local memory for constant buffers.
     bool deviceLocalConstantBuffers;
@@ -160,9 +160,6 @@ namespace dxvk {
 
     /// Don't use non seamless cube maps
     bool seamlessCubes;
-
-    /// Enable depth texcoord Z (Dref) scaling (D3D8 quirk)
-    int32_t drefScaling;
   };
 
 }

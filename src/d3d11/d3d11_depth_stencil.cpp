@@ -37,7 +37,7 @@ namespace dxvk {
 
     if (riid == __uuidof(ID3D10DeviceChild)
      || riid == __uuidof(ID3D10DepthStencilState)) {
-      *ppvObject = ref(&m_d3d10);
+      *ppvObject = ref(this);
       return S_OK;
     }
     
@@ -52,7 +52,7 @@ namespace dxvk {
   }
   
   
-  void D3D11DepthStencilState::BindToContext(DxvkContext* ctx) {
+  void D3D11DepthStencilState::BindToContext(const Rc<DxvkContext>& ctx) {
     ctx->setDepthStencilState(m_state);
   }
   
