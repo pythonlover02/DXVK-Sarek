@@ -9,48 +9,48 @@
 namespace dxvk {
 
   class DxvkImageView;
-  
+
   /**
    * \brief Image create info
-   * 
+   *
    * The properties of an image that are
    * passed to \ref DxvkDevice::createImage
    */
   struct DxvkImageCreateInfo {
     /// Image dimension
     VkImageType type;
-    
+
     /// Pixel format
     VkFormat format;
-    
+
     /// Flags
     VkImageCreateFlags flags;
-    
+
     /// Sample count for MSAA
     VkSampleCountFlagBits sampleCount;
-    
+
     /// Image size, in texels
     VkExtent3D extent;
-    
+
     /// Number of image array layers
     uint32_t numLayers;
-    
+
     /// Number of mip levels
     uint32_t mipLevels;
-    
+
     /// Image usage flags
     VkImageUsageFlags usage;
-    
+
     /// Pipeline stages that can access
     /// the contents of the image
     VkPipelineStageFlags stages;
-    
+
     /// Allowed access pattern
     VkAccessFlags access;
-    
+
     /// Image tiling mode
     VkImageTiling tiling;
-    
+
     /// Common image layout
     VkImageLayout layout;
 
@@ -69,32 +69,32 @@ namespace dxvk {
     // Shared handle info
     DxvkSharedHandleInfo sharing;
   };
-  
-  
+
+
   /**
    * \brief Image create info
-   * 
+   *
    * The properties of an image view that are
    * passed to \ref DxvkDevice::createImageView
    */
   struct DxvkImageViewCreateInfo {
     /// Image view dimension
     VkImageViewType type = VK_IMAGE_VIEW_TYPE_2D;
-    
+
     /// Pixel format
     VkFormat format = VK_FORMAT_UNDEFINED;
 
     /// Image view usage flags
     VkImageUsageFlags usage = 0;
-    
+
     /// Subresources to use in the view
     VkImageAspectFlags aspect = 0;
-    
+
     uint32_t minLevel  = 0;
     uint32_t numLevels = 0;
     uint32_t minLayer  = 0;
     uint32_t numLayers = 0;
-    
+
     /// Component mapping. Defaults to identity.
     VkComponentMapping swizzle = {
       VK_COMPONENT_SWIZZLE_IDENTITY,
@@ -112,11 +112,11 @@ namespace dxvk {
     VkImage     image = VK_NULL_HANDLE;
     DxvkMemory  memory;
   };
-  
-  
+
+
   /**
    * \brief DXVK image
-   * 
+   *
    * An image resource consisting of various subresources.
    * Can be accessed by the host if allocated on a suitable
    * memory type and if created with the linear tiling option.
@@ -125,16 +125,16 @@ namespace dxvk {
     friend class DxvkContext;
     friend class DxvkImageView;
   public:
-    
+
     DxvkImage(
       const DxvkDevice*           device,
       const DxvkImageCreateInfo&  createInfo,
             DxvkMemoryAllocator&  memAlloc,
             VkMemoryPropertyFlags memFlags);
-    
+
     /**
      * \brief Creates image object from existing image
-     * 
+     *
      * This can be used to create an image object for
      * an implementation-managed image. Make sure to
      * provide the correct image properties, since
@@ -144,38 +144,38 @@ namespace dxvk {
       const DxvkDevice*           device,
       const DxvkImageCreateInfo&  info,
             VkImage               image);
-    
+
     /**
      * \brief Destroys image
-     * 
+     *
      * If this is an implementation-managed image,
      * this will not destroy the Vulkan image.
      */
     ~DxvkImage();
-    
+
     /**
      * \brief Image handle
-     * 
+     *
      * Internal use only.
      * \returns Image handle
      */
     VkImage handle() const {
       return m_image.image;
     }
-    
+
     /**
      * \brief Image properties
-     * 
+     *
      * The image create info structure.
      * \returns Image properties
      */
     const DxvkImageCreateInfo& info() const {
       return m_info;
     }
-    
+
     /**
      * \brief Memory type flags
-     * 
+     *
      * Use this to determine whether a
      * buffer is mapped to host memory.
      * \returns Vulkan memory flags
@@ -183,10 +183,10 @@ namespace dxvk {
     VkMemoryPropertyFlags memFlags() const {
       return m_memFlags;
     }
-    
+
     /**
      * \brief Map pointer
-     * 
+     *
      * If the image has been created on a host-visible
      * memory type, its memory is mapped and can be
      * accessed by the host.
@@ -196,7 +196,7 @@ namespace dxvk {
     void* mapPtr(VkDeviceSize offset) const {
       return m_image.memory.mapPtr(offset);
     }
-    
+
     /**
      * \brief Image format info
      * \returns Image format info
@@ -204,30 +204,30 @@ namespace dxvk {
     const DxvkFormatInfo* formatInfo() const {
       return imageFormatInfo(m_info.format);
     }
-    
+
     /**
      * \brief Size of a mipmap level
-     * 
+     *
      * \param [in] level Mip level
      * \returns Size of that level
      */
     VkExtent3D mipLevelExtent(uint32_t level) const {
       return util::computeMipLevelExtent(m_info.extent, level);
     }
-    
+
     /**
      * \brief Size of a mipmap level
-     * 
+     *
      * \param [in] level Mip level
      * \returns Size of that level
      */
     VkExtent3D mipLevelExtent(uint32_t level, VkImageAspectFlags aspect) const {
       return util::computeMipLevelExtent(m_info.extent, level, m_info.format, aspect);
     }
-    
+
     /**
      * \brief Queries memory layout of a subresource
-     * 
+     *
      * Can be used to retrieve the exact pointer to a
      * subresource of a mapped image with linear tiling.
      * \param [in] subresource The image subresource
@@ -241,10 +241,10 @@ namespace dxvk {
         &subresource, &result);
       return result;
     }
-    
+
     /**
      * \brief Picks a compatible layout
-     * 
+     *
      * Under some circumstances, we have to return
      * a different layout than the one requested.
      * \param [in] layout The image layout
@@ -265,7 +265,7 @@ namespace dxvk {
 
     /**
      * \brief Checks whether a subresource is entirely covered
-     * 
+     *
      * This can be used to determine whether an image can or
      * should be initialized with \c VK_IMAGE_LAYOUT_UNDEFINED.
      * \param [in] subresource The image subresource
@@ -280,7 +280,7 @@ namespace dxvk {
 
     /**
      * \brief Checks view format compatibility
-     * 
+     *
      * If this returns true, a view with the given
      * format can be safely created for this image.
      * \param [in] format The format to check
@@ -295,7 +295,7 @@ namespace dxvk {
 
     /**
      * \brief Memory size
-     * 
+     *
      * \returns The memory size of the image
      */
     VkDeviceSize memSize() const {
@@ -304,7 +304,7 @@ namespace dxvk {
 
     /**
      * \brief Get full subresource range of the image
-     * 
+     *
      * \returns Resource range of the whole image
      */
     VkImageSubresourceRange getAvailableSubresources() const {
@@ -322,9 +322,9 @@ namespace dxvk {
      * \returns The shared handle with the type given by DxvkSharedHandleInfo::type
      */
     HANDLE sharedHandle() const;
-    
+
   private:
-    
+
     Rc<vk::DeviceFn>      m_vkd;
     const DxvkDevice*     m_device;
     DxvkImageCreateInfo   m_info;
@@ -333,12 +333,12 @@ namespace dxvk {
     bool m_shared = false;
 
     small_vector<VkFormat, 4> m_viewFormats;
-    
+
     bool canShareImage(const VkImageCreateInfo&  createInfo, const DxvkSharedHandleInfo& sharingInfo) const;
 
   };
-  
-  
+
+
   /**
    * \brief DXVK image view
    */
@@ -346,17 +346,17 @@ namespace dxvk {
     friend class DxvkImage;
     constexpr static uint32_t ViewCount = VK_IMAGE_VIEW_TYPE_CUBE_ARRAY + 1;
   public:
-    
+
     DxvkImageView(
       const Rc<vk::DeviceFn>&         vkd,
       const Rc<DxvkImage>&            image,
       const DxvkImageViewCreateInfo&  info);
-    
+
     ~DxvkImageView();
-    
+
     /**
      * \brief Image view handle for the default type
-     * 
+     *
      * The default view type is guaranteed to be
      * supported by the image view, and should be
      * preferred over picking a different type.
@@ -365,10 +365,10 @@ namespace dxvk {
     VkImageView handle() const {
       return handle(m_info.type);
     }
-    
+
     /**
      * \brief Image view handle for a given view type
-     * 
+     *
      * If the view does not support the requested image
      * view type, \c VK_NULL_HANDLE will be returned.
      * \param [in] viewType The requested view type
@@ -379,10 +379,10 @@ namespace dxvk {
         viewType = m_info.type;
       return m_views[viewType];
     }
-    
+
     /**
      * \brief Image view type
-     * 
+     *
      * Convenience method to query the view type
      * in order to check for resource compatibility.
      * \returns Image view type
@@ -390,7 +390,7 @@ namespace dxvk {
     VkImageViewType type() const {
       return m_info.type;
     }
-    
+
     /**
      * \brief Image view properties
      * \returns Image view properties
@@ -398,7 +398,7 @@ namespace dxvk {
     const DxvkImageViewCreateInfo& info() const {
       return m_info;
     }
-    
+
     /**
      * \brief Image handle
      * \returns Image handle
@@ -406,7 +406,7 @@ namespace dxvk {
     VkImage imageHandle() const {
       return m_image->handle();
     }
-    
+
     /**
      * \brief Image properties
      * \returns Image properties
@@ -414,7 +414,7 @@ namespace dxvk {
     const DxvkImageCreateInfo& imageInfo() const {
       return m_image->info();
     }
-    
+
     /**
      * \brief Image object
      * \returns Image object
@@ -422,7 +422,7 @@ namespace dxvk {
     const Rc<DxvkImage>& image() const {
       return m_image;
     }
-    
+
     /**
      * \brief View format info
      * \returns View format info
@@ -430,7 +430,7 @@ namespace dxvk {
     const DxvkFormatInfo* formatInfo() const {
       return imageFormatInfo(m_info.format);
     }
-    
+
     /**
      * \brief Unique object identifier
      *
@@ -445,7 +445,7 @@ namespace dxvk {
 
     /**
      * \brief Mip level size
-     * 
+     *
      * Computes the mip level size relative to
      * the first mip level that the view includes.
      * \param [in] level Mip level
@@ -454,7 +454,7 @@ namespace dxvk {
     VkExtent3D mipLevelExtent(uint32_t level) const {
       return m_image->mipLevelExtent(level + m_info.minLevel, m_info.aspect);
     }
-    
+
     /**
      * \brief View subresource range
      *
@@ -495,7 +495,7 @@ namespace dxvk {
       }
       return result;
     }
-    
+
     /**
      * \brief Picks an image layout
      * \see DxvkImage::pickLayout
@@ -506,7 +506,7 @@ namespace dxvk {
 
     /**
      * \brief Retrieves descriptor info
-     * 
+     *
      * \param [in] type Exact view type
      * \param [in] layout Image layout
      * \returns Image descriptor
@@ -552,11 +552,52 @@ namespace dxvk {
         view->imageSubresources());
     }
 
+    /**
+     * \brief Sets render target usage frame number
+     *
+     * The image view will track internally when
+     * it was last used as a render target. This
+     * info is used for async shader compilation.
+     * \param [in] frameId Frame number
+     */
+    void setRtBindingFrameId(uint32_t frameId) {
+      if (frameId != m_rtBindingFrameId) {
+        if (frameId == m_rtBindingFrameId + 1)
+          m_rtBindingFrameCount += 1;
+        else
+          m_rtBindingFrameCount = 0;
+
+        m_rtBindingFrameId = frameId;
+      }
+    }
+
+    /**
+     * \brief Checks for async pipeline compatibility
+     *
+     * Asynchronous pipeline compilation may be enabled if the
+     * render target has been drawn to in the previous frames.
+     * \param [in] frameId Current frame ID
+     * \returns \c true if async compilation is supported
+     */
+    bool getRtBindingAsyncCompilationCompat() const {
+      // Get configurable draw call threshold from environment variable
+      std::string drawCallThresholdStr = env::getEnvVar("ASYNC_DRAW_CALL_THRESHOLD");
+      uint32_t drawCallThreshold = (!drawCallThresholdStr.empty() && std::stoi(drawCallThresholdStr) >= 1) ? std::stoi(drawCallThresholdStr) : 5;
+      
+      // Log the draw call threshold being used (only once, i dont want to log spam)
+      static bool logged = false;
+      if (!logged) {
+          Logger::info(str::format("DXVK: Async compilation draw call threshold set to ", drawCallThreshold));
+          logged = true;
+      }
+      return m_rtBindingFrameCount >= drawCallThreshold;
+    }
+
   private:
-    
+
     Rc<vk::DeviceFn>  m_vkd;
     Rc<DxvkImage>     m_image;
-    
+
     DxvkImageViewCreateInfo m_info;
     VkImageView             m_views[ViewCount];
 
@@ -564,8 +605,11 @@ namespace dxvk {
 
     static std::atomic<uint64_t> s_cookie;
 
+    uint32_t m_rtBindingFrameId    = 0;
+    uint32_t m_rtBindingFrameCount = 0;
+
     void createView(VkImageViewType type, uint32_t numLayers);
-    
+
   };
-  
+
 }

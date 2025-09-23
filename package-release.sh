@@ -10,8 +10,8 @@ fi
 
 DXVK_VERSION="$1"
 DXVK_SRC_DIR="$(dirname "$(readlink -f "$0")")"
-DXVK_BUILD_DIR="$(realpath "$2")/dxvk-$DXVK_VERSION"
-DXVK_ARCHIVE_PATH="$(realpath "$2")/dxvk-$DXVK_VERSION.tar.gz"
+DXVK_BUILD_DIR="$(realpath "$2")/dxvk-async-$DXVK_VERSION"
+DXVK_ARCHIVE_PATH="$(realpath "$2")/dxvk-async-$DXVK_VERSION.tar.gz"
 
 if [ -e "$DXVK_BUILD_DIR" ]; then
   echo "Build directory $DXVK_BUILD_DIR already exists"

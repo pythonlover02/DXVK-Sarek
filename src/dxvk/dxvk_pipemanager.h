@@ -6,6 +6,7 @@
 
 #include "dxvk_compute.h"
 #include "dxvk_graphics.h"
+#include "dxvk_pipecompiler.h"
 
 namespace dxvk {
 
@@ -13,7 +14,7 @@ namespace dxvk {
 
   /**
    * \brief Pipeline count
-   * 
+   *
    * Stores number of graphics and
    * compute pipelines, individually.
    */
@@ -21,11 +22,11 @@ namespace dxvk {
     uint32_t numGraphicsPipelines;
     uint32_t numComputePipelines;
   };
-  
-  
+
+
   /**
    * \brief Pipeline manager
-   * 
+   *
    * Creates and stores graphics pipelines and compute
    * pipelines for each combination of shaders that is
    * used within the application. This is necessary
@@ -36,16 +37,16 @@ namespace dxvk {
     friend class DxvkComputePipeline;
     friend class DxvkGraphicsPipeline;
   public:
-    
+
     DxvkPipelineManager(
             DxvkDevice*         device,
             DxvkRenderPassPool* passManager);
-    
+
     ~DxvkPipelineManager();
-    
+
     /**
      * \brief Retrieves a compute pipeline object
-     * 
+     *
      * If a pipeline for the given shader stage object
      * already exists, it will be returned. Otherwise,
      * a new pipeline will be created.
@@ -54,10 +55,10 @@ namespace dxvk {
      */
     DxvkComputePipeline* createComputePipeline(
       const DxvkComputePipelineShaders& shaders);
-    
+
     /**
      * \brief Retrieves a graphics pipeline object
-     * 
+     *
      * If a pipeline for the given shader stage objects
      * already exists, it will be returned. Otherwise,
      * a new pipeline will be created.
@@ -66,10 +67,10 @@ namespace dxvk {
      */
     DxvkGraphicsPipeline* createGraphicsPipeline(
       const DxvkGraphicsPipelineShaders& shaders);
-    
+
     /*
      * \brief Registers a shader
-     * 
+     *
      * Starts compiling pipelines asynchronously
      * in case the state cache contains state
      * vectors for this shader.
@@ -77,7 +78,7 @@ namespace dxvk {
      */
     void registerShader(
       const Rc<DxvkShader>&         shader);
-    
+
     /**
      * \brief Retrieves total pipeline count
      * \returns Number of compute/graphics pipelines
@@ -94,28 +95,29 @@ namespace dxvk {
      * \brief Stops async compiler threads
      */
     void stopWorkerThreads() const;
-    
+
   private:
-    
+
     DxvkDevice*               m_device;
     Rc<DxvkPipelineCache>     m_cache;
     Rc<DxvkStateCache>        m_stateCache;
+    Rc<DxvkPipelineCompiler>  m_compiler;
 
     std::atomic<uint32_t>     m_numComputePipelines  = { 0 };
     std::atomic<uint32_t>     m_numGraphicsPipelines = { 0 };
-    
+
     dxvk::mutex m_mutex;
-    
+
     std::unordered_map<
       DxvkComputePipelineShaders,
       DxvkComputePipeline,
       DxvkHash, DxvkEq> m_computePipelines;
-    
+
     std::unordered_map<
       DxvkGraphicsPipelineShaders,
       DxvkGraphicsPipeline,
       DxvkHash, DxvkEq> m_graphicsPipelines;
-    
+
   };
-  
+
 }

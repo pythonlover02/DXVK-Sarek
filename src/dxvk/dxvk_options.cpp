@@ -9,6 +9,8 @@ namespace dxvk {
     useRawSsbo            = config.getOption<Tristate>("dxvk.useRawSsbo",             Tristate::Auto);
     shrinkNvidiaHvvHeap   = config.getOption<Tristate>("dxvk.shrinkNvidiaHvvHeap",    Tristate::Auto);
     hud                   = config.getOption<std::string>("dxvk.hud", "");
+    enableAsync           = config.getOption<bool>    ("dxvk.enableAsync",            true);
+    numAsyncThreads       = config.getOption<int32_t> ("dxvk.numAsyncThreads",        0);
   }
 
 }

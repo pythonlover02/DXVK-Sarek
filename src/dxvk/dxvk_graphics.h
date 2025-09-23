@@ -15,7 +15,7 @@
 #include "dxvk_stats.h"
 
 namespace dxvk {
-  
+
   class DxvkDevice;
   class DxvkPipelineManager;
 
@@ -68,11 +68,11 @@ namespace dxvk {
       return shader == nullptr || shader->info().stage == stage;
     }
   };
-  
-  
+
+
   /**
    * \brief Common graphics pipeline state
-   * 
+   *
    * Non-dynamic pipeline state that cannot
    * be changed dynamically.
    */
@@ -80,11 +80,11 @@ namespace dxvk {
     bool                                msSampleShadingEnable;
     float                               msSampleShadingFactor;
   };
-  
-  
+
+
   /**
    * \brief Graphics pipeline instance
-   * 
+   *
    * Stores a state vector and the
    * corresponding pipeline handle.
    */
@@ -107,7 +107,7 @@ namespace dxvk {
 
     /**
      * \brief Checks for matching pipeline state
-     * 
+     *
      * \param [in] stateVector Graphics pipeline state
      * \param [in] renderPass Render pass handle
      * \returns \c true if the specialization is compatible
@@ -135,18 +135,18 @@ namespace dxvk {
 
   };
 
-  
+
   /**
    * \brief Graphics pipeline
-   * 
+   *
    * Stores the pipeline layout as well as methods to
    * recompile the graphics pipeline against a given
    * pipeline state vector.
    */
   class DxvkGraphicsPipeline {
-    
+
   public:
-    
+
     DxvkGraphicsPipeline(
             DxvkPipelineManager*        pipeMgr,
             DxvkGraphicsPipelineShaders shaders);
@@ -160,7 +160,7 @@ namespace dxvk {
     const DxvkGraphicsPipelineShaders& shaders() const {
       return m_shaders;
     }
-    
+
     /**
      * \brief Returns graphics pipeline flags
      * \returns Graphics pipeline property flags
@@ -168,10 +168,10 @@ namespace dxvk {
     DxvkGraphicsPipelineFlags flags() const {
       return m_flags;
     }
-    
+
     /**
      * \brief Pipeline layout
-     * 
+     *
      * Stores the pipeline layout and the descriptor set
      * layout, as well as information on the resource
      * slots used by the pipeline.
@@ -180,10 +180,10 @@ namespace dxvk {
     DxvkPipelineLayout* layout() const {
       return m_layout.ptr();
     }
-    
+
     /**
      * \brief Queries shader for a given stage
-     * 
+     *
      * In case no shader is specified for the
      * given stage, \c nullptr will be returned.
      * \param [in] stage The shader stage
@@ -191,34 +191,41 @@ namespace dxvk {
      */
     Rc<DxvkShader> getShader(
             VkShaderStageFlagBits             stage) const;
-    
+
     /**
      * \brief Pipeline handle
-     * 
+     *
      * Retrieves a pipeline handle for the given pipeline
      * state. If necessary, a new pipeline will be created.
      * \param [in] state Pipeline state vector
      * \param [in] renderPass The render pass
+     * \param [in] async Compile asynchronously
      * \returns Pipeline handle
      */
     VkPipeline getPipelineHandle(
       const DxvkGraphicsPipelineStateInfo&    state,
-      const DxvkRenderPass*                   renderPass);
-    
+      const DxvkRenderPass*                   renderPass,
+            bool                              async);
+
     /**
      * \brief Compiles a pipeline
-     * 
+     *
      * Asynchronously compiles the given pipeline
      * and stores the result for future use.
      * \param [in] state Pipeline state vector
      * \param [in] renderPass The render pass
+     * \returns \c true if compile succeeded
      */
-    void compilePipeline(
+    bool compilePipeline(
       const DxvkGraphicsPipelineStateInfo&    state,
       const DxvkRenderPass*                   renderPass);
-    
+
+    void writePipelineStateToCache(
+      const DxvkGraphicsPipelineStateInfo& state,
+      const DxvkRenderPassFormat&          format) const;
+
   private:
-    
+
     Rc<vk::DeviceFn>            m_vkd;
     DxvkPipelineManager*        m_pipeMgr;
 
@@ -226,52 +233,50 @@ namespace dxvk {
     DxvkDescriptorSlotMapping   m_slotMapping;
 
     Rc<DxvkPipelineLayout>      m_layout;
-    
+
     uint32_t m_vsIn  = 0;
     uint32_t m_fsOut = 0;
-    
+
     DxvkGraphicsPipelineFlags           m_flags;
     DxvkGraphicsCommonPipelineStateInfo m_common;
-    
+
     // List of pipeline instances, shared between threads
     alignas(CACHE_LINE_SIZE)
     dxvk::mutex                               m_mutex;
+    alignas(CACHE_LINE_SIZE)
+    dxvk::mutex                               m_mutex2;
     sync::List<DxvkGraphicsPipelineInstance>  m_pipelines;
-    
+
     DxvkGraphicsPipelineInstance* createInstance(
       const DxvkGraphicsPipelineStateInfo& state,
       const DxvkRenderPass*                renderPass);
-    
+
     DxvkGraphicsPipelineInstance* findInstance(
       const DxvkGraphicsPipelineStateInfo& state,
       const DxvkRenderPass*                renderPass);
-    
+
     VkPipeline createPipeline(
       const DxvkGraphicsPipelineStateInfo& state,
       const DxvkRenderPass*                renderPass) const;
-    
+
     void destroyPipeline(
             VkPipeline                     pipeline) const;
-    
+
     DxvkShaderModule createShaderModule(
       const Rc<DxvkShader>&                shader,
       const DxvkGraphicsPipelineStateInfo& state) const;
-    
+
     Rc<DxvkShader> getPrevStageShader(
             VkShaderStageFlagBits          stage) const;
 
     bool validatePipelineState(
       const DxvkGraphicsPipelineStateInfo& state,
             bool                           trusted) const;
-    
-    void writePipelineStateToCache(
-      const DxvkGraphicsPipelineStateInfo& state,
-      const DxvkRenderPassFormat&          format) const;
-    
+
     void logPipelineState(
             LogLevel                       level,
       const DxvkGraphicsPipelineStateInfo& state) const;
 
   };
-  
+
 }
