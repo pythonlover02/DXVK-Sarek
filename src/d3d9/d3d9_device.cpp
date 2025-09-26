@@ -98,7 +98,7 @@ namespace dxvk {
       }
       useRobustConstantAccess &= m_psLayout.totalSize() % m_robustUBOAlignment == 0;
     }
-    
+
     if (!useRobustConstantAccess) {
       m_vsFloatConstsCount = m_vsLayout.floatCount;
       m_vsIntConstsCount   = m_vsLayout.intCount;
@@ -1551,7 +1551,7 @@ namespace dxvk {
       const Rc<DxvkImageView>& imageView,
       VkImageAspectFlags       aspectMask,
       VkClearValue             clearValue) {
-      
+
       VkExtent3D imageExtent = imageView->mipLevelExtent(0);
       extent.width = std::min(imageExtent.width, extent.width);
       extent.height = std::min(imageExtent.height, extent.height);
@@ -4026,7 +4026,7 @@ namespace dxvk {
           DWORD                      Stage,
           D3D9TextureStageStateTypes Type,
           DWORD                      Value) {
-    
+
     // Clamp values instead of checking and returning INVALID_CALL
     // Matches tests + Dawn of Magic 2 relies on it.
     Stage = std::min(Stage, DWORD(caps::TextureStageCount - 1));
@@ -5202,7 +5202,7 @@ namespace dxvk {
     uint32_t floatCount = m_vsFloatConstsCount;
     if (constSet.meta.needsConstantCopies) {
       auto shader = GetCommonShader(m_state.vertexShader);
-      floatCount = std::max(floatCount, shader->GetMaxDefinedConstant());
+      floatCount = std::max(floatCount, shader->GetMaxDefinedConstant() + 1);
     }
     floatCount = std::min(floatCount, constSet.meta.maxConstIndexF);
 
@@ -5283,7 +5283,7 @@ namespace dxvk {
     uint32_t floatCount = ShaderStage == DxsoProgramType::VertexShader ? m_vsFloatConstsCount : m_psFloatConstsCount;
     if (constSet.meta.needsConstantCopies) {
       auto shader = GetCommonShader(Shader);
-      floatCount = std::max(floatCount, shader->GetMaxDefinedConstant());
+      floatCount = std::max(floatCount, shader->GetMaxDefinedConstant() + 1);
     }
     floatCount = std::min(constSet.meta.maxConstIndexF, floatCount);
 
@@ -5470,7 +5470,7 @@ namespace dxvk {
 
   inline void D3D9DeviceEx::UpdateBoundRTs(uint32_t index) {
     const uint32_t bit = 1 << index;
-    
+
     m_boundRTs &= ~bit;
 
     if (m_state.renderTargets[index] != nullptr &&
@@ -6278,7 +6278,7 @@ namespace dxvk {
 
     if (inactiveMask)
       UnbindTextures(inactiveMask);
-  
+
     m_dirtyTextures &= ~usedMask;
   }
 
