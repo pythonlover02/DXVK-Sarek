@@ -14,7 +14,7 @@ namespace dxvk {
 
   /**
    * \brief Image memory mapping mode
-   * 
+   *
    * Determines how exactly \c LockBox will
    * behave when mapping an image.
    */
@@ -23,10 +23,10 @@ namespace dxvk {
     D3D9_COMMON_TEXTURE_MAP_MODE_BACKED,    ///< Mapped image through buffer
     D3D9_COMMON_TEXTURE_MAP_MODE_SYSTEMMEM, ///< Only a buffer - no image
   };
-  
+
   /**
    * \brief Common texture description
-   * 
+   *
    * Contains all members that can be
    * defined for 2D, Cube and 3D textures.
    */
@@ -172,7 +172,7 @@ namespace dxvk {
 
     /**
      * \brief Normalizes and validates texture description
-     * 
+     *
      * Fills in undefined values and validates the texture
      * parameters. Any error returned by this method should
      * be forwarded to the application.
@@ -372,7 +372,15 @@ namespace dxvk {
     D3D9SubresourceBitset& GetUploadBitmask() { return m_needsUpload; }
 
     void SetAllNeedUpload() {
-      m_needsUpload.setAll();
+      if (likely(!IsAutomaticMip())) {
+        m_needsUpload.setAll();
+      } else {
+        for (uint32_t a = 0; a < m_desc.ArraySize; a++) {
+          for (uint32_t m = 0; m < ExposedMipLevels(); m++) {
+            SetNeedsUpload(CalcSubresource(a, m), true);
+          }
+        }
+      }
     }
     void SetNeedsUpload(UINT Subresource, bool upload) { m_needsUpload.set(Subresource, upload); }
     bool NeedsUpload(UINT Subresource) const { return m_needsUpload.get(Subresource); }
@@ -387,7 +395,7 @@ namespace dxvk {
     void SetNeedsMipGen(bool value) { m_needsMipGen = value; }
     bool NeedsMipGen() const { return m_needsMipGen; }
 
-    DWORD ExposedMipLevels() { return m_exposedMipLevels; }
+    DWORD ExposedMipLevels() const { return m_exposedMipLevels; }
 
     void SetMipFilter(D3DTEXTUREFILTERTYPE filter) { m_mipFilter = filter; }
     D3DTEXTUREFILTERTYPE GetMipFilter() const { return m_mipFilter; }

@@ -257,7 +257,7 @@ namespace dxvk {
     // Some games keep using the pointer returned in LockRect() after calling Unlock()
     // and purely rely on AddDirtyRect to notify D3D9 that contents have changed.
     // We have no way of knowing which mip levels were actually changed.
-    for (uint32_t m = 0; m < m_texture.Desc()->MipLevels; m++) {
+    for (uint32_t m = 0; m < m_texture.ExposedMipLevels(); m++) {
       m_texture.SetNeedsUpload(m_texture.CalcSubresource(Face, m), true);
     }
     return D3D_OK;

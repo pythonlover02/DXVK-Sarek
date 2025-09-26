@@ -20,15 +20,17 @@ namespace dxvk {
                     ? D3D9Format::D32
                     : D3D9Format::X8R8G8B8;
 
+    m_exposedMipLevels = m_desc.MipLevels;
+
+    if (m_desc.Usage & D3DUSAGE_AUTOGENMIPMAP)
+      m_exposedMipLevels = 1;
+
     for (uint32_t i = 0; i < m_dirtyBoxes.size(); i++) {
       AddDirtyBox(nullptr, i);
     }
 
     if (m_desc.Pool != D3DPOOL_DEFAULT) {
-      const uint32_t subresources = CountSubresources();
-      for (uint32_t i = 0; i < subresources; i++) {
-        SetNeedsUpload(i, true);
-      }
+      SetAllNeedUpload();
       if (pSharedHandle) {
         throw DxvkError("D3D9: Incompatible pool type for texture sharing.");
       }
@@ -75,11 +77,6 @@ namespace dxvk {
 
     if (m_mapMode == D3D9_COMMON_TEXTURE_MAP_MODE_SYSTEMMEM)
       CreateBuffers();
-
-    m_exposedMipLevels = m_desc.MipLevels;
-
-    if (m_desc.Usage & D3DUSAGE_AUTOGENMIPMAP)
-      m_exposedMipLevels = 1;
   }
 
 
@@ -98,7 +95,7 @@ namespace dxvk {
     result.arrayLayer     = Subresource / m_desc.MipLevels;
     return result;
   }
-  
+
 
   HRESULT D3D9CommonTexture::NormalizeTextureProperties(
           D3D9DeviceEx*             pDevice,
@@ -133,7 +130,7 @@ namespace dxvk {
 
     if (pDesc->Width == 0 || pDesc->Height == 0 || pDesc->Depth == 0)
       return D3DERR_INVALIDCALL;
-    
+
     if (FAILED(DecodeMultiSampleType(pDevice->GetDXVKDevice(), pDesc->MultiSample, pDesc->MultisampleQuality, nullptr)))
       return D3DERR_INVALIDCALL;
 
@@ -149,7 +146,7 @@ namespace dxvk {
     constexpr DWORD incompatibleUsages = D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL;
     if (pDesc->Pool != D3DPOOL_DEFAULT && (pDesc->Usage & incompatibleUsages))
       return D3DERR_INVALIDCALL;
-    
+
     // Use the maximum possible mip level count if the supplied
     // mip level count is either unspecified (0) or invalid
     const uint32_t maxMipLevelCount = pDesc->MultiSample <= D3DMULTISAMPLE_NONMASKABLE
@@ -158,7 +155,7 @@ namespace dxvk {
 
     if (pDesc->Usage & D3DUSAGE_AUTOGENMIPMAP)
       pDesc->MipLevels = 0;
-    
+
     if (pDesc->MipLevels == 0 || pDesc->MipLevels > maxMipLevelCount)
       pDesc->MipLevels = maxMipLevelCount;
 
@@ -204,7 +201,7 @@ namespace dxvk {
 
     const VkExtent3D mipExtent = util::computeMipLevelExtent(
       GetExtent(), MipLevel);
-    
+
     const VkExtent3D blockCount = util::computeBlockCount(
       mipExtent, formatInfo->blockSize);
 
@@ -363,16 +360,16 @@ namespace dxvk {
     const DxvkImageCreateInfo*  pImageInfo,
           VkImageTiling         Tiling) const {
     const Rc<DxvkAdapter> adapter = m_device->GetDXVKDevice()->adapter();
-    
+
     VkImageFormatProperties formatProps = { };
-    
+
     VkResult status = adapter->imageFormatProperties(
       pImageInfo->format, pImageInfo->type, Tiling,
       pImageInfo->usage, pImageInfo->flags, formatProps);
-    
+
     if (status != VK_SUCCESS)
       return FALSE;
-    
+
     return (pImageInfo->extent.width  <= formatProps.maxExtent.width)
         && (pImageInfo->extent.height <= formatProps.maxExtent.height)
         && (pImageInfo->extent.depth  <= formatProps.maxExtent.depth)
@@ -402,12 +399,12 @@ namespace dxvk {
     requestedFeatures &= Tiling == VK_IMAGE_TILING_OPTIMAL
       ? properties.optimalTilingFeatures
       : properties.linearTilingFeatures;
-    
+
     VkImageUsageFlags requestedUsage = 0;
-    
+
     if (requestedFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
       requestedUsage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    
+
     if (requestedFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)
       requestedUsage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
@@ -443,12 +440,12 @@ namespace dxvk {
 
   VkImageLayout D3D9CommonTexture::OptimizeLayout(VkImageUsageFlags Usage) const {
     const VkImageUsageFlags usageFlags = Usage;
-    
+
     // Filter out unnecessary flags. Transfer operations
     // are handled by the backend in a transparent manner.
     Usage &= ~(VK_IMAGE_USAGE_TRANSFER_DST_BIT
              | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-    
+
     // Ignore sampled bit in case the image was created with
     // an image flag that only allows attachment usage
     if (m_desc.IsAttachmentOnly)
@@ -458,13 +455,13 @@ namespace dxvk {
     // have to transform the image back to a different layout
     if (Usage == VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
       return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    
+
     if (Usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
       return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    
+
     Usage &= ~(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
              | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-    
+
     // If the image is used for reading but not as a storage
     // image, we can optimize the image for texture access
     if (Usage == VK_IMAGE_USAGE_SAMPLED_BIT) {
@@ -472,7 +469,7 @@ namespace dxvk {
         ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
         : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
-    
+
     // Otherwise, we have to stick with the default layout
     return VK_IMAGE_LAYOUT_GENERAL;
   }
@@ -536,7 +533,7 @@ namespace dxvk {
           UINT                   Layer,
           UINT                   Lod,
           VkImageUsageFlags      UsageFlags,
-          bool                   Srgb) {    
+          bool                   Srgb) {
     DxvkImageViewCreateInfo viewInfo;
     viewInfo.format    = m_mapping.ConversionFormatInfo.FormatColor != VK_FORMAT_UNDEFINED
                        ? PickSRGB(m_mapping.ConversionFormatInfo.FormatColor, m_mapping.ConversionFormatInfo.FormatSrgb, Srgb)
@@ -551,7 +548,7 @@ namespace dxvk {
     viewInfo.numLayers = Layer == AllLayers ? m_desc.ArraySize : 1;
 
     // Remove the stencil aspect if we are trying to create a regular image
-    // view of a depth stencil format 
+    // view of a depth stencil format
     if (UsageFlags != VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
       viewInfo.aspect &= ~VK_IMAGE_ASPECT_STENCIL_BIT;
 
