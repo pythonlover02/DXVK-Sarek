@@ -56,7 +56,7 @@ namespace dxvk {
       return D3DERR_INVALIDCALL;
 
     auto& options = m_parent->GetOptions();
-    
+
     const auto& props = m_adapter->deviceProperties();
 
     DISPLAY_DEVICEA device = { };
@@ -159,6 +159,9 @@ namespace dxvk {
     if (mapping.FormatSrgb  == VK_FORMAT_UNDEFINED && srgb)
       return D3DERR_NOTAVAILABLE;
 
+    if (RType == D3DRTYPE_CUBETEXTURE && mapping.Aspect != VK_IMAGE_ASPECT_COLOR_BIT)
+      return D3DERR_NOTAVAILABLE;
+
     if (RType == D3DRTYPE_VERTEXBUFFER || RType == D3DRTYPE_INDEXBUFFER)
       return D3D_OK;
 
@@ -192,7 +195,7 @@ namespace dxvk {
     // Check if this is a power of two...
     if (sampleCount & (sampleCount - 1))
       return D3DERR_NOTAVAILABLE;
-    
+
     // Therefore...
     VkSampleCountFlags sampleFlags = VkSampleCountFlags(sampleCount);
 
@@ -573,7 +576,7 @@ namespace dxvk {
     pCaps->MaxNpatchTessellationLevel = 0.0f;
     // Reserved for... something
     pCaps->Reserved5                  = 0;
-    // Master adapter for us is adapter 0, atm... 
+    // Master adapter for us is adapter 0, atm...
     pCaps->MasterAdapterOrdinal       = 0;
     // The group of adapters this one is in
     pCaps->AdapterOrdinalInGroup      = 0;
@@ -831,10 +834,10 @@ namespace dxvk {
       [](const D3DDISPLAYMODEEX& a, const D3DDISPLAYMODEEX& b) {
         if (a.Width < b.Width)   return true;
         if (a.Width > b.Width)   return false;
-        
+
         if (a.Height < b.Height) return true;
         if (a.Height > b.Height) return false;
-        
+
         return a.RefreshRate < b.RefreshRate;
     });
   }
