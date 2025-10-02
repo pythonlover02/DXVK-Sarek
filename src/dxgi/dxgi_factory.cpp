@@ -12,19 +12,19 @@ namespace dxvk {
     for (uint32_t i = 0; m_instance->enumAdapters(i) != nullptr; i++)
       m_instance->enumAdapters(i)->logAdapterInfo();
   }
-  
-  
+
+
   DxgiFactory::~DxgiFactory() {
-    
+
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::QueryInterface(REFIID riid, void** ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
 
     *ppvObject = nullptr;
-    
+
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(IDXGIObject)
      || riid == __uuidof(IDXGIFactory)
@@ -43,47 +43,47 @@ namespace dxvk {
       *ppvObject = ref(&m_monitorInfo);
       return S_OK;
     }
-    
+
     Logger::warn("DxgiFactory::QueryInterface: Unknown interface query");
     Logger::warn(str::format(riid));
     return E_NOINTERFACE;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::GetParent(REFIID riid, void** ppParent) {
     InitReturnPtr(ppParent);
-    
+
     Logger::warn("DxgiFactory::GetParent: Unknown interface query");
     return E_NOINTERFACE;
   }
-  
-  
+
+
   BOOL STDMETHODCALLTYPE DxgiFactory::IsWindowedStereoEnabled() {
     // We don't support Stereo 3D at the moment
     return FALSE;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::CreateSoftwareAdapter(
           HMODULE         Module,
           IDXGIAdapter**  ppAdapter) {
     InitReturnPtr(ppAdapter);
-    
+
     if (ppAdapter == nullptr)
       return DXGI_ERROR_INVALID_CALL;
-    
+
     Logger::err("DXGI: CreateSoftwareAdapter: Software adapters not supported");
     return DXGI_ERROR_UNSUPPORTED;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::CreateSwapChain(
           IUnknown*             pDevice,
           DXGI_SWAP_CHAIN_DESC* pDesc,
           IDXGISwapChain**      ppSwapChain) {
     if (ppSwapChain == nullptr || pDesc == nullptr || pDevice == nullptr)
       return DXGI_ERROR_INVALID_CALL;
-    
+
     DXGI_SWAP_CHAIN_DESC1 desc;
     desc.Width              = pDesc->BufferDesc.Width;
     desc.Height             = pDesc->BufferDesc.Height;
@@ -96,24 +96,24 @@ namespace dxvk {
     desc.SwapEffect         = pDesc->SwapEffect;
     desc.AlphaMode          = DXGI_ALPHA_MODE_IGNORE;
     desc.Flags              = pDesc->Flags;
-    
+
     DXGI_SWAP_CHAIN_FULLSCREEN_DESC descFs;
     descFs.RefreshRate      = pDesc->BufferDesc.RefreshRate;
     descFs.ScanlineOrdering = pDesc->BufferDesc.ScanlineOrdering;
     descFs.Scaling          = pDesc->BufferDesc.Scaling;
     descFs.Windowed         = pDesc->Windowed;
-    
+
     IDXGISwapChain1* swapChain = nullptr;
-    HRESULT hr = CreateSwapChainForHwnd(
+    HRESULT hr = CreateSwapChainForHwndBase(
       pDevice, pDesc->OutputWindow,
       &desc, &descFs, nullptr,
       &swapChain);
-    
+
     *ppSwapChain = swapChain;
     return hr;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::CreateSwapChainForHwnd(
           IUnknown*             pDevice,
           HWND                  hWnd,
@@ -121,13 +121,26 @@ namespace dxvk {
     const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* pFullscreenDesc,
           IDXGIOutput*          pRestrictToOutput,
           IDXGISwapChain1**     ppSwapChain) {
+    return CreateSwapChainForHwndBase(
+      pDevice, hWnd,
+      pDesc, pFullscreenDesc, pRestrictToOutput,
+      ppSwapChain);
+  }
+
+  HRESULT STDMETHODCALLTYPE DxgiFactory::CreateSwapChainForHwndBase(
+          IUnknown*             pDevice,
+          HWND                  hWnd,
+    const DXGI_SWAP_CHAIN_DESC1* pDesc,
+    const DXGI_SWAP_CHAIN_FULLSCREEN_DESC* pFullscreenDesc,
+          IDXGIOutput*          pRestrictToOutput,
+          IDXGISwapChain1**     ppSwapChain) {
     InitReturnPtr(ppSwapChain);
-    
+
     if (!ppSwapChain || !pDesc || !hWnd || !pDevice)
       return DXGI_ERROR_INVALID_CALL;
-    
+
     Com<IWineDXGISwapChainFactory> wineDevice;
-    
+
     if (SUCCEEDED(pDevice->QueryInterface(
           __uuidof(IWineDXGISwapChainFactory),
           reinterpret_cast<void**>(&wineDevice)))) {
@@ -144,12 +157,12 @@ namespace dxvk {
 
       return hr;
     }
-    
+
     Logger::err("DXGI: CreateSwapChainForHwnd: Unsupported device type");
     return DXGI_ERROR_UNSUPPORTED;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::CreateSwapChainForCoreWindow(
           IUnknown*             pDevice,
           IUnknown*             pWindow,
@@ -157,58 +170,58 @@ namespace dxvk {
           IDXGIOutput*          pRestrictToOutput,
           IDXGISwapChain1**     ppSwapChain) {
     InitReturnPtr(ppSwapChain);
-    
+
     Logger::err("DxgiFactory::CreateSwapChainForCoreWindow: Not implemented");
     return E_NOTIMPL;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::CreateSwapChainForComposition(
           IUnknown*             pDevice,
     const DXGI_SWAP_CHAIN_DESC1* pDesc,
           IDXGIOutput*          pRestrictToOutput,
           IDXGISwapChain1**     ppSwapChain) {
     InitReturnPtr(ppSwapChain);
-    
+
     Logger::err("DxgiFactory::CreateSwapChainForComposition: Not implemented");
     return E_NOTIMPL;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::EnumAdapters(
           UINT            Adapter,
           IDXGIAdapter**  ppAdapter) {
     InitReturnPtr(ppAdapter);
-    
+
     if (ppAdapter == nullptr)
       return DXGI_ERROR_INVALID_CALL;
-    
+
     IDXGIAdapter1* handle = nullptr;
     HRESULT hr = this->EnumAdapters1(Adapter, &handle);
     *ppAdapter = handle;
     return hr;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::EnumAdapters1(
           UINT            Adapter,
           IDXGIAdapter1** ppAdapter) {
     InitReturnPtr(ppAdapter);
-    
+
     if (ppAdapter == nullptr)
       return DXGI_ERROR_INVALID_CALL;
-    
+
     Rc<DxvkAdapter> dxvkAdapter
       = m_instance->enumAdapters(Adapter);
-    
+
     if (dxvkAdapter == nullptr)
       return DXGI_ERROR_NOT_FOUND;
-    
+
     *ppAdapter = ref(new DxgiAdapter(this, dxvkAdapter, Adapter));
     return S_OK;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::EnumAdapterByLuid(
           LUID                  AdapterLuid,
           REFIID                riid,
@@ -222,7 +235,7 @@ namespace dxvk {
 
       if (FAILED(hr))
         return hr;
-      
+
       DXGI_ADAPTER_DESC desc;
       adapter->GetDesc(&desc);
 
@@ -234,7 +247,7 @@ namespace dxvk {
     return DXGI_ERROR_NOT_FOUND;
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::EnumAdapterByGpuPreference(
           UINT                  Adapter,
           DXGI_GPU_PREFERENCE   GpuPreference,
@@ -285,32 +298,32 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DxgiFactory::GetWindowAssociation(HWND *pWindowHandle) {
     if (pWindowHandle == nullptr)
       return DXGI_ERROR_INVALID_CALL;
-    
+
     // Wine tests show that this is always null for whatever reason
     *pWindowHandle = nullptr;
     return S_OK;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::GetSharedResourceAdapterLuid(
           HANDLE                hResource,
           LUID*                 pLuid) {
     Logger::err("DxgiFactory::GetSharedResourceAdapterLuid: Not implemented");
     return E_NOTIMPL;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::MakeWindowAssociation(HWND WindowHandle, UINT Flags) {
     Logger::warn("DXGI: MakeWindowAssociation: Ignoring flags");
     return S_OK;
   }
-  
-  
+
+
   BOOL STDMETHODCALLTYPE DxgiFactory::IsCurrent() {
     return TRUE;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::RegisterOcclusionStatusWindow(
           HWND                  WindowHandle,
           UINT                  wMsg,
@@ -318,16 +331,16 @@ namespace dxvk {
     Logger::err("DxgiFactory::RegisterOcclusionStatusWindow: Not implemented");
     return E_NOTIMPL;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::RegisterStereoStatusEvent(
           HANDLE                hEvent,
           DWORD*                pdwCookie) {
     Logger::err("DxgiFactory::RegisterStereoStatusEvent: Not implemented");
     return E_NOTIMPL;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiFactory::RegisterStereoStatusWindow(
           HWND                  WindowHandle,
           UINT                  wMsg,
@@ -335,7 +348,7 @@ namespace dxvk {
     Logger::err("DxgiFactory::RegisterStereoStatusWindow: Not implemented");
     return E_NOTIMPL;
   }
-  
+
 
   HRESULT STDMETHODCALLTYPE DxgiFactory::RegisterOcclusionStatusEvent(
           HANDLE                hEvent,
@@ -343,14 +356,14 @@ namespace dxvk {
     Logger::err("DxgiFactory::RegisterOcclusionStatusEvent: Not implemented");
     return E_NOTIMPL;
   }
-  
+
 
   void STDMETHODCALLTYPE DxgiFactory::UnregisterStereoStatus(
           DWORD                 dwCookie) {
     Logger::err("DxgiFactory::UnregisterStereoStatus: Not implemented");
   }
-  
-  
+
+
   void STDMETHODCALLTYPE DxgiFactory::UnregisterOcclusionStatus(
           DWORD                 dwCookie) {
     Logger::err("DxgiFactory::UnregisterOcclusionStatus: Not implemented");
@@ -372,7 +385,7 @@ namespace dxvk {
 
         if (FeatureSupportDataSize != sizeof(*info))
           return E_INVALIDARG;
-        
+
         *info = TRUE;
       } return S_OK;
 
