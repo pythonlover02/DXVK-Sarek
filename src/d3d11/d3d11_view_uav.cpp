@@ -5,7 +5,7 @@
 #include "d3d11_view_uav.h"
 
 namespace dxvk {
-  
+
   D3D11UnorderedAccessView::D3D11UnorderedAccessView(
           D3D11Device*                       pDevice,
           ID3D11Resource*                    pResource,
@@ -16,7 +16,7 @@ namespace dxvk {
 
     D3D11_COMMON_RESOURCE_DESC resourceDesc;
     GetCommonResourceDesc(pResource, &resourceDesc);
-    
+
     // Basic view resource info
     m_info.pResource = pResource;
     m_info.Dimension = resourceDesc.Dim;
@@ -24,9 +24,9 @@ namespace dxvk {
 
     if (resourceDesc.Dim == D3D11_RESOURCE_DIMENSION_BUFFER) {
       auto buffer = static_cast<D3D11Buffer*>(pResource);
-      
+
       DxvkBufferViewCreateInfo viewInfo;
-      
+
       if (pDesc->Buffer.Flags & D3D11_BUFFEREX_SRV_FLAG_RAW) {
         viewInfo.format      = VK_FORMAT_R32_UINT;
         viewInfo.rangeOffset = sizeof(uint32_t) * pDesc->Buffer.FirstElement;
@@ -37,15 +37,15 @@ namespace dxvk {
         viewInfo.rangeLength = buffer->Desc()->StructureByteStride * pDesc->Buffer.NumElements;
       } else {
         viewInfo.format = pDevice->LookupFormat(pDesc->Format, DXGI_VK_FORMAT_MODE_COLOR).Format;
-        
+
         const DxvkFormatInfo* formatInfo = imageFormatInfo(viewInfo.format);
         viewInfo.rangeOffset = formatInfo->elementSize * pDesc->Buffer.FirstElement;
         viewInfo.rangeLength = formatInfo->elementSize * pDesc->Buffer.NumElements;
       }
-      
+
       if (pDesc->Buffer.Flags & (D3D11_BUFFER_UAV_FLAG_APPEND | D3D11_BUFFER_UAV_FLAG_COUNTER))
         m_counterBuffer = CreateCounterBuffer();
-      
+
       // Populate view info struct
       m_info.Buffer.Offset = viewInfo.rangeOffset;
       m_info.Buffer.Length = viewInfo.rangeLength;
@@ -55,13 +55,13 @@ namespace dxvk {
     } else {
       auto texture = GetCommonTexture(pResource);
       auto formatInfo = pDevice->LookupFormat(pDesc->Format, texture->GetFormatMode());
-      
+
       DxvkImageViewCreateInfo viewInfo;
       viewInfo.format  = formatInfo.Format;
       viewInfo.aspect  = formatInfo.Aspect;
       viewInfo.swizzle = formatInfo.Swizzle;
       viewInfo.usage   = VK_IMAGE_USAGE_STORAGE_BIT;
-      
+
       switch (pDesc->ViewDimension) {
         case D3D11_UAV_DIMENSION_TEXTURE1D:
           viewInfo.type      = VK_IMAGE_VIEW_TYPE_1D;
@@ -70,7 +70,7 @@ namespace dxvk {
           viewInfo.minLayer  = 0;
           viewInfo.numLayers = 1;
           break;
-          
+
         case D3D11_UAV_DIMENSION_TEXTURE1DARRAY:
           viewInfo.type      = VK_IMAGE_VIEW_TYPE_1D_ARRAY;
           viewInfo.minLevel  = pDesc->Texture1DArray.MipSlice;
@@ -78,7 +78,7 @@ namespace dxvk {
           viewInfo.minLayer  = pDesc->Texture1DArray.FirstArraySlice;
           viewInfo.numLayers = pDesc->Texture1DArray.ArraySize;
           break;
-          
+
         case D3D11_UAV_DIMENSION_TEXTURE2D:
           viewInfo.type      = VK_IMAGE_VIEW_TYPE_2D;
           viewInfo.minLevel  = pDesc->Texture2D.MipSlice;
@@ -86,7 +86,7 @@ namespace dxvk {
           viewInfo.minLayer  = 0;
           viewInfo.numLayers = 1;
           break;
-          
+
         case D3D11_UAV_DIMENSION_TEXTURE2DARRAY:
           viewInfo.type      = VK_IMAGE_VIEW_TYPE_2D_ARRAY;
           viewInfo.minLevel  = pDesc->Texture2DArray.MipSlice;
@@ -94,7 +94,7 @@ namespace dxvk {
           viewInfo.minLayer  = pDesc->Texture2DArray.FirstArraySlice;
           viewInfo.numLayers = pDesc->Texture2DArray.ArraySize;
           break;
-          
+
         case D3D11_UAV_DIMENSION_TEXTURE3D:
           // FIXME we actually have to map this to a
           // 2D array view in order to support W slices
@@ -104,7 +104,7 @@ namespace dxvk {
           viewInfo.minLayer  = 0;
           viewInfo.numLayers = 1;
           break;
-          
+
         default:
           throw DxvkError("D3D11: Invalid view dimension for image UAV");
       }
@@ -123,19 +123,19 @@ namespace dxvk {
         GetCommonTexture(pResource)->GetImage(), viewInfo);
     }
   }
-  
-  
+
+
   D3D11UnorderedAccessView::~D3D11UnorderedAccessView() {
     ResourceReleasePrivate(m_resource);
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE D3D11UnorderedAccessView::QueryInterface(REFIID riid, void** ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
 
     *ppvObject = nullptr;
-    
+
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(ID3D11DeviceChild)
      || riid == __uuidof(ID3D11View)
@@ -144,18 +144,18 @@ namespace dxvk {
       *ppvObject = ref(this);
       return S_OK;
     }
-    
+
     Logger::warn("D3D11UnorderedAccessView::QueryInterface: Unknown interface query");
     Logger::warn(str::format(riid));
     return E_NOINTERFACE;
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11UnorderedAccessView::GetResource(ID3D11Resource** ppResource) {
     *ppResource = ref(m_resource);
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11UnorderedAccessView::GetDesc(D3D11_UNORDERED_ACCESS_VIEW_DESC* pDesc) {
     pDesc->Format            = m_desc.Format;
     pDesc->ViewDimension     = m_desc.ViewDimension;
@@ -191,25 +191,25 @@ namespace dxvk {
         break;
     }
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11UnorderedAccessView::GetDesc1(D3D11_UNORDERED_ACCESS_VIEW_DESC1* pDesc) {
     *pDesc = m_desc;
   }
-  
-  
+
+
   HRESULT D3D11UnorderedAccessView::GetDescFromResource(
           ID3D11Resource*                    pResource,
           D3D11_UNORDERED_ACCESS_VIEW_DESC1* pDesc) {
     D3D11_RESOURCE_DIMENSION resourceDim = D3D11_RESOURCE_DIMENSION_UNKNOWN;
     pResource->GetType(&resourceDim);
-    
+
     switch (resourceDim) {
       case D3D11_RESOURCE_DIMENSION_BUFFER: {
         D3D11_BUFFER_DESC bufferDesc;
         static_cast<D3D11Buffer*>(pResource)->GetDesc(&bufferDesc);
-        
-        if (bufferDesc.MiscFlags == D3D11_RESOURCE_MISC_BUFFER_STRUCTURED) {
+
+        if (bufferDesc.MiscFlags & D3D11_RESOURCE_MISC_BUFFER_STRUCTURED) {
           pDesc->Format              = DXGI_FORMAT_UNKNOWN;
           pDesc->ViewDimension       = D3D11_UAV_DIMENSION_BUFFER;
           pDesc->Buffer.FirstElement = 0;
@@ -218,13 +218,13 @@ namespace dxvk {
           return S_OK;
         }
       } return E_INVALIDARG;
-      
+
       case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
         D3D11_TEXTURE1D_DESC resourceDesc;
         static_cast<D3D11Texture1D*>(pResource)->GetDesc(&resourceDesc);
-        
+
         pDesc->Format = resourceDesc.Format;
-        
+
         if (resourceDesc.ArraySize == 1) {
           pDesc->ViewDimension = D3D11_UAV_DIMENSION_TEXTURE1D;
           pDesc->Texture1D.MipSlice = 0;
@@ -235,13 +235,13 @@ namespace dxvk {
           pDesc->Texture1DArray.ArraySize       = resourceDesc.ArraySize;
         }
       } return S_OK;
-      
+
       case D3D11_RESOURCE_DIMENSION_TEXTURE2D: {
         D3D11_TEXTURE2D_DESC resourceDesc;
         static_cast<D3D11Texture2D*>(pResource)->GetDesc(&resourceDesc);
-        
+
         pDesc->Format = resourceDesc.Format;
-        
+
         if (resourceDesc.ArraySize == 1) {
           pDesc->ViewDimension = D3D11_UAV_DIMENSION_TEXTURE2D;
           pDesc->Texture2D.MipSlice   = 0;
@@ -254,17 +254,17 @@ namespace dxvk {
           pDesc->Texture2DArray.PlaneSlice      = 0;
         }
       } return S_OK;
-      
+
       case D3D11_RESOURCE_DIMENSION_TEXTURE3D: {
         D3D11_TEXTURE3D_DESC resourceDesc;
         static_cast<D3D11Texture3D*>(pResource)->GetDesc(&resourceDesc);
-        
+
         pDesc->Format        = resourceDesc.Format;
         pDesc->ViewDimension = D3D11_UAV_DIMENSION_TEXTURE3D;
         pDesc->Texture3D.MipSlice = 0;
         pDesc->Texture3D.WSize    = resourceDesc.Depth;
       } return S_OK;
-      
+
       default:
         Logger::err(str::format(
           "D3D11: Unsupported dimension for unordered access view: ",
@@ -272,8 +272,8 @@ namespace dxvk {
         return E_INVALIDARG;
     }
   }
-  
-  
+
+
   D3D11_UNORDERED_ACCESS_VIEW_DESC1 D3D11UnorderedAccessView::PromoteDesc(
     const D3D11_UNORDERED_ACCESS_VIEW_DESC*  pDesc,
           UINT                               Plane) {
@@ -323,10 +323,10 @@ namespace dxvk {
           D3D11_UNORDERED_ACCESS_VIEW_DESC1* pDesc) {
     D3D11_RESOURCE_DIMENSION resourceDim = D3D11_RESOURCE_DIMENSION_UNKNOWN;
     pResource->GetType(&resourceDim);
-    
+
     DXGI_FORMAT format = DXGI_FORMAT_UNKNOWN;
     uint32_t numLayers = 0;
-    
+
     switch (resourceDim) {
       case D3D11_RESOURCE_DIMENSION_BUFFER: {
         if (pDesc->ViewDimension != D3D11_UAV_DIMENSION_BUFFER) {
@@ -334,55 +334,55 @@ namespace dxvk {
           return E_INVALIDARG;
         }
       } break;
-      
+
       case D3D11_RESOURCE_DIMENSION_TEXTURE1D: {
         D3D11_TEXTURE1D_DESC resourceDesc;
         static_cast<D3D11Texture1D*>(pResource)->GetDesc(&resourceDesc);
-        
+
         if (pDesc->ViewDimension != D3D11_UAV_DIMENSION_TEXTURE1D
          && pDesc->ViewDimension != D3D11_UAV_DIMENSION_TEXTURE1DARRAY) {
           Logger::err("D3D11: Incompatible view dimension for Texture1D");
           return E_INVALIDARG;
         }
-        
+
         format    = resourceDesc.Format;
         numLayers = resourceDesc.ArraySize;
       } break;
-      
+
       case D3D11_RESOURCE_DIMENSION_TEXTURE2D: {
         D3D11_TEXTURE2D_DESC resourceDesc;
         static_cast<D3D11Texture2D*>(pResource)->GetDesc(&resourceDesc);
-        
+
         if (pDesc->ViewDimension != D3D11_UAV_DIMENSION_TEXTURE2D
          && pDesc->ViewDimension != D3D11_UAV_DIMENSION_TEXTURE2DARRAY) {
           Logger::err("D3D11: Incompatible view dimension for Texture2D");
           return E_INVALIDARG;
         }
-        
+
         format    = resourceDesc.Format;
         numLayers = resourceDesc.ArraySize;
       } break;
-      
+
       case D3D11_RESOURCE_DIMENSION_TEXTURE3D: {
         D3D11_TEXTURE3D_DESC resourceDesc;
         static_cast<D3D11Texture3D*>(pResource)->GetDesc(&resourceDesc);
-        
+
         if (pDesc->ViewDimension != D3D11_UAV_DIMENSION_TEXTURE3D) {
           Logger::err("D3D11: Incompatible view dimension for Texture3D");
           return E_INVALIDARG;
         }
-        
+
         format    = resourceDesc.Format;
         numLayers = std::max(resourceDesc.Depth >> pDesc->Texture3D.MipSlice, 1u);
       } break;
-      
+
       default:
         return E_INVALIDARG;
     }
-    
+
     if (pDesc->Format == DXGI_FORMAT_UNKNOWN)
       pDesc->Format = format;
-    
+
     switch (pDesc->ViewDimension) {
       case D3D11_UAV_DIMENSION_BUFFER:
         if (pDesc->Buffer.NumElements == 0)
@@ -393,7 +393,7 @@ namespace dxvk {
         if (pDesc->Texture1DArray.ArraySize > numLayers - pDesc->Texture1DArray.FirstArraySlice)
           pDesc->Texture1DArray.ArraySize = numLayers - pDesc->Texture1DArray.FirstArraySlice;
         break;
-      
+
       case D3D11_UAV_DIMENSION_TEXTURE2D:
         break;
 
@@ -401,16 +401,16 @@ namespace dxvk {
         if (pDesc->Texture2DArray.ArraySize > numLayers - pDesc->Texture2DArray.FirstArraySlice)
           pDesc->Texture2DArray.ArraySize = numLayers - pDesc->Texture2DArray.FirstArraySlice;
         break;
-      
+
       case D3D11_UAV_DIMENSION_TEXTURE3D:
         if (pDesc->Texture3D.WSize > numLayers - pDesc->Texture3D.FirstWSlice)
           pDesc->Texture3D.WSize = numLayers - pDesc->Texture3D.FirstWSlice;
         break;
-      
+
       default:
         break;
     }
-    
+
     return S_OK;
   }
 
@@ -443,5 +443,5 @@ namespace dxvk {
                 | VK_ACCESS_SHADER_READ_BIT;
     return device->createBuffer(info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
   }
-  
+
 }
