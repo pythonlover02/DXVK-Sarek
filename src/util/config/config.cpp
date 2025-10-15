@@ -1094,6 +1094,23 @@ namespace dxvk {
       { "d3d9.customDeviceId",              "0330" },
       { "d3d9.customDeviceDesc",            "NVIDIA GeForce FX 5900 Ultra" },
     }} },
+    /* Psi-Ops: The Mindgate Conspiracy           *
+     * Broken input and physics above 60 fps      */
+    { R"(\\PsiOps\.exe$)", {{
+      { "d3d9.maxFrameRate",                  "60" },
+    }} },
+    /* Alone in the Dark (2008)                   *
+     * Crashes when selecting the graphics menu   *
+     * option without memory tracking in place    */
+    { R"(\\Alone\.exe$)", {{
+      { "d3d9.memoryTrackTest",             "True" },
+    }} },
+    /* Heroes of Annihilated Empires              *
+     * Cursor and other animations play back too  *
+     * fast without a frame cap in place.         */
+    { R"(\\Heroes of Annihilated Empires.*\\engine\.exe$)", {{
+      { "d3d9.maxFrameRate",                  "60" },
+    }} },
 
     /**********************************************/
     /* D3D8 GAMES                                 */
@@ -1229,11 +1246,17 @@ namespace dxvk {
     { R"(\\fifa2003(demo)?\.exe$)", {{
       { "d3d9.cachedDynamicBuffers",        "True" },
     }} },
-    /* Splinter Cell: Pandora Tomorrow            *
-     * Broken inputs and physics above 60 FPS     */
-    { R"(\\SplinterCell2\.exe$)", {{
+    /* Splinter Cell: Pandora Tomorrow (Retail)   *
+     * Missing shadows without dref scaling and   *
+     * broken inputs and physics above 60 FPS     */
+    { R"(\\offline\\system\\SplinterCell2\.exe$)", {{
       { "d3d9.maxFrameRate",                  "60" },
       { "d3d8.scaleDref",                     "24" },
+    }} },
+    /* Splinter Cell: Pandora Tomorrow (Steam)    *
+     * Broken inputs and physics above 60 FPS     */
+    { R"(\\Splinter Cell Pandora Tomorrow\\system\\SplinterCell2\.exe$)", {{
+      { "d3d9.maxFrameRate",                  "60" },
     }} },
     /* Chrome: Gold Edition                       *
      * Broken character model motion at high FPS  */
@@ -1253,26 +1276,8 @@ namespace dxvk {
      { R"(\\splintercell\.exe$)", {{
       { "d3d9.customVendorId",              "10de" },
       { "d3d9.maxFrameRate",                  "60" },
-      { "d3d9.deviceLossOnFocusLoss",       "True" },
       { "d3d8.scaleDref",                     "24" },
       { "d3d8.shadowPerspectiveDivide",     "True" },
-    }} },
-    /* Trainz v1.3 (2001)                         *
-     * Fixes black screen after alt-tab           */
-    { R"(\\bin\\trainz\.exe$)", {{
-      { "d3d9.deviceLossOnFocusLoss",       "True" },
-    }} },
-    /* A.I.M.: Artificial Intelligence Machine    *
-     * Fixes black screen after the options       *
-     * window is closed or on alt-tab             */
-    { R"(\\AIM\.exe$)", {{
-      { "d3d9.deviceLossOnFocusLoss",       "True" },
-    }} },
-    /* Star Trek: Starfleet Command III           *
-     * The GOG release ships with a D3D8 to D3D9  *
-     * wrapper that leaks several surfaces.       */
-    { R"(\\SFC3\.exe$)", {{
-      { "d3d9.countLosableResources",      "False" },
     }} },
     /* GTR - FIA GT Racing Game                   *
      * Vram complaint & restricted resolutions    *
@@ -1294,6 +1299,16 @@ namespace dxvk {
      * legacy DISCARD behavior                    */
     { R"(\\TopSpin\.exe$)", {{
       { "d3d8.forceLegacyDiscard",          "True" },
+    }} },
+    /* Lego Racers 2 - Hits an incredible amount  *
+     * of queue syncs with direct buffer mapping  */
+    { R"(\\LEGO Racers 2\.exe$)", {{
+      { "d3d9.allowDirectBufferMapping",   "False" },
+    }} },
+    /* Smash Up Derby - Poor performance on Intel *
+     * due to queue syncs on certain race tracks  */
+    { R"(\\Smash up Derby\\cars\.exe$)", {{
+      { "d3d9.allowDirectBufferMapping",   "False" },
     }} },
   }};
 
