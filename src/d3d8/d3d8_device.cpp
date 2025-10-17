@@ -47,7 +47,7 @@ namespace dxvk {
     , m_behaviorFlags(BehaviorFlags)
     , m_multithread(BehaviorFlags & D3DCREATE_MULTITHREADED) {
     // Get the bridge interface to D3D9.
-    if (FAILED(GetD3D9()->QueryInterface(__uuidof(IDxvkD3D8Bridge), reinterpret_cast<void**>(&m_bridge)))) {
+    if (unlikely(FAILED(GetD3D9()->QueryInterface(__uuidof(IDxvkD3D8Bridge), reinterpret_cast<void**>(&m_bridge))))) {
       throw DxvkError("D3D8Device: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
     }
 
@@ -1141,31 +1141,34 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D8Device::SetViewport(const D3DVIEWPORT8* pViewport) {
     D3D8DeviceLock lock = LockDevice();
 
-    if (likely(pViewport != nullptr)) {
-      // We need a valid render target to validate the viewport
-      if (unlikely(m_renderTarget == nullptr))
+    // Outright crashes on native, but let's be
+    // somewhat more elegant about it.
+    if (unlikely(pViewport == nullptr))
+      return D3DERR_INVALIDCALL;
+
+    // We need a valid render target to validate the viewport
+    if (unlikely(m_renderTarget == nullptr))
+      return D3DERR_INVALIDCALL;
+
+    D3DSURFACE_DESC rtDesc;
+    HRESULT res = m_renderTarget->GetDesc(&rtDesc);
+
+    // D3D8 will fail when setting a viewport that's outside of the
+    // current render target, although this apparently works in D3D9
+    if (likely(SUCCEEDED(res)) &&
+        unlikely(pViewport->X + pViewport->Width  > rtDesc.Width ||
+                 pViewport->Y + pViewport->Height > rtDesc.Height)) {
+      // On Linux/Wine and in windowed mode, we can get in situations
+      // where the actual render target dimensions are off by one
+      // pixel to what the game sets them to. Allow this corner case
+      // to skip the validation, in order to prevent issues.
+      const bool isOnePixelWider  = pViewport->X + pViewport->Width  == rtDesc.Width  + 1;
+      const bool isOnePixelTaller = pViewport->Y + pViewport->Height == rtDesc.Height + 1;
+
+      if (unlikely(m_presentParams.Windowed && (isOnePixelWider || isOnePixelTaller))) {
+        Logger::debug("D3D8Device::SetViewport: Viewport exceeds render target dimensions by one pixel");
+      } else {
         return D3DERR_INVALIDCALL;
-
-      D3DSURFACE_DESC rtDesc;
-      HRESULT res = m_renderTarget->GetDesc(&rtDesc);
-
-      // D3D8 will fail when setting a viewport that's outside of the
-      // current render target, although this apparently works in D3D9
-      if (likely(SUCCEEDED(res)) &&
-          unlikely(pViewport->X + pViewport->Width  > rtDesc.Width ||
-                   pViewport->Y + pViewport->Height > rtDesc.Height)) {
-        // On Linux/Wine and in windowed mode, we can get in situations
-        // where the actual render target dimensions are off by one
-        // pixel to what the game sets them to. Allow this corner case
-        // to skip the validation, in order to prevent issues.
-        const bool isOnePixelWider  = pViewport->X + pViewport->Width  == rtDesc.Width  + 1;
-        const bool isOnePixelTaller = pViewport->Y + pViewport->Height == rtDesc.Height + 1;
-
-        if (m_presentParams.Windowed && (isOnePixelWider || isOnePixelTaller)) {
-          Logger::debug("D3D8Device::SetViewport: Viewport exceeds render target dimensions by one pixel");
-        } else {
-          return D3DERR_INVALIDCALL;
-        }
       }
     }
 
@@ -1226,18 +1229,22 @@ namespace dxvk {
     if (unlikely(ShouldRecord()))
       return D3DERR_INVALIDCALL;
 
+    D3D8StateBlockType stateBlockType = ConvertStateBlockType(Type);
+
+    if (unlikely(stateBlockType == D3D8StateBlockType::Unknown)) {
+      Logger::warn(str::format("D3D8Device::CreateStateBlock: Invalid state block type: ", Type));
+      return D3DERR_INVALIDCALL;
+    }
+
     Com<d3d9::IDirect3DStateBlock9> pStateBlock9;
     HRESULT res = GetD3D9()->CreateStateBlock(d3d9::D3DSTATEBLOCKTYPE(Type), &pStateBlock9);
 
     if (likely(SUCCEEDED(res))) {
       m_token++;
-      auto stateBlockIterPair = m_stateBlocks.emplace(std::piecewise_construct,
-                                                      std::forward_as_tuple(m_token),
-                                                      std::forward_as_tuple(this, Type, pStateBlock9.ptr()));
+      m_stateBlocks.emplace(std::piecewise_construct,
+                            std::forward_as_tuple(m_token),
+                            std::forward_as_tuple(this, stateBlockType, pStateBlock9.ptr()));
       *pToken = m_token;
-
-      // D3D8 state blocks automatically capture state on creation.
-      stateBlockIterPair.first->second.Capture();
     }
 
     return res;
