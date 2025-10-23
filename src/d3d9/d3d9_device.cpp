@@ -1693,13 +1693,23 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::SetViewport(const D3DVIEWPORT9* pViewport) {
     D3D9DeviceLock lock = LockDevice();
 
+    // Outright crashes on native, but let's be
+    // somewhat more elegant about it.
+    if (unlikely(pViewport == nullptr))
+      return D3DERR_INVALIDCALL;
+
     if (unlikely(ShouldRecord()))
       return m_recorder->SetViewport(pViewport);
 
     if (m_state.viewport == *pViewport)
       return D3D_OK;
 
-    m_state.viewport = *pViewport;
+    m_state.viewport.X = pViewport->X;
+    m_state.viewport.Y = pViewport->Y;
+    m_state.viewport.Width = pViewport->Width;
+    m_state.viewport.Height = pViewport->Height;
+    m_state.viewport.MinZ = pViewport->MinZ;
+    m_state.viewport.MaxZ = pViewport->MinZ < pViewport->MaxZ ? pViewport->MaxZ : pViewport->MinZ + 0.001f;
 
     m_flags.set(D3D9DeviceFlag::DirtyViewportScissor);
     m_flags.set(D3D9DeviceFlag::DirtyFFViewport);
@@ -1712,7 +1722,7 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::GetViewport(D3DVIEWPORT9* pViewport) {
     D3D9DeviceLock lock = LockDevice();
 
-    if (pViewport == nullptr)
+    if (unlikely(pViewport == nullptr))
       return D3DERR_INVALIDCALL;
 
     *pViewport = m_state.viewport;
@@ -2241,8 +2251,15 @@ namespace dxvk {
     if (unlikely(ppSB == nullptr))
       return D3DERR_INVALIDCALL;
 
+    D3D9StateBlockType stateBlockType = ConvertStateBlockType(Type);
+
+    if (unlikely(stateBlockType == D3D9StateBlockType::Unknown)) {
+      Logger::warn(str::format("D3D9DeviceEx::CreateStateBlock: Invalid state block type: ", Type));
+      return D3DERR_INVALIDCALL;
+    }
+
     try {
-      const Com<D3D9StateBlock> sb = new D3D9StateBlock(this, ConvertStateBlockType(Type));
+      const Com<D3D9StateBlock> sb = new D3D9StateBlock(this, stateBlockType);
       *ppSB = sb.ref();
       return D3D_OK;
     }
