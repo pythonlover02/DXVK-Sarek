@@ -1,7 +1,6 @@
 #pragma once
 
 #include "dxvk_framepacer_mode.h"
-#include "dxvk_latency_stats.h"
 #include "dxvk_gpu_progress.h"
 #include "../dxvk_options.h"
 #include "../../util/log/log.h"
@@ -57,7 +56,6 @@ namespace dxvk {
     : FramePacerMode(mode, mode == LOW_LATENCY ? "low-latency" : "low-latency-vrr", storage, frameSync, firstFrameId),
       m_lowLatencyOffset(getLowLatencyOffset(options)),
       m_allowCpuFramesOverlap(options.lowLatencyAllowCpuFramesOverlap),
-      m_presentationStats(5000),
       m_gpuProgress(storage) {
       Logger::info( str::format("  lowLatencyOffset: ", m_lowLatencyOffset) );
       Logger::info( str::format("  lowLatencyAllowCpuFramesOverlap: ", m_allowCpuFramesOverlap) );
@@ -81,9 +79,6 @@ namespace dxvk {
         m_frameSync->m_fenceCsFinished.wait( frameId-1 );
 
       m_frameSync->m_fenceGpuStart.wait( frameId-1 );
-
-      if (m_mode == LOW_LATENCY_VRR)
-        m_frameSync->m_fenceFrameFinished.wait( frameId-2 );
 
       time_point now = high_resolution_clock::now();
       const LatencyMarkers* m = m_latencyMarkersStorage->getConstMarkers(frameId-1);
@@ -120,27 +115,22 @@ namespace dxvk {
         return;
       }
 
-      time_point lastFrameFinish;
+      time_point lastFrameFinishPrediction;
 
       if (targetGpuTime < props.optimizedGpuTime) {
         m_gpuProgress.waitUntil( frameId-1, targetGpuTime, props.cpuUntilGpuStart );
-        lastFrameFinish = high_resolution_clock::now()
+        lastFrameFinishPrediction = high_resolution_clock::now()
           + microseconds(props.optimizedGpuTime - targetGpuTime);
       }
       else {
-        if (m_mode == LOW_LATENCY_VRR) {
-          m_frameSync->m_fenceFrameFinished.wait( frameId-1 );
-        } else {
-          m_frameSync->m_fenceGpuFinished.wait( frameId-1 );
-          lastFrameFinish = high_resolution_clock::now();
-        }
+        m_frameSync->m_fenceGpuFinished.wait( frameId-1 );
       }
 
       props = getSyncPrediction();
       now = high_resolution_clock::now();
       int32_t cpuDelay = getCpuDelay( props, m, now );
       int32_t delay = std::max( cpuDelay, getFpsLimiterDelay( m, now ) );
-      delay = std::max( delay, getVrrDelay( frameId, props, now, lastFrameFinish ) );
+      delay = std::max( delay, getVrrDelay( frameId, props, now, lastFrameFinishPrediction ) );
       sleepFor( now, delay );
 
     }
@@ -205,27 +195,25 @@ namespace dxvk {
       props.csFinished = m->csFinished;
       props.isOutlier = isOutlier(frameId);
 
+      if (m_mode == LOW_LATENCY_VRR) {
+        const LatencyMarkers* mPrev = m_latencyMarkersStorage->getConstMarkers(frameId-1);
+        int32_t frametime = duration_cast<microseconds>(
+            (m->start + microseconds(m->gpuFinished))
+          - (mPrev->start + microseconds(mPrev->gpuFinished) )).count();
+
+        int32_t curVSyncBuffer = m_vrrVSyncBuffer.load();
+        int32_t diff = (m_vrrRefreshInterval + curVSyncBuffer) - frametime;
+
+        int32_t newVSyncBuffer = std::max( 0, diff );
+        m_vrrVSyncBuffer.store( newVSyncBuffer );
+      }
+
       m_propsFinished.store( frameId );
 
     }
 
 
-    void endFrame( uint64_t frameId ) override {
-
-      if (m_mode == LOW_LATENCY_VRR && frameId > m_firstFrameId+1) {
-        const LatencyMarkers* m1 = m_latencyMarkersStorage->getConstMarkers(frameId-1);
-        const LatencyMarkers* m2 = m_latencyMarkersStorage->getConstMarkers(frameId);
-
-        int32_t gpuFinishedInterval = std::chrono::duration_cast<microseconds>(
-          (m2->start + microseconds(m2->gpuFinished)) - (m1->start + microseconds(m1->gpuFinished))).count();
-
-        // only push values where we probably weren't running into v-sync buffering.
-        // otherwise we can get a presentation stats median drift due to feedback loop.
-        if (gpuFinishedInterval >= 0.99 * m_vrrRefreshInterval)
-          m_presentationStats.push( m2->end, m2->presentFinished - m2->gpuFinished );
-      }
-
-    }
+    void endFrame( uint64_t frameId ) override { }
 
 
 
@@ -329,24 +317,18 @@ namespace dxvk {
       if (m_mode != LOW_LATENCY_VRR)
         return 0;
 
-      // Presentation latency should be fairly stable, but drivers may report back
-      // different levels of latency (Nvidia reports very low latencies on x11 flip compared
-      // to Wayland). We take the median within a recent time window to adjust to that.
-
-      // Presentation latency may vary though for other reasons, like when compiling shaders
-      // on all cpu cores, we will get thread starvation and higher latency.
-
-      int32_t presentLatency = m_presentationStats.getMedian( frameId );
-      uint64_t frameFinishedId = m_latencyMarkersStorage->getTimeline()->frameFinished.load();
+      uint64_t renderFinishedId = m_latencyMarkersStorage->getTimeline()->gpuFinished.load();
+      const LatencyMarkers* m = m_latencyMarkersStorage->getConstMarkers(renderFinishedId);
       int32_t lastVBlank = std::chrono::duration_cast<microseconds> (
-        m_latencyMarkersStorage->getConstMarkers(frameFinishedId)->end - now).count()
-        - presentLatency;
-      int32_t targetVBlank = lastVBlank + (frameId-frameFinishedId) * m_vrrRefreshInterval;
+        m->start + microseconds(m->gpuFinished) - now + microseconds(m_vrrVSyncBuffer.load())).count();
+
+      int32_t targetVBlank = lastVBlank + (frameId-renderFinishedId) * m_vrrRefreshInterval;
 
       // set last v-blank if we have more information about the last frame
-      if (frameFinishedId != frameId-1 && lastFrameFinish != time_point{} ) {
-        assert( frameFinishedId == frameId-2 );
-        int32_t vBlank = std::chrono::duration_cast<microseconds> (lastFrameFinish - now).count();
+      if (renderFinishedId != frameId-1 && lastFrameFinish != time_point{} ) {
+        assert( renderFinishedId == frameId-2 );
+        int32_t vBlank = std::chrono::duration_cast<microseconds> (
+          lastFrameFinish - now).count() + m_vrrVSyncBuffer.load();
         lastVBlank += m_vrrRefreshInterval;
         lastVBlank = std::max( lastVBlank, vBlank );
         targetVBlank = lastVBlank + m_vrrRefreshInterval;
@@ -379,7 +361,7 @@ namespace dxvk {
     const bool    m_allowCpuFramesOverlap;
 
     int32_t m_vrrRefreshInterval = { 0 };
-    LatencyStats m_presentationStats;
+    std::atomic<int32_t> m_vrrVSyncBuffer = { 0 };
 
     std::array<SyncProps, 16> m_props = { };
     std::atomic<uint64_t> m_propsFinished = { 0 };
