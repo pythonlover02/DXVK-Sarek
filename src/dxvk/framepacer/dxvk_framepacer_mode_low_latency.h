@@ -34,8 +34,8 @@ namespace dxvk {
    * Fps limiting is tightly integrated into the frame pacing logic and is highly recommended
    * to be used in place of most ingame limiters.
    *
-   * A VRR mode that activates V-Sync is also provided to combine low latency with image clarity.
-   * It's achieved by predictively limiting at the present timeline, respecting v-blanks to
+   * A VRR mode is also provided to combine low latency with image clarity. It's achieved by
+   * predictively limiting at the present timeline, respecting (implicitly derived) v-blanks to
    * avoid going into V-Sync buffering. This can further be tuned by using the fps limiter at the
    * same time, which means there are basically two limiters active. The advantage of doing so
    * is that the "normal" fps limiter isn't affected by prediction errors. Selecting a VRR refresh
@@ -68,8 +68,6 @@ namespace dxvk {
     }
 
     ~LowLatencyMode() {}
-
-    bool getDesiredPresentMode( uint32_t& presentMode ) const override;
 
     void startFrame( uint64_t frameId ) override {
 
@@ -196,6 +194,7 @@ namespace dxvk {
       props.isOutlier = isOutlier(frameId);
 
       if (m_mode == LOW_LATENCY_VRR) {
+        // implicitly derive v-blank timings
         const LatencyMarkers* mPrev = m_latencyMarkersStorage->getConstMarkers(frameId-1);
         int32_t frametime = duration_cast<microseconds>(
             (m->start + microseconds(m->gpuFinished))
@@ -312,7 +311,7 @@ namespace dxvk {
     }
 
 
-    int32_t getVrrDelay( uint64_t frameId, const SyncProps& props, const time_point& now, const time_point& lastFrameFinish = time_point{} ) {
+    int32_t getVrrDelay( uint64_t frameId, const SyncProps& props, const time_point& now, const time_point& lastFrameFinishPrediction = time_point{} ) {
 
       if (m_mode != LOW_LATENCY_VRR)
         return 0;
@@ -325,10 +324,9 @@ namespace dxvk {
       int32_t targetVBlank = lastVBlank + (frameId-renderFinishedId) * m_vrrRefreshInterval;
 
       // set last v-blank if we have more information about the last frame
-      if (renderFinishedId != frameId-1 && lastFrameFinish != time_point{} ) {
-        assert( renderFinishedId == frameId-2 );
+      if (renderFinishedId == frameId-2 && lastFrameFinishPrediction != time_point{} ) {
         int32_t vBlank = std::chrono::duration_cast<microseconds> (
-          lastFrameFinish - now).count() + m_vrrVSyncBuffer.load();
+          lastFrameFinishPrediction - now).count() + m_vrrVSyncBuffer.load();
         lastVBlank += m_vrrRefreshInterval;
         lastVBlank = std::max( lastVBlank, vBlank );
         targetVBlank = lastVBlank + m_vrrRefreshInterval;

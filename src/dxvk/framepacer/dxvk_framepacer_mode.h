@@ -44,13 +44,11 @@ namespace dxvk {
     virtual void notifyQueueSubmit( uint64_t frameId, time_point t ) { }
     virtual void notifyGpuReady( uint64_t frameId, time_point t ) { }
 
-    virtual bool getDesiredPresentMode( uint32_t& presentMode ) const {
-      return false; }
+    void setPresentMode( uint32_t presentMode )
+      { m_presentMode = presentMode; }
 
-    void setPresentMode( uint32_t presentMode ) {
-      m_presentMode = presentMode; }
-
-    uint32_t getPresentMode() { return m_presentMode; }
+    uint32_t getPresentMode()
+      { return m_presentMode; }
 
     virtual void setTargetFrameRate( double frameRate ) {
       if (!m_fpsLimitEnvOverride && frameRate > 1.0)

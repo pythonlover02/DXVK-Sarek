@@ -198,6 +198,9 @@ namespace dxvk {
       fenceInfo.pNext = const_cast<void*>(std::exchange(info.pNext, &fenceInfo));
     }
 
+    FramePacer* pacer = dynamic_cast<FramePacer*>(m_latencyTracker.ptr());
+    if (pacer) pacer->getFramePacerMode()->setPresentMode(m_presentMode);
+
     VkResult status = m_vkd->vkQueuePresentKHR(
       m_device->queues().graphics.queueHandle, &info);
 
@@ -596,9 +599,6 @@ namespace dxvk {
       return status;
 
     m_presentMode = pickPresentMode(modes.size(), modes.data(), m_preferredSyncInterval);
-
-    FramePacer* pacer = dynamic_cast<FramePacer*>(m_latencyTracker.ptr());
-    if (pacer) pacer->getFramePacerMode()->setPresentMode(m_presentMode);
 
     // Check whether we can change present modes dynamically. This may
     // influence the image count as well as further swap chain creation.
@@ -1077,15 +1077,8 @@ namespace dxvk {
           uint32_t                  numSupported,
     const VkPresentModeKHR*         pSupported,
           uint32_t                  syncInterval) {
-    std::array<VkPresentModeKHR, 3> desired = { };
+    std::array<VkPresentModeKHR, 2> desired = { };
     uint32_t numDesired = 0;
-
-    FramePacer* pacer = dynamic_cast<FramePacer*>(m_latencyTracker.ptr());
-    if (pacer) {
-      uint32_t desiredMode;
-      if (pacer->getFramePacerMode()->getDesiredPresentMode(desiredMode))
-        desired[numDesired++] = (VkPresentModeKHR) desiredMode;
-    }
 
     Tristate tearFree = m_device->config().tearFree;
 
