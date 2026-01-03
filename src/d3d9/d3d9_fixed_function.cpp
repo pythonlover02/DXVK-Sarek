@@ -117,7 +117,7 @@ namespace dxvk {
 
       for (uint32_t i = 0; i < fogCaseLabels.size(); i++) {
         spvModule.opLabel(fogCaseLabels[i].labelId);
-        
+
         fogVariables[i].labelId = fogCaseLabels[i].labelId;
         fogVariables[i].varId   = [&] {
           auto mode = D3DFOGMODE(fogCaseLabels[i].literal);
@@ -158,7 +158,7 @@ namespace dxvk {
             }
           }
         }();
-        
+
         spvModule.opBranch(applyFogFactor);
       }
 
@@ -223,7 +223,7 @@ namespace dxvk {
     uint32_t rsBlock = spvModule.newVar(
       spvModule.defPointerType(rsStruct, spv::StorageClassPushConstant),
       spv::StorageClassPushConstant);
-    
+
     spvModule.setDebugName         (rsBlock, "render_state");
 
     spvModule.setDebugName         (rsStruct, "render_state_t");
@@ -431,7 +431,7 @@ namespace dxvk {
     NormalMatrix,
     InverseViewMatrix,
     ProjMatrix,
-      
+
     Texcoord0,
     Texcoord1,
     Texcoord2,
@@ -722,7 +722,7 @@ namespace dxvk {
     info.inputMask = m_inputMask;
     info.outputMask = m_outputMask;
     info.pushConstOffset = m_pushConstOffset;
-    info.pushConstSize = m_pushConstOffset;
+    info.pushConstSize = m_pushConstSize;
 
     return new DxvkShader(info, m_module.compile());
   }
@@ -894,7 +894,7 @@ namespace dxvk {
         normal = m_module.opNormalize(m_vec3Type, normal);
         normal = m_module.opSelect(m_vec3Type, isZeroNormal3, m_module.constvec3f32(0.0f, 0.0f, 0.0f), normal);
       }
-      
+
       gl_Position = emitVectorTimesMatrix(4, 4, vtx, m_vs.constants.proj);
     } else {
       gl_Position = m_module.opFMul(m_vec4Type, gl_Position, m_vs.constants.invExtent);
@@ -955,7 +955,7 @@ namespace dxvk {
         case (DXVK_TSS_TCI_CAMERASPACEREFLECTIONVECTOR >> TCIOffset): {
           uint32_t vtx3 = m_module.opVectorShuffle(m_vec3Type, vtx, vtx, 3, indices.data());
           vtx3 = m_module.opNormalize(m_vec3Type, vtx3);
-          
+
           uint32_t reflection = m_module.opReflect(m_vec3Type, vtx3, normal);
 
           std::array<uint32_t, 4> transformIndices;
@@ -1146,7 +1146,7 @@ namespace dxvk {
       uint32_t mat_ambient  = PickSource(m_vsKey.Data.Contents.AmbientSource,  m_vs.constants.materialAmbient);
       uint32_t mat_emissive = PickSource(m_vsKey.Data.Contents.EmissiveSource, m_vs.constants.materialEmissive);
       uint32_t mat_specular = PickSource(m_vsKey.Data.Contents.SpecularSource, m_vs.constants.materialSpecular);
-      
+
       std::array<uint32_t, 4> alphaSwizzle = {0, 1, 2, 7};
       uint32_t finalColor0 = m_module.opFFma(m_vec4Type, mat_ambient, m_vs.constants.globalAmbient, mat_emissive);
                finalColor0 = m_module.opFFma(m_vec4Type, mat_ambient, ambientValue, finalColor0);
@@ -1566,7 +1566,7 @@ namespace dxvk {
     uint32_t current = diffuse;
     // Temp starts off as equal to vec4(0)
     uint32_t temp  = m_module.constvec4f32(0.0f, 0.0f, 0.0f, 0.0f);
-    
+
     uint32_t texture = m_module.constvec4f32(0.0f, 0.0f, 0.0f, 1.0f);
 
     for (uint32_t i = 0; i < caps::TextureStageCount; i++) {
@@ -1675,7 +1675,7 @@ namespace dxvk {
             uint32_t lOffset = m_module.opAccessChain(m_module.defPointerType(m_floatType, spv::StorageClassUniform),
                                                      m_ps.sharedState, 1, &index);
                      lOffset = m_module.opLoad(m_floatType, lOffset);
-            
+
             uint32_t zIndex = 2;
             uint32_t scale = m_module.opCompositeExtract(m_floatType, texture, 1, &zIndex);
                      scale = m_module.opFMul(m_floatType, scale, lScale);
@@ -2167,40 +2167,40 @@ namespace dxvk {
     uint32_t worldPos = emitMatrixTimesVector(4, 4, m_vs.constants.inverseView, vtx);
 
     uint32_t clipPlaneCountId = m_module.constu32(caps::MaxClipPlanes);
-    
+
     uint32_t floatType = m_module.defFloatType(32);
     uint32_t vec4Type  = m_module.defVectorType(floatType, 4);
-    
+
     // Declare uniform buffer containing clip planes
     uint32_t clipPlaneArray  = m_module.defArrayTypeUnique(vec4Type, clipPlaneCountId);
     uint32_t clipPlaneStruct = m_module.defStructTypeUnique(1, &clipPlaneArray);
     uint32_t clipPlaneBlock  = m_module.newVar(
       m_module.defPointerType(clipPlaneStruct, spv::StorageClassUniform),
       spv::StorageClassUniform);
-    
+
     m_module.decorateArrayStride  (clipPlaneArray, 16);
-    
+
     m_module.setDebugName         (clipPlaneStruct, "clip_info_t");
     m_module.setDebugMemberName   (clipPlaneStruct, 0, "clip_planes");
     m_module.decorate             (clipPlaneStruct, spv::DecorationBlock);
     m_module.memberDecorateOffset (clipPlaneStruct, 0, 0);
-    
+
     uint32_t bindingId = computeResourceSlotId(
       DxsoProgramType::VertexShader,
       DxsoBindingType::ConstantBuffer,
       DxsoConstantBuffers::VSClipPlanes);
-    
+
     m_module.setDebugName         (clipPlaneBlock, "clip_info");
     m_module.decorateDescriptorSet(clipPlaneBlock, 0);
     m_module.decorateBinding      (clipPlaneBlock, bindingId);
-    
+
     DxvkResourceSlot resource;
     resource.slot   = bindingId;
     resource.type   = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     resource.view   = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
     resource.access = VK_ACCESS_UNIFORM_READ_BIT;
     m_resourceSlots.push_back(resource);
-    
+
     // Declare output array for clip distances
     uint32_t clipDistArray = m_module.newVar(
       m_module.defPointerType(
@@ -2217,14 +2217,14 @@ namespace dxvk {
         m_module.constu32(0),
         m_module.constu32(i),
       }};
-      
+
       uint32_t planeId = m_module.opLoad(vec4Type,
         m_module.opAccessChain(
           m_module.defPointerType(vec4Type, spv::StorageClassUniform),
           clipPlaneBlock, blockMembers.size(), blockMembers.data()));
-      
+
       uint32_t distId = m_module.opDot(floatType, worldPos, planeId);
-      
+
       m_module.opStore(
         m_module.opAccessChain(
           m_module.defPointerType(floatType, spv::StorageClassOutput),
@@ -2420,7 +2420,7 @@ namespace dxvk {
       std::ofstream dumpStream(
         str::tows(str::format(dumpPath, "/", Name, ".spv").c_str()).c_str(),
         std::ios_base::binary | std::ios_base::trunc);
-      
+
       m_shader->dump(dumpStream);
     }
   }
@@ -2433,7 +2433,7 @@ namespace dxvk {
     auto entry = m_vsModules.find(ShaderKey);
     if (entry != m_vsModules.end())
       return entry->second;
-    
+
     D3D9FFShader shader(
       pDevice, ShaderKey);
 
@@ -2450,7 +2450,7 @@ namespace dxvk {
     auto entry = m_fsModules.find(ShaderKey);
     if (entry != m_fsModules.end())
       return entry->second;
-    
+
     D3D9FFShader shader(
       pDevice, ShaderKey);
 

@@ -98,9 +98,7 @@ namespace dxvk {
     bufferViewInfo.rangeLength = srcSlice.length();
     auto tmpBufferView = m_device->createBufferView(srcSlice.buffer(), bufferViewInfo);
 
-    if (specConstantValue)
-      m_context->setSpecConstant(VK_PIPELINE_BIND_POINT_COMPUTE, 0, specConstantValue);
-
+    m_context->setSpecConstant(VK_PIPELINE_BIND_POINT_COMPUTE, 0, specConstantValue);
     m_context->bindResourceView(BindingIds::Image,  tmpImageView, nullptr);
     m_context->bindResourceView(BindingIds::Buffer, nullptr,     tmpBufferView);
     m_context->bindShader(VK_SHADER_STAGE_COMPUTE_BIT, m_shaders[videoFormat.FormatType]);
@@ -113,7 +111,7 @@ namespace dxvk {
     // Reset the spec constants used...
     if (specConstantValue)
       m_context->setSpecConstant(VK_PIPELINE_BIND_POINT_COMPUTE, 0, 0);
-    
+
     m_transferCommands += 1;
   }
 
@@ -149,7 +147,7 @@ namespace dxvk {
 
   void D3D9FormatHelper::FlushInternal() {
     m_context->flushCommandList();
-    
+
     m_transferCommands = 0;
   }
 
