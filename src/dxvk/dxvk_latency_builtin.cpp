@@ -129,7 +129,8 @@ namespace dxvk {
 
 
   void DxvkBuiltInLatencyTracker::notifyGpuExecutionEnd(
-          uint64_t                  frameId) {
+          uint64_t                  frameId,
+          VkQueryPool*              queryPool) {
     std::unique_lock lock(m_mutex);
     auto frame = findFrame(frameId);
 

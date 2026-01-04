@@ -52,9 +52,9 @@ namespace dxvk {
      * This will not change any context state
      * other than the active command list.
      * \param [in] reason Optional debug label describing the reason
-     * \returns Active command list
+     * \returns Active command list and a query pool for reading the device timestamp
      */
-    Rc<DxvkCommandList> endRecording(
+    std::pair<Rc<DxvkCommandList>, VkQueryPool*> endRecording(
       const VkDebugUtilsLabelEXT*       reason);
 
     /**

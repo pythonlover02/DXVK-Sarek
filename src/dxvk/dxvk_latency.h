@@ -177,7 +177,8 @@ namespace dxvk {
      * \param [in] frameId Associated frame ID
      */
     virtual void notifyGpuExecutionEnd(
-            uint64_t                  frameId) = 0;
+            uint64_t                  frameId,
+            VkQueryPool*              queryPool) = 0;
 
     virtual void notifyGpuPresentBegin(
             uint64_t                  frameId) { }

@@ -84,7 +84,7 @@ namespace dxvk {
   }
   
   
-  Rc<DxvkCommandList> DxvkContext::endRecording(
+  std::pair<Rc<DxvkCommandList>, VkQueryPool*> DxvkContext::endRecording(
     const VkDebugUtilsLabelEXT*       reason) {
     this->endCurrentCommands();
     this->relocateQueuedResources();
@@ -93,6 +93,15 @@ namespace dxvk {
 
     this->submitDescriptorPool(false);
 
+    VkQueryPool* queryPool = m_latencyTracker ? m_latencyTracker->allocSubmitQueryPool() : nullptr;
+    if (queryPool) {
+      m_cmd->cmdResetQueryPool(DxvkCmdBuffer::ExecBuffer, *queryPool, 0, 1);
+      m_cmd->cmdWriteTimestamp(DxvkCmdBuffer::ExecBuffer,
+        VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        *queryPool, 0
+      );
+    }
+
     if (unlikely(m_features.test(DxvkContextFeature::DebugUtils))) {
       // Make sure to emit the submission reason always at the very end
       if (reason && reason->pLabelName && reason->pLabelName[0])
@@ -100,7 +109,7 @@ namespace dxvk {
     }
 
     m_cmd->finalize();
-    return std::exchange(m_cmd, nullptr);
+    return std::make_pair(std::exchange(m_cmd, nullptr), queryPool);
   }
 
 
@@ -144,8 +153,9 @@ namespace dxvk {
     if (m_endLatencyTracking && m_latencyTracker)
       m_latencyTracker->notifyCsRenderEnd(m_latencyFrameId);
 
-    m_device->submitCommandList(this->endRecording(reason),
-      m_latencyTracker, m_latencyFrameId, status);
+    auto [cmdList, queryPool] = this->endRecording(reason);
+    m_device->submitCommandList(cmdList,
+      m_latencyTracker, m_latencyFrameId, queryPool, status);
 
     // Ensure that subsequent submissions do not see the tracker.
     // It is important to hide certain internal submissions in

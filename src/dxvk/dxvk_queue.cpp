@@ -208,6 +208,8 @@ namespace dxvk {
         } else {
           Logger::err(str::format("DxvkSubmissionQueue: Command submission failed: ", entry.result));
           m_lastError = entry.result;
+          if (entry.latency.tracker)
+            entry.latency.tracker->freeSubmitQueryPool(entry.submit.queryPool);
 
           if (m_lastError != VK_ERROR_DEVICE_LOST)
             m_device->waitForIdle();
@@ -266,8 +268,11 @@ namespace dxvk {
 
           status = vk->vkWaitSemaphores(vk->device(), &waitInfo, ~0ull);
 
-          if (entry.latency.tracker && status == VK_SUCCESS)
-            entry.latency.tracker->notifyGpuExecutionEnd(entry.latency.frameId);
+          if (entry.latency.tracker) {
+            if (status == VK_SUCCESS)
+              entry.latency.tracker->notifyGpuExecutionEnd(entry.latency.frameId, entry.submit.queryPool);
+            else entry.latency.tracker->freeSubmitQueryPool(entry.submit.queryPool);
+          }
         }
 
         if (status != VK_SUCCESS) {

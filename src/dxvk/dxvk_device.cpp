@@ -517,13 +517,13 @@ namespace dxvk {
     const Rc<Presenter>&            presenter,
     uint64_t                        firstFrameId ) {
     if (m_options.latencySleep == Tristate::False)
-      return new FramePacer(m_options, firstFrameId);
+      return new FramePacer(this, m_options, firstFrameId);
 
     if (m_options.latencySleep == Tristate::Auto) {
       if (m_features.nvLowLatency2)
         return new DxvkReflexLatencyTrackerNv(presenter);
       else
-        return new FramePacer(m_options, firstFrameId);
+        return new FramePacer(this, m_options, firstFrameId);
     }
 
     return new DxvkBuiltInLatencyTracker(presenter,
@@ -555,9 +555,11 @@ namespace dxvk {
     const Rc<DxvkCommandList>&      commandList,
     const Rc<DxvkLatencyTracker>&   tracker,
           uint64_t                  frameId,
+          VkQueryPool*              queryPool,
           DxvkSubmitStatus*         status) {
     DxvkSubmitInfo submitInfo = { };
     submitInfo.cmdList = commandList;
+    submitInfo.queryPool = queryPool;
 
     DxvkLatencyInfo latencyInfo;
     latencyInfo.tracker = tracker;

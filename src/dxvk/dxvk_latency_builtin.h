@@ -64,7 +64,8 @@ namespace dxvk {
             uint64_t                  frameId);
 
     void notifyGpuExecutionEnd(
-            uint64_t                  frameId);
+            uint64_t                  frameId,
+            VkQueryPool*              queryPool);
 
     void notifyGpuPresentEnd(
             uint64_t                  frameId);

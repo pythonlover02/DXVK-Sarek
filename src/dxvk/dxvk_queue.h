@@ -33,6 +33,7 @@ namespace dxvk {
    */
   struct DxvkSubmitInfo {
     Rc<DxvkCommandList> cmdList;
+    VkQueryPool*        queryPool;
   };
   
   

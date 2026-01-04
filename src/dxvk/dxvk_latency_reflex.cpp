@@ -182,7 +182,8 @@ namespace dxvk {
 
 
   void DxvkReflexLatencyTrackerNv::notifyGpuExecutionEnd(
-          uint64_t                  frameId) {
+          uint64_t                  frameId,
+          VkQueryPool*              queryPool) {
     std::lock_guard lock(m_mutex);
     auto now = dxvk::high_resolution_clock::now();
 

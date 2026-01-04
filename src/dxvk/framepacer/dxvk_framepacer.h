@@ -12,6 +12,7 @@
 namespace dxvk {
 
   struct DxvkOptions;
+  class DxvkDevice;
 
   /* \brief Frame pacer interface managing the CPU - GPU synchronization.
    *
@@ -26,7 +27,7 @@ namespace dxvk {
     using time_point   = high_resolution_clock::time_point;
   public:
 
-    FramePacer( const DxvkOptions& options, uint64_t firstFrameId );
+    FramePacer( DxvkDevice* device, const DxvkOptions& options, uint64_t firstFrameId );
     ~FramePacer();
 
     void sleepAndBeginFrame(
@@ -97,11 +98,12 @@ namespace dxvk {
       }
     }
 
-    void notifyGpuExecutionEnd( uint64_t frameId ) override {
+    void notifyGpuExecutionEnd( uint64_t frameId, VkQueryPool* queryPool ) override {
       auto now = high_resolution_clock::now();
       LatencyMarkers* m = m_latencyMarkersStorage.getMarkers(frameId);
       m->gpuReady.push_back(now);
       m_mode->notifyGpuReady(frameId, now);
+      m_queryPools.free(queryPool);
     }
 
     virtual void notifyGpuPresentBegin( uint64_t frameId ) override {
@@ -225,6 +227,7 @@ namespace dxvk {
       }
     }
 
+    DxvkDevice* m_device;
     std::unique_ptr<FramePacerMode> m_mode;
 
     std::array< std::atomic< uint16_t >, 8 > m_gpuStarts = { };

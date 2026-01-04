@@ -2,6 +2,7 @@
 #include "dxvk_framepacer_mode_low_latency.h"
 #include "dxvk_framepacer_mode_min_latency.h"
 #include "dxvk_options.h"
+#include "../dxvk_device.h"
 #include "../../util/util_flush.h"
 #include "../../util/util_env.h"
 #include "../../util/log/log.h"
@@ -13,8 +14,8 @@ namespace dxvk {
   }
 
 
-  FramePacer::FramePacer( const DxvkOptions& options, uint64_t firstFrameId )
-  : m_latencyMarkersStorage(firstFrameId) {
+  FramePacer::FramePacer( DxvkDevice* device, const DxvkOptions& options, uint64_t firstFrameId )
+  : m_latencyMarkersStorage(firstFrameId), m_device(device) {
     // We'll default to LOW_LATENCY in the draft-PR for now, for demonstration purposes,
     // highlighting the generally much better input lag and time consistency.
     // MAX_FRAME_LATENCY has advantages in some games that provide inconsistent
@@ -100,12 +101,30 @@ namespace dxvk {
     m_frameSync.signalRenderFinished ( firstFrameId-1 );
     m_frameSync.signalFrameFinished  ( firstFrameId-1 );
     m_frameSync.signalCsFinished     ( firstFrameId );
+
+    VkQueryPoolCreateInfo queryPoolInfo = {};
+    queryPoolInfo.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+    queryPoolInfo.queryType = VK_QUERY_TYPE_TIMESTAMP;
+    queryPoolInfo.queryCount = 1;
+
+    VkQueryPool* queryPools = m_queryPools.getDataUnsafe();
+    for (int i=0; i<256; ++i) {
+      VkResult res = device->vkd()->vkCreateQueryPool(device->handle(), &queryPoolInfo, nullptr, &queryPools[i]);
+
+      if (res != VK_SUCCESS) {
+        Logger::err( str::format( "FramePacer: vkCreateQueryPool returned ", res) );
+      }
+    }
   }
 
 
   FramePacer::~FramePacer() {
     delete m_presentationStats.load();
     delete m_gpuBufferStats.load();
+
+    for (int i=0; i<256; ++i) {
+      m_device->vkd()->vkDestroyQueryPool(m_device->handle(), *m_queryPools.alloc(), nullptr);
+    }
   }
 
 }

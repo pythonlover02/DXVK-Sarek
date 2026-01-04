@@ -586,12 +586,14 @@ namespace dxvk {
      * \param [in] commandList The command list to submit
      * \param [in] tracker Latency tracker
      * \param [in] frameId Frame ID
+     * \param [in] queryPool Query pool to read device timestamp
      * \param [out] status Submission feedback
      */
     void submitCommandList(
       const Rc<DxvkCommandList>&      commandList,
       const Rc<DxvkLatencyTracker>&   tracker,
             uint64_t                  frameId,
+            VkQueryPool*              queryPool,
             DxvkSubmitStatus*         status);
 
     /**
