@@ -40,7 +40,7 @@ namespace dxvk {
       do {
         desired = expected;
         desired.numSubmitsFinished++;
-      } while (!data->submits.compare_exchange_strong( expected, desired ));
+      } while (!data->submits.compare_exchange_weak( expected, desired ));
 
       if (desired.numSubmitsFinished <= desired.numSubmitsQueued)
         startSubmit( frameId, desired.numSubmitsFinished, t );
@@ -57,7 +57,7 @@ namespace dxvk {
       do {
         desired = expected;
         desired.numSubmitsQueued++;
-      } while (!data->submits.compare_exchange_strong( expected, desired ));
+      } while (!data->submits.compare_exchange_weak( expected, desired ));
 
       if (desired.numSubmitsFinished == desired.numSubmitsQueued)
         startSubmit( frameId, desired.numSubmitsQueued, t );
