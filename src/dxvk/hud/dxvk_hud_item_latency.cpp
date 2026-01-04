@@ -20,7 +20,7 @@ namespace dxvk::hud {
       LatencyMarkersReader reader = framePacer->m_latencyMarkersStorage.getReader(100);
       const LatencyMarkers* markers;
       uint32_t count = 0;
-      uint64_t totalLatency = 0;
+      int64_t totalLatency = 0;
       while (reader.getNext(markers)) {
         totalLatency += markers->gpuFinished;
         ++count;
@@ -29,7 +29,7 @@ namespace dxvk::hud {
       if (!count)
         return;
 
-      uint64_t latency = totalLatency / count;
+      int64_t latency = totalLatency / count;
       m_latency = str::format(latency / 1000, ".", (latency/100) % 10, " ms");
     }
   }

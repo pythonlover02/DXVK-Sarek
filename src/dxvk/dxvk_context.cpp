@@ -7,6 +7,7 @@
 
 #include "dxvk_device.h"
 #include "dxvk_context.h"
+#include "framepacer/dxvk_framepacer.h"
 
 namespace dxvk {
   
@@ -113,14 +114,13 @@ namespace dxvk {
   void DxvkContext::beginLatencyTracking(
     const Rc<DxvkLatencyTracker>&     tracker,
           uint64_t                    frameId) {
-    if (tracker && m_latencyTracker != tracker) {
+    if (tracker) {
       tracker->notifyCsRenderBegin(frameId);
-
-      m_latencyTracker = tracker;
-      m_latencyFrameId = frameId;
-
       m_endLatencyTracking = false;
     }
+
+    m_latencyTracker = tracker;
+    m_latencyFrameId = frameId;
   }
 
 
@@ -150,10 +150,13 @@ namespace dxvk {
     // Ensure that subsequent submissions do not see the tracker.
     // It is important to hide certain internal submissions in
     // case the application is CPU-bound.
+    // The above is not true when using the frame pacer, and in fact
+    // would prevent it from estimating the GPU usage correctly
     if (m_endLatencyTracking) {
-      m_latencyTracker = nullptr;
-      m_latencyFrameId = 0u;
-
+      if (!dynamic_cast<FramePacer*>(m_latencyTracker.ptr())) {
+        m_latencyTracker = nullptr;
+        m_latencyFrameId = 0u;
+      }
       m_endLatencyTracking = false;
     }
 
