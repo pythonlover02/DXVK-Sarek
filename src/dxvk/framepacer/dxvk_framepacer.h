@@ -6,6 +6,7 @@
 #include "dxvk_latency_stats.h"
 #include "../dxvk_latency.h"
 #include "../../util/util_time.h"
+#include "../../util/sync/sync_ringbuffer_allocator.h"
 
 
 namespace dxvk {
@@ -123,6 +124,12 @@ namespace dxvk {
       }
     }
 
+    VkQueryPool* allocSubmitQueryPool() override
+      { return m_queryPools.alloc(); }
+
+    void freeSubmitQueryPool( VkQueryPool* queryPool ) override
+      { m_queryPools.free( queryPool ); }
+
     FramePacerMode::Mode getMode() const {
       return m_mode->m_mode;
     }
@@ -226,6 +233,8 @@ namespace dxvk {
 
     std::atomic<LatencyStats*> m_gpuBufferStats = { nullptr };
     std::atomic<LatencyStats*> m_presentationStats = { nullptr };
+
+    sync::RingbufferAllocator<VkQueryPool, 256> m_queryPools;
 
   };
 
