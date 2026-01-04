@@ -127,6 +127,7 @@ dxvk_src = [
 
   'framepacer/dxvk_framepacer.cpp',
   'framepacer/dxvk_framepacer_mode_low_latency.cpp',
+  'framepacer/dxvk_calibrated_device_timestamps.cpp',
 ]
 
 if platform == 'windows'

@@ -4,6 +4,7 @@
 #include "dxvk_frame_sync.h"
 #include "dxvk_latency_markers.h"
 #include "dxvk_latency_stats.h"
+#include "dxvk_calibrated_device_timestamps.h"
 #include "../dxvk_latency.h"
 #include "../../util/util_time.h"
 #include "../../util/sync/sync_ringbuffer_allocator.h"
@@ -99,10 +100,31 @@ namespace dxvk {
     }
 
     void notifyGpuExecutionEnd( uint64_t frameId, VkQueryPool* queryPool ) override {
-      auto now = high_resolution_clock::now();
       LatencyMarkers* m = m_latencyMarkersStorage.getMarkers(frameId);
-      m->gpuReady.push_back(now);
-      m_mode->notifyGpuReady(frameId, now);
+
+      if (unlikely(queryPool == nullptr)) {
+        auto now = high_resolution_clock::now();
+        m->gpuReady.push_back(now);
+        m_mode->notifyGpuReady(frameId, now);
+        return;
+      }
+
+      uint64_t timestamp;
+      VkResult res = getSubmitQueryPoolResult( queryPool, &timestamp );
+
+      if (unlikely(res != VK_SUCCESS)) {
+        auto now = high_resolution_clock::now();
+        m->gpuReady.push_back(now);
+        m_mode->notifyGpuReady(frameId, now);
+        m_queryPools.free(queryPool);
+        return;
+      }
+
+      auto t = m_calibratedDeviceTimestamps.getHostTimestamp(timestamp);
+
+      m->gpuReady.push_back(t);
+      m_mode->notifyGpuReady(frameId, t);
+
       m_queryPools.free(queryPool);
     }
 
@@ -117,6 +139,7 @@ namespace dxvk {
         next->gpuReady.clear();
         next->gpuReady.push_back(t);
         m_mode->notifyGpuReady(frameId+1, t);
+        m_calibratedDeviceTimestamps.calibrate();
 
         gpuExecutionCheckGpuStart(frameId+1, next, t);
 
@@ -166,6 +189,8 @@ namespace dxvk {
 
     // non-overriding methods
 
+
+    VkResult getSubmitQueryPoolResult( VkQueryPool* queryPool, uint64_t* timestamp );
 
     const LatencyStats* getGpuBufferStats() const
       { return m_gpuBufferStats.load(); }
@@ -237,6 +262,7 @@ namespace dxvk {
     std::atomic<LatencyStats*> m_gpuBufferStats = { nullptr };
     std::atomic<LatencyStats*> m_presentationStats = { nullptr };
 
+    CalibratedDeviceTimestamps m_calibratedDeviceTimestamps;
     sync::RingbufferAllocator<VkQueryPool, 256> m_queryPools;
 
   };

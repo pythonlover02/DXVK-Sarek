@@ -13,10 +13,11 @@ namespace dxvk {
   struct high_resolution_clock {
     static constexpr bool is_steady = true;
 
-    using rep        = int64_t;
-    using period     = std::nano;
-    using duration   = std::chrono::nanoseconds;
-    using time_point = std::chrono::time_point<high_resolution_clock>;
+    using rep         = int64_t;
+    using period      = std::nano;
+    using nanoseconds = std::chrono::nanoseconds;
+    using duration    = std::chrono::nanoseconds;
+    using time_point  = std::chrono::time_point<high_resolution_clock>;
 
     static inline time_point now() noexcept {
       return get_time_from_counter(get_counter());
@@ -48,6 +49,7 @@ namespace dxvk {
   };
 #else
   struct high_resolution_clock : public std::chrono::high_resolution_clock {
+    using nanoseconds = std::chrono::nanoseconds;
     static inline time_point get_time_from_counter(int64_t counter) {
       return time_point() + duration(counter);
     }
