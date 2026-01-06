@@ -180,6 +180,11 @@ namespace dxvk {
   }
 
 
+  uint32_t DxvkDeviceCapabilities::getTimestampValidBits() const {
+    return m_queuesAvailable[m_queueMapping.graphics.family].queueFamilyProperties.timestampValidBits;
+  }
+
+
   void DxvkDeviceCapabilities::logDeviceInfo() {
     // Assume that known features are ordered by extension
     const VkExtensionProperties* extension = nullptr;
@@ -889,7 +894,7 @@ namespace dxvk {
       ENABLE_EXT(khrSwapchainMutableFormat, false),
 
       /* Calibrated timestamps for frame pacing and present_timing */
-      ENABLE_EXT(khrCalibratedTimestamps, true),
+      ENABLE_EXT(khrCalibratedTimestamps, false),
 
       /* Keyed mutex support in wine */
       ENABLE_EXT(khrWin32KeyedMutex, false),

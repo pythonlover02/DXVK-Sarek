@@ -121,6 +121,8 @@ namespace dxvk {
       }
 
       auto t = m_calibratedDeviceTimestamps.getHostTimestamp(timestamp);
+      if (unlikely(t == high_resolution_clock::time_point{}))
+        t = high_resolution_clock::now();
 
       m->gpuReady.push_back(t);
       m_mode->notifyGpuReady(frameId, t);
@@ -150,7 +152,7 @@ namespace dxvk {
     }
 
     VkQueryPool* allocSubmitQueryPool() override
-      { return m_queryPools.alloc(); }
+      { return m_calibratedDeviceTimestamps.isEnabled() ? m_queryPools.alloc() : nullptr; }
 
     void freeSubmitQueryPool( VkQueryPool* queryPool ) override
       { m_queryPools.free( queryPool ); }

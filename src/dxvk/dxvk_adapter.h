@@ -145,6 +145,10 @@ namespace dxvk {
       return m_capabilities.getMemoryInfo().core.memoryProperties;
     }
 
+    uint32_t getTimestampValidBits() const {
+      return m_capabilities.getTimestampValidBits();
+    }
+
     /**
      * \brief Checks whether the adapter is usable for DXVK
      *

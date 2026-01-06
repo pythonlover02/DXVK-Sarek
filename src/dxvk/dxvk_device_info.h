@@ -290,6 +290,8 @@ namespace dxvk {
      */
     bool isSuitable(size_t errorSize, char* error);
 
+    uint32_t getTimestampValidBits() const;
+
     /**
      * \brief Logs all enabled extensions and features
      */
