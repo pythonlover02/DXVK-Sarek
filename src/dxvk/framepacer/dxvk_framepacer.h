@@ -196,7 +196,8 @@ namespace dxvk {
     void trackStats( uint64_t frameId ) {
       const LatencyMarkers* m = m_latencyMarkersStorage.getConstMarkers(frameId);
 
-      if (m_enableVSyncBufferTracking) {
+      // will be re-enabled for VK_EXT_present_timing, but for now this isn't accurate enough
+      if (false && m_enableVSyncBufferTracking) {
         if (!m_presentationStats)
           m_presentationStats.store( new LatencyStats(3000) );
         m_presentationStats.load()->push( m->end, m->presentFinished - m->gpuFinished );
