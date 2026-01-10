@@ -23,8 +23,12 @@ namespace dxvk {
 
 
   DxvkInstance::DxvkInstance(const DxvkInstanceImportInfo& args, DxvkInstanceFlags flags) {
+    static std::string git_dxvk_version(DXVK_VERSION);
+    static std::string dxvk_version = "v"+git_dxvk_version.substr(
+      std::min((int)git_dxvk_version.length(),24));
+
     Logger::info(str::format("Game: ", env::getExeName()));
-    Logger::info(str::format("DXVK-LOW-LATENCY: ", DXVK_VERSION));
+    Logger::info(str::format("DXVK-LOW-LATENCY: ", dxvk_version));
     Logger::info(str::format("Build: ", DXVK_TARGET, " ", DXVK_COMPILER, " ", DXVK_COMPILER_VERSION));
 
     wsi::init();

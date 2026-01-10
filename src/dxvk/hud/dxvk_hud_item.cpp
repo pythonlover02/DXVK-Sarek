@@ -103,8 +103,12 @@ namespace dxvk::hud {
     const HudOptions&         options,
           HudRenderer&        renderer,
           HudPos              position) {
+    static std::string git_dxvk_version(DXVK_VERSION);
+    static std::string dxvk_version = "DXVK-LOW-LATENCY v"+git_dxvk_version.substr(
+      std::min((int)git_dxvk_version.length(),24));
+
     position.y += 16;
-    renderer.drawText(16, position, 0xffffffffu, "DXVK-LOW-LATENCY " DXVK_VERSION);
+    renderer.drawText(16, position, 0xffffffffu, dxvk_version);
 
     position.y += 8;
     return position;
