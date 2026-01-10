@@ -2,6 +2,11 @@
 
 Enhances the original [dxvk](https://github.com/doitsujin/dxvk) with low-latency frame pacing capabilities to improve game responsiveness and input lag. It also improves latency stability over time, usually resulting in a more accurate playback speed of the generated video.
 
+### Quick Start
+
+- There is no need for configuration, but fine-tuning is possible via config options
+- Set `DXVK_FRAME_RATE=225` and `DXVK_FRAME_PACE=low-latency-vrr-235` for 240 Hz VRR gaming
+
 ### Installation
 
 The most common way to install is to replace the dxvk .dll files within the Proton directory. You can theoretically do this with Steam's Proton, but since Steam will periodically update Proton, it will regularly overwrite the .dll files, and thus it's instead recommended to put a Proton version into `$HOME/.local/share/Steam/compatibilitytools.d`, such as [Proton-GE](https://github.com/GloriousEggroll/proton-ge-custom) where you can find the .dll files in `files/lib/wine/dxvk`, `i386-windows` for 32 bit and `x86_64-windows` for 64 bit. Depending on the particular Proton version, the folders might be structured slightly differently. This Proton version then can be selected in Steam, Lutris, Heroic, etc.
@@ -19,13 +24,15 @@ The config variable `dxvk.framePace` in `dxvk.conf` can be set to
 - `"max-frame-latency"` is the behaviour of upstream dxvk. Frame `i` won't start as long as frame `(i-1)-x` isn't finished, where `x` is the value of `dxgi.maxFrameLatency` / `d3d9.maxFrameLatency`. This pacing usually looks smooth, but has latency issues when GPU bound. Optimized for highest fps.
 - `"min-latency"` is essential like `max-frame-latency-0` (not selectable for the mode above), which means the start of a frame will wait until the previous one is finished. CPU/GPU no longer overlap during the transition from one frame to another and thus a lot of fps are sacrificed for prioritizing low latency. This mode is generally not recommended, but might be useful to get insights.
 - `"low-latency"` is the default mode: It combines high fps throughput with excellent game responsiveness and low input lag. Looking at a scale of a few seconds, pacing is usually more accurate in time than `max-frame-latency` since latency variations are minimized, especially when moving in and out of the GPU limit and when GPU frametimes vary a lot while being GPU bound. Looking at the pacing frame by frame, this mode relies on the game providing stable frame times for smoothness. When the game generates occasional stutters, these are filtered out nicely such that they don't interfere with the presentation of the other frames.
-- `"low-latency-vrr-240"` enhances the above mode by taking v-blank information into account, which prevents additional v-sync buffering latency. This mode automatically enables v-sync to get informed when v-blanks are happening. It will make the pacer predict future v-blanks based on the given refresh rate of 240 Hz. Replace 240 with the refresh rate of your monitor or with a value lower than that. This mode works with x11-flip and native Wayland (can be enabled in Wine via `DISPLAY= ` and via `PROTON_ENABLE_WAYLAND=1` in Proton), but cannot work on Xwayland because v-blank information is not available there (tested on Nvidia). Care has to be taken that the system is configured such that the display is indeed using a variable refresh rate, otherwise this mode won't work properly.
+- `"low-latency-vrr-240"` enhances the above mode by taking v-blank information into account which prevents additional v-sync buffering latency. This mode implicitly derives v-blanks based on render times and the given refresh rate of 240 Hz. Replace 240 with the refresh rate of your monitor or with a value lower than that. Care has to be taken that the system is configured such that the display is indeed using a variable refresh rate, otherwise this mode won't work properly.
 
 Setting the frame pacing via the environment variable `DXVK_FRAME_PACE` is also supported.
 
 #### d3d9/dxgi.maxFrameRate
 
-Fps limiting is very helpful when used together with VRR to give the pacing enough space to not hit the v-sync buffering and to minimize frametime variance. For 240 Hz VRR, a limit of about 225 fps is recommended, and similarly for other refresh rates. Finding the best fps-limit for VRR will require some testing and also depends on the game and how much frametime variation it generates on the user's system. 
+Fps limiting is very helpful when used together with VRR to give the pacing enough space to not hit the v-sync buffering and to minimize frametime variance. For 240 Hz VRR, a limit of about 215-225 fps is recommended, and similarly for other refresh rates. Finding the best fps-limit for VRR will require some testing and also depends on the game and how much frametime variation it generates on the user's system. 
+
+Note that the `"low-latency-vrr-x"` frame pacing option is also a form of fps limiting. It predictively limits at the end of the frame. The normal fps limiter limits at the (render-)start of the frame. It's often useful to have both active at the same time.
 
 Fps limiting is also useful in other modes to improve consistency and/or to save power. Limiting in the low-latency modes is tightly integrated into the frame pacing and is strongly recommended to be used in place of most ingame limiters. 
 
@@ -37,14 +44,14 @@ Setting the fps limit via the environment variable `DXVK_FRAME_RATE` is also sup
 
 Latencies can be visualized by adding the following to `dxvk.hud`/`DXVK_HUD`:
 
-- `renderlatency`: start of frame (usually when the game starts processing input) until the GPU did finish rendering this frame. Note that this will not work when a game's fps limiter is enabled, as there is no way to detect when a game will stall processing before reading input. Average over 100 frames.
-- `latencydetails`: provides insights about GPU buffer and v-sync buffer statistics. Helpful for fine-tuning the `dxvk.lowLatencyOffset` variable to competely eliminate GPU buffering and for fine-tuning the VRR refresh rate to minimize v-sync buffering in the VRR mode. The v-sync buffer display relies on the driver implementation of `vkWaitForPresentKHR`, which may or may not be accurate. Showing percentiles over the last 3 seconds. Recommended to care for the p75 (and p95) values if enough fps headroom is available. This display is also useful to check how external programs or specific system configurations are affecting input lag.
+- `renderlatency`: start of frame (usually when the game starts processing input) until the GPU did finish rendering this frame. Note that this will not show the correct latency when a game's fps limiter is enabled, as there is no way to detect when a game will stall processing before reading input. Average over 100 frames.
+- `latencydetails`: provides insights about GPU buffer statistics. Helpful for fine-tuning the `dxvk.lowLatencyOffset` variable to reduce GPU buffering or to increase fps. Showing percentiles over the last 3 seconds. Recommended to care for the GPU buffer p75 (and p95) values if enough fps headroom is available. This display is also useful to check how external programs or specific system configurations are affecting input lag.
 
 #### dxvk.lowLatencyOffset
 
 You can fine-tune the low-latency pacing options towards more fps or towards better latency. `dxvk.lowLatencyOffset = 0` is the default, a negative value will make frames start earlier by the given amount (in microseconds), and thus those frames will more likely run into buffering, which in turn may increase fps. A positive value will make frames start later by the given amount (in microseconds), which make it less likely to run into buffering and thus may improve latency.
 
-In other words, this option has an effect on the percentage of frames which go into GPU buffering and/or v-sync buffering. A value of zero will make 50% of frames go (mostly slightly) into buffering, since for most games, the prediction is so accurate that it will average out to 0 microseconds.
+In other words, this option has an effect on the percentage of frames which go into GPU buffering. A value of zero will make 50% of frames go (mostly slightly) into buffering, since for most games, the prediction is so accurate that it will average out to 0 microseconds.
 
 It's recommended to check the GPU buffer display (`dxvk.hud = "latencydetails"`) to fine-tune this setting.
 
@@ -72,9 +79,9 @@ However, this is not guaranteed. There may be games out there not following this
 
 When dxvk is finished rendering a frame, the resulting image still needs to be transported to the display which is relevant for latency too. 
 
-Since there is not that much information available on this topic, the author has tested some configurations which may help you to make an informed decision. The following results were obtained running a game at 1800 fps, which has the option to flash a monitor region instantly during a mouse button press, such that Nvidia's Reflex Analyzer can be used to measure button-to-pixel latency on an Nvidia GPU (575.57.08 driver). These results may or may not be applicable to other hardware/drivers like AMD or Intel GPUs. 
+Since there is not that much information available on this topic, the author has tested some configurations which may help you to make an informed decision. The following results were obtained running a game at 1800 fps, which has the option to flash a monitor region instantly during a mouse button press, such that Nvidia's Reflex Analyzer is used to measure button-to-pixel latency on an Nvidia GPU (575.57.08 driver). These results may or may not be applicable to other hardware/drivers like AMD or Intel GPUs. 
 
-The top of the screen was selected as monitor region to make VRR, Mailbox and V-Sync more comparable to tearing (Immediate) in terms of latency. Since the measured latency will depend on the state of the screen refresh when the mouse button was pressed, many such samples give a latency range. Note that Wine Wayland is still experimental (June 2025):
+The top of the screen was selected as monitor region to make VRR, Mailbox and V-Sync more comparable to tearing (Immediate) in terms of latency. Since the measured latency will depend on the state of the screen refresh when the mouse button was pressed, many such samples give a latency range. Note that Wine Wayland is still experimental. The following measurements were taken in June 2025 and will be updated soon:
 
 | Presentation      | Latency | fps |
 | :---------------- | :------: | :----: |
@@ -95,9 +102,9 @@ The top of the screen was selected as monitor region to make VRR, Mailbox and V-
 | Wine Wayland Plasma VRR| 1.7-4.6 ms | 357 fps |
 | Wine Wayland Gnome VRR| 2.0-4.9 ms | 357 fps |
 
-If you want to use x11, be sure that flip is enabled. This only works on single monitor configurations. On Nvidia, you can check if flip is enabled with `__GL_SHOW_GRAPHICS_OSD=1`. Gnome has had trouble to activate flip with Proton 10, and can work fine with Proton 9, but unfortunately has the tendency to lose flip there as well after a while. KDE Plasma should enable flip pretty straight forward, as does startx and possibly other lightweight window managers.
+If you want to use x11, be sure that flip is enabled. This only works on single monitor configurations. On Nvidia, you can check if flip is enabled with `__GL_SHOW_GRAPHICS_OSD=1`. KDE Plasma should enable flip pretty straight forward, as does startx and possibly other lightweight window managers. However, sometimes the flip mode is dropped due to unknown reasons which was happening on both Gnome/x11 and Plasma/x11, which can be solved by restarting the GPU-driver and X server for example with `systemctl restart gdm.service`.
 
-On Windows, the dxvk presentation is not optimal since support for the dxgi flip model is not implemented yet. It's strongly recommended to set `dxvk.allowFse = True` on Windows to enable the old fullscreen exclusive mode.
+On Windows, the dxvk presentation is not optimal since support for the dxgi flip model is not implemented yet. It's strongly recommended to set `dxvk.allowFse = True` on Windows to enable the old fullscreen exclusive mode, which provides great performance and latency, but results in bad alt-tab behaviour.
 
 #### Wiki
 
