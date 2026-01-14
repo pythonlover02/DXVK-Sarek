@@ -8,36 +8,45 @@ namespace dxvk {
   : m_device(device),
     m_timestampPeriod(device->adapter()->deviceProperties().core.properties.limits.timestampPeriod),
     m_timestampValidBits(device->adapter()->getTimestampValidBits()),
-    m_enabled( m_device->vki()->vkGetPhysicalDeviceCalibrateableTimeDomainsKHR != nullptr &&
-               m_device->vkd()->vkGetCalibratedTimestampsKHR != nullptr &&
+    m_enabled( (m_device->features().khrCalibratedTimestamps || m_device->features().extCalibratedTimestamps) &&
                m_timestampValidBits == 64 ) {
 
-    if (m_device->vki()->vkGetPhysicalDeviceCalibrateableTimeDomainsKHR == nullptr ||
-        m_device->vkd()->vkGetCalibratedTimestampsKHR == nullptr) {
-      Logger::warn( "VK_KHR_calibrated_timestamps is not enabled. Frame pacing will be suboptimal." );
+    if (!m_device->features().khrCalibratedTimestamps && !m_device->features().extCalibratedTimestamps) {
+      Logger::warn( "Neither VK_KHR_calibrated_timestamps nor VK_EXT_calibrated_timestamps enabled. "
+                    "Frame pacing will be suboptimal." );
       return;
     }
 
     if (m_timestampValidBits != 64) {
-      Logger::warn( str::format("VK_KHR_calibrated_timestamps is not enabled due to the device queue reporting ",
+      Logger::warn( str::format("Calibrated device timestamps are not enabled due to the device queue reporting ",
         m_timestampValidBits, " bit timestamps. Currently only implemented support for 64 bit timestamps. ",
         "Frame pacing will be suboptimal."));
       return;
     }
 
+    PFN_vkGetPhysicalDeviceCalibrateableTimeDomainsKHR fpGetPhysicalDeviceCalibrateableTimeDomains = nullptr;
+
+    if (m_device->features().khrCalibratedTimestamps) {
+      m_fpGetCalibratedTimestamps = m_device->vkd()->vkGetCalibratedTimestampsKHR;
+      fpGetPhysicalDeviceCalibrateableTimeDomains = m_device->vki()->vkGetPhysicalDeviceCalibrateableTimeDomainsKHR;
+    }
+    else if (m_device->features().extCalibratedTimestamps) {
+      m_fpGetCalibratedTimestamps = m_device->vkd()->vkGetCalibratedTimestampsEXT;
+      fpGetPhysicalDeviceCalibrateableTimeDomains = m_device->vki()->vkGetPhysicalDeviceCalibrateableTimeDomainsEXT;
+    }
+
     uint32_t count;
-    m_device->vki()->vkGetPhysicalDeviceCalibrateableTimeDomainsKHR(m_device->adapter()->handle(), &count, nullptr);
+    fpGetPhysicalDeviceCalibrateableTimeDomains(m_device->adapter()->handle(), &count, nullptr);
     std::vector<VkTimeDomainKHR> timeDomains( count );
-    m_device->vki()->vkGetPhysicalDeviceCalibrateableTimeDomainsKHR(m_device->adapter()->handle(), &count, timeDomains.data());
+    fpGetPhysicalDeviceCalibrateableTimeDomains(m_device->adapter()->handle(), &count, timeDomains.data());
     bool foundDeviceTimeDomain = false;
     for (uint32_t i=0; i<count; ++i ) {
       foundDeviceTimeDomain |= timeDomains[i] == VK_TIME_DOMAIN_DEVICE_KHR;
     }
 
     if (!foundDeviceTimeDomain)
-      Logger::err( str::format(
-        "VK_TIME_DOMAIN_DEVICE_KHR is not reported by vkGetPhysicalDeviceCalibrateableTimeDomainsKHR(), ",
-        "possibly a Vulkan driver bug" ) );
+      Logger::err( "VK_TIME_DOMAIN_DEVICE_KHR is not reported by vkGetPhysicalDeviceCalibrateableTimeDomains, "
+        "possibly a Vulkan driver bug" );
 
     calibrate();
 
@@ -56,7 +65,7 @@ namespace dxvk {
     calibratedTimestampInfo.pNext = nullptr;
     calibratedTimestampInfo.timeDomain = VK_TIME_DOMAIN_DEVICE_KHR;
 
-    VkResult res = m_device->vkd()->vkGetCalibratedTimestampsKHR(
+    VkResult res = m_fpGetCalibratedTimestamps(
       m_device->handle(), 1,
       &calibratedTimestampInfo,
       &nextCalibration.deviceTimestamp,

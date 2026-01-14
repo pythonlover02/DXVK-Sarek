@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../util/util_time.h"
+#include "../vulkan/vulkan_loader.h"
 
 namespace dxvk {
 
@@ -8,8 +9,9 @@ namespace dxvk {
 
   /*
    * Clock synchronization for GPU/CPU via the VK_KHR_calibrated_timestamps
-   * device extension. The clocks need to get calibrated regularly, for example
-   * once every frame, to account for clock drift.
+   * (fallback VK_EXT_calibrated_timestamps) device extension. The clocks need
+   * to get calibrated regularly, for example once every frame, to account for
+   * clock drift.
    *
    * Assumes 64 bit timestamps are supported for now, as lower bit timestamps
    * would need overflow checks and are impractical since 32 bit timestamps
@@ -41,6 +43,8 @@ namespace dxvk {
 
     DxvkDevice* m_device;
     Calibration m_calibration;
+
+    PFN_vkGetCalibratedTimestampsKHR m_fpGetCalibratedTimestamps = nullptr;
 
     const float    m_timestampPeriod;
     const uint32_t m_timestampValidBits;

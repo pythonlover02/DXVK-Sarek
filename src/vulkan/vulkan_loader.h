@@ -160,6 +160,10 @@ namespace dxvk::vk {
     VULKAN_FN(vkSubmitDebugUtilsMessageEXT);
     #endif
 
+    #ifdef VK_EXT_calibrated_timestamps
+    VULKAN_FN(vkGetPhysicalDeviceCalibrateableTimeDomainsEXT);
+    #endif
+
     #ifdef VK_KHR_calibrated_timestamps
     VULKAN_FN(vkGetPhysicalDeviceCalibrateableTimeDomainsKHR);
     #endif
@@ -482,6 +486,10 @@ namespace dxvk::vk {
 
     #ifdef VK_KHR_present_wait
     VULKAN_FN(vkWaitForPresentKHR);
+    #endif
+
+    #ifdef VK_EXT_calibrated_timestamps
+    VULKAN_FN(vkGetCalibratedTimestampsEXT);
     #endif
 
     #ifdef VK_KHR_calibrated_timestamps
