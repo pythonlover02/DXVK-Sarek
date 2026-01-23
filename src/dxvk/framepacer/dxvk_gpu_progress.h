@@ -15,6 +15,10 @@ namespace dxvk {
    * (prediction vs. actual) with respect to when a frame will finish, as more
    * recent information is available, compared to doing the prediction when the
    * frame starts or when the GPU starts processing the first submit.
+   *
+   * The algorithm used here matches the one that calculates the optimizedGpuTime
+   * in the low-latency frame pacing mode, although the order of operations differs
+   * to account for the real-time needs here.
    */
 
   class GpuProgress {
@@ -34,6 +38,13 @@ namespace dxvk {
       Submits expected = data->submits.load();
       Submits desired;
 
+      if (expected.numSubmitsFinished == MAX_SUBMITS) {
+        data->reachedMaxSubmits = true;
+        return;
+      }
+
+      data->readyMarkers[expected.numSubmitsFinished] = t;
+
       if (expected.numSubmitsFinished != 0)
         endSubmit( frameId, t );
 
@@ -43,7 +54,7 @@ namespace dxvk {
       } while (!data->submits.compare_exchange_weak( expected, desired ));
 
       if (desired.numSubmitsFinished <= desired.numSubmitsQueued)
-        startSubmit( frameId, desired.numSubmitsFinished, t );
+        startSubmit( frameId, expected.numSubmitsFinished );
 
     }
 
@@ -54,13 +65,20 @@ namespace dxvk {
       Submits expected = data->submits.load();
       Submits desired;
 
+      if (expected.numSubmitsQueued == MAX_SUBMITS) {
+        data->reachedMaxSubmits = true;
+        return;
+      }
+
+      data->queueSubmitMarkers[expected.numSubmitsQueued] = t;
+
       do {
         desired = expected;
         desired.numSubmitsQueued++;
       } while (!data->submits.compare_exchange_weak( expected, desired ));
 
       if (desired.numSubmitsFinished == desired.numSubmitsQueued)
-        startSubmit( frameId, desired.numSubmitsQueued, t );
+        startSubmit( frameId, expected.numSubmitsQueued );
 
     }
 
@@ -73,9 +91,13 @@ namespace dxvk {
       // frameId+1 should already have received a gpuReady notification
       // so clear the frame after that within the ring buffer
       Data* dataNext = getData(frameId+2);
+
       dataNext->isFinished.store( false );
+      dataNext->reachedMaxSubmits.store( false );
       dataNext->gpuRuntime.store( GpuRuntime{} );
       dataNext->submits.store( Submits{} );
+      dataNext->queueSubmitMarkers = {};
+      dataNext->readyMarkers = {};
 
     }
 
@@ -109,7 +131,7 @@ namespace dxvk {
         int32_t gpuRuntime = getGpuRuntime( frameId, cpuUntilGpuStart );
         if (gpuRuntime >= targetGpuRuntime)
           break;
-        if (data->isFinished)
+        if (data->isFinished || data->reachedMaxSubmits)
           break;
         pause();
 
@@ -142,21 +164,22 @@ namespace dxvk {
   private:
 
 
-    void startSubmit( uint64_t frameId, uint16_t numSubmits, time_point t ) {
-      // This is analog to start = std::max( m->gpuReady[i], m->gpuQueueSubmit[i] )
-      // Testing has shown that the way we do it here might sometimes diverge from this - very slightly,
-      // depending on in which order the messages arrive here, but we cannot access
-      // the above variables safely here in real-time.
+    void startSubmit( uint64_t frameId, uint16_t submitId ) {
 
       using std::chrono::duration_cast;
       Data* data = getData(frameId);
       const LatencyMarkers* m = m_markerStorage->getConstMarkers(frameId);
       GpuRuntime gpuRuntime = data->gpuRuntime.load();
 
-      // this shouldn't happen, but if it does, we will get informed
+      // this shouldn't happen, but if it does we will get informed
       if (unlikely(gpuRuntime.curSubmitStart != 0)) {
         Logger::err( "internal error: GpuProgress startSubmit() before endSubmit()" );
       }
+
+      // both markers have been set at this point
+      time_point t = std::max(
+          data->readyMarkers[submitId],
+          data->queueSubmitMarkers[submitId] );
 
       // store the starting timestamp this way so we can use an atomic
       int32_t submitStart = duration_cast<microseconds>(t - m->start).count();
@@ -207,10 +230,18 @@ namespace dxvk {
       int32_t runtime                 = { 0 };
     };
 
+    constexpr static size_t MAX_SUBMITS = 128;
+    constexpr static int32_t NUM_DATA = 4;
+
     struct Data {
       std::atomic<Submits> submits         = { };
       std::atomic<GpuRuntime> gpuRuntime   = { };
       std::atomic<bool> isFinished         = { false };
+      std::atomic<bool> reachedMaxSubmits  = { false };
+
+      // duplicate markers so we can access them in a thread-safe way
+      std::array<time_point, MAX_SUBMITS> queueSubmitMarkers = { };
+      std::array<time_point, MAX_SUBMITS> readyMarkers = { };
     };
 
     Data* getData( uint32_t frameId ) {
@@ -221,7 +252,6 @@ namespace dxvk {
       return &m_data[ frameId % NUM_DATA ];
     }
 
-    constexpr static int32_t NUM_DATA = 4;
     std::array< Data, NUM_DATA > m_data = { };
 
     const LatencyMarkersStorage* m_markerStorage;
