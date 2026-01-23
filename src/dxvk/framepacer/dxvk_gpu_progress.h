@@ -102,7 +102,7 @@ namespace dxvk {
     }
 
 
-    void waitUntil( uint64_t frameId, int32_t targetGpuRuntime, int32_t cpuUntilGpuStart ) const {
+    void waitUntil( uint64_t frameId, int32_t targetGpuRuntime, int32_t cpuUntilGpuStart, time_point maxSleep ) const {
       // GPU progress is measured as if the submits would be processed as late as possible
       // on the GPU while assuming the frame to be minimum latency since gpuStart.
       // This is necessary for this to work reliably accross games.
@@ -120,6 +120,7 @@ namespace dxvk {
       int32_t sleepDelay = std::max( 0, sleepUntil - totalTime );
 
       Sleep::TimePoint t = now + microseconds(sleepDelay);
+      t = std::min(t, maxSleep);
       Sleep::sleepUntil( now, t );
 
       // For the remainder of the frame we check the progress by polling.
@@ -132,6 +133,8 @@ namespace dxvk {
         if (gpuRuntime >= targetGpuRuntime)
           break;
         if (data->isFinished || data->reachedMaxSubmits)
+          break;
+        if (high_resolution_clock::now() > maxSleep)
           break;
         pause();
 

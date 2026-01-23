@@ -116,7 +116,10 @@ namespace dxvk {
       time_point lastFrameFinishPrediction;
 
       if (targetGpuTime < props.optimizedGpuTime) {
-        m_gpuProgress.waitUntil( frameId-1, targetGpuTime, props.cpuUntilGpuStart );
+        int32_t maxDelay = std::max( m_fpsLimitFrametime.load(), 20000 );
+        time_point maxSleep = m->start + microseconds(maxDelay);
+
+        m_gpuProgress.waitUntil( frameId-1, targetGpuTime, props.cpuUntilGpuStart, maxSleep );
         lastFrameFinishPrediction = high_resolution_clock::now()
           + microseconds(props.optimizedGpuTime - targetGpuTime);
       }
