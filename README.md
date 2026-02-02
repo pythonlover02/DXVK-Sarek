@@ -1,3 +1,6 @@
+> [!NOTE]
+> Development may be slow at times, but this project is still maintained even if the last commit was made a while ago.
+
 # DXVK-Sarek:
 
 ### Why Does This Repo Exist?
