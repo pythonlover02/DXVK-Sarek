@@ -109,4 +109,37 @@ namespace dxvk {
 
   };
 
+
+  class LatencyAverage {
+  public:
+
+    using time_point = high_resolution_clock::time_point;
+
+    void push( int32_t latency ) {
+
+      m_totalLatency -= m_latencies[m_curIndex];
+      m_totalLatency += latency;
+      m_latencies[m_curIndex] = latency;
+      ++m_curIndex;
+
+      m_average.store( m_totalLatency / size, std::memory_order_release );
+
+    }
+
+    int32_t getAverage() const
+      { return m_average.load( std::memory_order_acquire ); }
+
+  private:
+
+    // note this cannot be changed unless m_curIndex is tracked accordingly
+    // as we let it overflow automatically
+    static constexpr size_t size = 256;
+    std::array<int32_t, size> m_latencies = { };
+
+    uint8_t m_curIndex = { 0 };
+    int64_t m_totalLatency = { 0 };
+    std::atomic<int32_t> m_average = { 0 };
+
+  };
+
 }

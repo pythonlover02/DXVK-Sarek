@@ -17,19 +17,7 @@ namespace dxvk::hud {
     if (elapsed.count() >= UpdateInterval) {
       m_lastUpdate = time;
 
-      LatencyMarkersReader reader = framePacer->m_latencyMarkersStorage.getReader(100);
-      const LatencyMarkers* markers;
-      uint32_t count = 0;
-      int64_t totalLatency = 0;
-      while (reader.getNext(markers)) {
-        totalLatency += markers->gpuFinished;
-        ++count;
-      }
-
-      if (!count)
-        return;
-
-      int64_t latency = totalLatency / count;
+      int32_t latency = framePacer->getLatencyAverage();
       m_latency = str::format(latency / 1000, ".", (latency/100) % 10, " ms");
     }
   }

@@ -102,7 +102,7 @@ namespace dxvk {
     void notifyGpuExecutionEnd( uint64_t frameId, VkQueryPool* queryPool ) override {
       LatencyMarkers* m = m_latencyMarkersStorage.getMarkers(frameId);
 
-      if (unlikely(queryPool == nullptr)) {
+      if (queryPool == nullptr) {
         auto now = high_resolution_clock::now();
         m->gpuReady.push_back(now);
         m_mode->notifyGpuReady(frameId, now);
@@ -145,6 +145,7 @@ namespace dxvk {
 
         gpuExecutionCheckGpuStart(frameId+1, next, t);
 
+        m_latencyAverage.push(m->gpuFinished);
         m_latencyMarkersStorage.m_timeline.gpuFinished.store(frameId);
         m_mode->finishRender(frameId);
         m_frameSync.signalRenderFinished(frameId);
@@ -193,6 +194,9 @@ namespace dxvk {
 
 
     VkResult getSubmitQueryPoolResult( VkQueryPool* queryPool, uint64_t* timestamp );
+
+    int32_t getLatencyAverage() const
+      { return m_latencyAverage.getAverage(); }
 
     const LatencyStats* getGpuBufferStats() const
       { return m_gpuBufferStats.load(); }
@@ -263,6 +267,7 @@ namespace dxvk {
 
     std::atomic<LatencyStats*> m_gpuBufferStats = { nullptr };
     std::atomic<LatencyStats*> m_presentationStats = { nullptr };
+    LatencyAverage m_latencyAverage;
 
     CalibratedDeviceTimestamps m_calibratedDeviceTimestamps;
     sync::RingbufferAllocator<VkQueryPool, 256> m_queryPools;
