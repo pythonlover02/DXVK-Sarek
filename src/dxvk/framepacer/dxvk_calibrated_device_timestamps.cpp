@@ -8,7 +8,7 @@ namespace dxvk {
   : m_device(device),
     m_timestampPeriod(device->adapter()->deviceProperties().core.properties.limits.timestampPeriod),
     m_timestampValidBits(device->adapter()->getTimestampValidBits()),
-    m_enabled( (m_device->features().khrCalibratedTimestamps || m_device->features().extCalibratedTimestamps) &&
+    m_canEnable( (m_device->features().khrCalibratedTimestamps || m_device->features().extCalibratedTimestamps) &&
                m_timestampValidBits == 64 ) {
 
     if (!m_device->features().khrCalibratedTimestamps && !m_device->features().extCalibratedTimestamps) {
@@ -54,6 +54,9 @@ namespace dxvk {
 
 
   void CalibratedDeviceTimestamps::calibrate() {
+
+    if (!m_enabled)
+      return;
 
     Calibration nextCalibration;
 
