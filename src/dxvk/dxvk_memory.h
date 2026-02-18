@@ -906,10 +906,14 @@ namespace dxvk {
   private:
 
     struct FreeList {
-      uint16_t size = 0u;
+      DxvkResourceAllocation* push( DxvkResourceAllocation* allocation );
+
+      alignas(CACHE_LINE_SIZE)
+      std::atomic<uint16_t> size = { 0u };
       uint16_t capacity = 0u;
 
-      DxvkResourceAllocation* head = nullptr;
+      alignas(CACHE_LINE_SIZE)
+      std::atomic<DxvkResourceAllocation*> head = { nullptr };
     };
 
     struct List {
@@ -923,10 +927,7 @@ namespace dxvk {
       high_resolution_clock::time_point drainTime = { };
     };
 
-    alignas(CACHE_LINE_SIZE)
     DxvkMemoryAllocator*        m_allocator = nullptr;
-
-    dxvk::mutex                 m_freeMutex;
     std::array<FreeList, PoolCount> m_freeLists = { };
 
     alignas(CACHE_LINE_SIZE)

@@ -415,22 +415,14 @@ namespace dxvk {
           DxvkResourceAllocation*     allocation) {
     uint32_t poolIndex = DxvkLocalAllocationCache::computePoolIndex(allocation->m_size);
 
-    { std::unique_lock freeLock(m_freeMutex);
-      auto& list = m_freeLists[poolIndex];
+    auto& list = m_freeLists[poolIndex];
+    allocation = list.push(allocation);
 
-      allocation->m_nextCached = list.head;
-      list.head = allocation;
+    if (likely(!allocation))
+      return nullptr;
 
-      if (++list.size < list.capacity)
-        return nullptr;
-
-      // Free list is full, try to add it to the list array
-      // so that subsequent allocations can use it.
-      list.head = nullptr;
-      list.size = 0u;
-    }
-
-    // Add free list to the pool if possible.
+    // Free list is full, add it to the pool if possible, so that
+    // subsequent allocations can use it.
     { std::unique_lock poolLock(m_poolMutex);
       auto& pool = m_pools[poolIndex];
 
@@ -525,6 +517,27 @@ namespace dxvk {
         m_cacheSize -= PoolCapacityInBytes;
       }
     }
+  }
+
+
+  DxvkResourceAllocation* DxvkSharedAllocationCache::FreeList::push( DxvkResourceAllocation* allocation ) {
+    uint16_t expected_size = size.fetch_add(1, std::memory_order_acq_rel) + 1;
+    while (unlikely(expected_size >= capacity)) {
+      if (size.compare_exchange_weak(expected_size, 0)) {
+        DxvkResourceAllocation* res = head.exchange( nullptr );
+        allocation->m_nextCached = res;
+        return allocation;
+      }
+    }
+
+    DxvkResourceAllocation* expected_head = head.load( std::memory_order_acquire );
+    do {
+      allocation->m_nextCached = expected_head;
+    } while (!head.compare_exchange_weak( expected_head, allocation,
+        std::memory_order_release,
+        std::memory_order_acquire));
+
+    return nullptr;
   }
 
 
