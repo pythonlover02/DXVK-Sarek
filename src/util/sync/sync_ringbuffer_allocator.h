@@ -27,7 +27,7 @@ namespace dxvk::sync {
 
       high_resolution_clock::time_point allocTime {};
 
-      do {
+      while (true) {
         desired = expected;
         desired.producer = (expected.producer + 1) % size;
         desired.allocCount++;
@@ -37,9 +37,10 @@ namespace dxvk::sync {
           checkThrowError(allocTime);
           continue;
         }
-      } while (!m_indices.compare_exchange_weak( expected, desired ));
 
-      return &m_data[desired.producer];
+        if (m_indices.compare_exchange_weak( expected, desired ))
+          return &m_data[desired.producer];
+      }
     }
 
     void free(T* data) {
