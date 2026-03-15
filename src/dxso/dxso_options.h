@@ -60,6 +60,9 @@ namespace dxvk {
     /// that expect a different depth test range, which was typically a D3D8 quirk on
     /// early NVIDIA hardware.
     int32_t drefScaling = 0;
+
+    /// Whether vertex shaders may emit ClipDistance builtins.
+    bool enableClipDistance = false;
   };
 
 }
