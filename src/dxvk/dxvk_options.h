@@ -18,6 +18,9 @@ namespace dxvk {
     /// when using the state cache
     int32_t numCompilerThreads;
 
+    bool enableDyasync;
+    int32_t numDyasyncThreads;
+
     /// Shader-related options
     Tristate useRawSsbo;
 
