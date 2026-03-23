@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <atomic>
 #include <mutex>
 
 #include "../util/sync/sync_list.h"
@@ -194,8 +196,11 @@ namespace dxvk {
 
     VkPipeline getPipelineHandle(
       const DxvkGraphicsPipelineStateInfo&    state,
-      const DxvkRenderPass*                   renderPass,
-            bool                              rtStable);
+      const DxvkRenderPass*                   renderPass);
+
+    bool isCompiling() const {
+      return m_compiling.load(std::memory_order_acquire);
+    }
 
     /**
      * \brief Compiles a pipeline
@@ -230,12 +235,42 @@ namespace dxvk {
     DxvkGraphicsPipelineFlags           m_flags;
     DxvkGraphicsCommonPipelineStateInfo m_common;
 
-    // List of pipeline instances, shared between threads
+    struct LockFreeMapEntry {
+      std::atomic<size_t>                        hash     { 0 };
+      std::atomic<DxvkGraphicsPipelineInstance*> instance { nullptr };
+    };
+
+    struct AtomicFallbackEntry {
+      std::atomic<const DxvkRenderPass*> renderPass { nullptr };
+      std::atomic<VkPipeline>            pipeline   { VK_NULL_HANDLE };
+    };
+
+    static constexpr uint32_t InstanceMapSize    = 512;
+    static constexpr uint32_t InstanceMapMask    = InstanceMapSize - 1;
+    static constexpr uint32_t MaxProbeDistance    = 8;
+    static constexpr uint32_t FallbackCacheSize  = 8;
+
     alignas(CACHE_LINE_SIZE)
     dxvk::mutex                               m_mutex;
-    alignas(CACHE_LINE_SIZE)
-    dxvk::mutex                               m_mutex2;
+    std::atomic<bool>                         m_compiling { false };
     sync::List<DxvkGraphicsPipelineInstance>  m_pipelines;
+
+    std::array<LockFreeMapEntry,    InstanceMapSize>   m_instanceMap;
+    std::array<AtomicFallbackEntry, FallbackCacheSize> m_fallbackCache;
+    std::atomic<VkPipeline>                            m_basePipeline { VK_NULL_HANDLE };
+
+    static size_t computeInstanceHash(
+      const DxvkGraphicsPipelineStateInfo& state,
+      const DxvkRenderPass*                renderPass);
+
+    DxvkGraphicsPipelineInstance* findInstanceLockFree(
+      const DxvkGraphicsPipelineStateInfo& state,
+      const DxvkRenderPass*                renderPass);
+
+    void insertInstanceToMap(
+      const DxvkGraphicsPipelineStateInfo& state,
+      const DxvkRenderPass*                renderPass,
+      DxvkGraphicsPipelineInstance*         inst);
 
     DxvkGraphicsPipelineInstance* createInstance(
       const DxvkGraphicsPipelineStateInfo& state,

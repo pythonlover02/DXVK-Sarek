@@ -1,3 +1,5 @@
+#include <cstring>
+
 #include "../util/util_time.h"
 
 #include "dxvk_device.h"
@@ -62,9 +64,8 @@ namespace dxvk {
 
   VkPipeline DxvkGraphicsPipeline::getPipelineHandle(
     const DxvkGraphicsPipelineStateInfo& state,
-    const DxvkRenderPass*                renderPass,
-          bool                           rtStable) {
-    DxvkGraphicsPipelineInstance* instance = this->findInstance(state, renderPass);
+    const DxvkRenderPass*                renderPass) {
+    DxvkGraphicsPipelineInstance* instance = this->findInstanceLockFree(state, renderPass);
 
     if (likely(instance != nullptr))
       return instance->pipeline();
@@ -75,11 +76,8 @@ namespace dxvk {
     VkPipeline fallback = this->findFallback(renderPass);
 
     if (fallback != VK_NULL_HANDLE && m_pipeMgr->m_compiler != nullptr) {
-      DxvkPipelinePriority priority = rtStable
-        ? DxvkPipelinePriority::Normal
-        : DxvkPipelinePriority::High;
       m_pipeMgr->m_compiler->queueCompilation(
-        this, state, renderPass, priority);
+        this, state, renderPass, DxvkPipelinePriority::High);
       return fallback;
     }
 
@@ -102,16 +100,96 @@ namespace dxvk {
   bool DxvkGraphicsPipeline::compilePipeline(
     const DxvkGraphicsPipelineStateInfo& state,
     const DxvkRenderPass*                renderPass) {
-    // Exit early if the state vector is invalid
     if (!this->validatePipelineState(state, false))
       return false;
 
-    // Keep the object locked while compiling a pipeline since compiling
-    // similar pipelines concurrently is fragile on some drivers
+    if (this->findInstanceLockFree(state, renderPass) != nullptr)
+      return false;
+
+    m_compiling.store(true, std::memory_order_release);
+
     std::lock_guard<dxvk::mutex> lock(m_mutex);
 
-    return (this->findInstance(state, renderPass) == nullptr) &&
-           (this->createInstance(state, renderPass) != nullptr);
+    bool result = false;
+
+    if (this->findInstance(state, renderPass) == nullptr)
+      result = this->createInstance(state, renderPass) != nullptr;
+
+    m_compiling.store(false, std::memory_order_release);
+    return result;
+  }
+
+
+  size_t DxvkGraphicsPipeline::computeInstanceHash(
+    const DxvkGraphicsPipelineStateInfo& state,
+    const DxvkRenderPass*                renderPass) {
+    DxvkHashState hash;
+    hash.add(reinterpret_cast<uintptr_t>(renderPass));
+    const auto* data = reinterpret_cast<const uint8_t*>(&state);
+    size_t remaining = sizeof(state);
+    size_t offset = 0;
+    while (remaining >= sizeof(size_t)) {
+      size_t word;
+      std::memcpy(&word, data + offset, sizeof(size_t));
+      hash.add(word);
+      offset    += sizeof(size_t);
+      remaining -= sizeof(size_t);
+    }
+    if (remaining > 0) {
+      size_t word = 0;
+      std::memcpy(&word, data + offset, remaining);
+      hash.add(word);
+    }
+    return static_cast<size_t>(hash) | 1;
+  }
+
+
+  DxvkGraphicsPipelineInstance* DxvkGraphicsPipeline::findInstanceLockFree(
+    const DxvkGraphicsPipelineStateInfo& state,
+    const DxvkRenderPass*                renderPass) {
+    size_t h = computeInstanceHash(state, renderPass);
+
+    for (uint32_t i = 0; i < MaxProbeDistance; i++) {
+      uint32_t slot = (uint32_t(h) + i) & InstanceMapMask;
+      size_t stored = m_instanceMap[slot].hash.load(std::memory_order_acquire);
+
+      if (stored == 0)
+        return nullptr;
+
+      if (stored == h) {
+        auto* inst = m_instanceMap[slot].instance.load(std::memory_order_acquire);
+        if (inst != nullptr && inst->isCompatible(state, renderPass))
+          return inst;
+      }
+    }
+
+    return nullptr;
+  }
+
+
+  void DxvkGraphicsPipeline::insertInstanceToMap(
+    const DxvkGraphicsPipelineStateInfo& state,
+    const DxvkRenderPass*                renderPass,
+    DxvkGraphicsPipelineInstance*         inst) {
+    size_t h = computeInstanceHash(state, renderPass);
+
+    for (uint32_t i = 0; i < MaxProbeDistance; i++) {
+      uint32_t slot = (uint32_t(h) + i) & InstanceMapMask;
+      size_t expected = 0;
+
+      if (m_instanceMap[slot].hash.compare_exchange_strong(
+              expected, h, std::memory_order_acq_rel)) {
+        m_instanceMap[slot].instance.store(inst, std::memory_order_release);
+        return;
+      }
+
+      if (expected == h) {
+        m_instanceMap[slot].instance.store(inst, std::memory_order_release);
+        return;
+      }
+    }
+
+    Logger::warn("DxvkGraphicsPipeline: Instance map probe limit reached, lock-free lookup will miss this entry");
   }
 
 
@@ -120,16 +198,29 @@ namespace dxvk {
     const DxvkRenderPass*                renderPass) {
     VkPipeline pipeline = this->createPipeline(state, renderPass);
 
-    std::lock_guard<dxvk::mutex> lock(m_mutex2);
     m_pipeMgr->m_numGraphicsPipelines += 1;
-    return &(*m_pipelines.emplace(state, renderPass, pipeline));
+    auto& inst = *m_pipelines.emplace(state, renderPass, pipeline);
+
+    this->insertInstanceToMap(state, renderPass, &inst);
+
+    if (pipeline != VK_NULL_HANDLE) {
+      VkPipeline expected = VK_NULL_HANDLE;
+      m_basePipeline.compare_exchange_strong(expected, pipeline, std::memory_order_relaxed);
+    }
+
+    if (pipeline != VK_NULL_HANDLE) {
+      size_t fbIdx = reinterpret_cast<uintptr_t>(renderPass) % FallbackCacheSize;
+      m_fallbackCache[fbIdx].renderPass.store(renderPass, std::memory_order_relaxed);
+      m_fallbackCache[fbIdx].pipeline.store(pipeline, std::memory_order_release);
+    }
+
+    return &inst;
   }
 
 
   DxvkGraphicsPipelineInstance* DxvkGraphicsPipeline::findInstance(
     const DxvkGraphicsPipelineStateInfo& state,
     const DxvkRenderPass*                renderPass) {
-    std::lock_guard<dxvk::mutex> lock(m_mutex2);
     for (auto& instance : m_pipelines) {
       if (instance.isCompatible(state, renderPass))
         return &instance;
@@ -141,12 +232,22 @@ namespace dxvk {
 
   VkPipeline DxvkGraphicsPipeline::findFallback(
     const DxvkRenderPass*                renderPass) {
-    // same shaders (same pipeline object), any compiled state variant
-    std::lock_guard<dxvk::mutex> lock(m_mutex2);
+    size_t fbIdx = reinterpret_cast<uintptr_t>(renderPass) % FallbackCacheSize;
+    auto& cached = m_fallbackCache[fbIdx];
+
+    VkPipeline cachedPipeline = cached.pipeline.load(std::memory_order_acquire);
+    const DxvkRenderPass* cachedPass = cached.renderPass.load(std::memory_order_relaxed);
+
+    if (cachedPass == renderPass && cachedPipeline != VK_NULL_HANDLE)
+      return cachedPipeline;
+
     for (auto& instance : m_pipelines) {
       if (instance.renderPass() == renderPass
-       && instance.pipeline()   != VK_NULL_HANDLE)
+       && instance.pipeline()   != VK_NULL_HANDLE) {
+        cached.renderPass.store(renderPass, std::memory_order_relaxed);
+        cached.pipeline.store(instance.pipeline(), std::memory_order_release);
         return instance.pipeline();
+      }
     }
 
     return VK_NULL_HANDLE;
@@ -439,7 +540,10 @@ namespace dxvk {
     info.layout                   = m_layout->pipelineLayout();
     info.renderPass               = renderPass->getDefaultHandle();
     info.subpass                  = 0;
-    info.basePipelineHandle       = VK_NULL_HANDLE;
+    VkPipeline base = m_basePipeline.load(std::memory_order_relaxed);
+    if (base != VK_NULL_HANDLE)
+      info.flags |= VK_PIPELINE_CREATE_DERIVATIVE_BIT;
+    info.basePipelineHandle       = base;
     info.basePipelineIndex        = -1;
 
     if (tsInfo.patchControlPoints == 0)

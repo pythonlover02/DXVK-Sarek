@@ -27,6 +27,8 @@ namespace dxvk {
 
     Logger::info(str::format("DXVK: Using ", numWorkers, " dyasync compiler threads"));
 
+    m_liveQueue.reserve(256);
+    m_backgroundQueue.reserve(512);
     m_compilerThreads.reserve(numWorkers);
     for (uint32_t i = 0; i < numWorkers; i++)
       m_compilerThreads.emplace_back([this] { this->runCompilerThread(); });
@@ -53,25 +55,26 @@ namespace dxvk {
     DxvkPipelinePriority                 priority) {
     std::lock_guard<std::mutex> lock(m_compilerLock);
 
-    // skip if already queued for this pipeline + render pass + state
-    for (const auto& entry : m_compilerQueue) {
-      if (entry.pipeline   == pipeline
-       && entry.renderPass == renderPass
-       && entry.state      == state)
-        return;
-    }
-
+    auto& queue = (priority == DxvkPipelinePriority::Low)
+      ? m_backgroundQueue : m_liveQueue;
     m_pendingCount.fetch_add(1, std::memory_order_relaxed);
-    m_compilerQueue.push_back(DxvkPipelineEntry{ pipeline, state, renderPass, priority });
+    queue.push_back(DxvkPipelineEntry{ pipeline, state, renderPass, priority });
     m_compilerCond.notify_one();
   }
 
 
   uint64_t DxvkPipelineCompiler::averageCompileTimeUs() const {
-    uint32_t count = m_totalCompileCount.load(std::memory_order_relaxed);
-    if (count == 0)
-      return 0;
-    return m_totalCompileTimeUs.load(std::memory_order_relaxed) / count;
+    return 0;
+  }
+
+
+  void DxvkPipelineCompiler::queueBatchCompilation(
+    const std::vector<DxvkPipelineEntry>& entries) {
+    std::lock_guard<std::mutex> lock(m_compilerLock);
+
+    m_pendingCount.fetch_add(uint32_t(entries.size()), std::memory_order_relaxed);
+    m_backgroundQueue.insert(m_backgroundQueue.end(), entries.begin(), entries.end());
+    m_compilerCond.notify_all();
   }
 
 
@@ -89,23 +92,62 @@ namespace dxvk {
       {
         std::unique_lock<std::mutex> lock(m_compilerLock);
         m_compilerCond.wait(lock, [this] {
-          return m_compilerStop.load() || !m_compilerQueue.empty();
+          return m_compilerStop.load()
+            || !m_liveQueue.empty()
+            || !m_backgroundQueue.empty();
         });
 
-        if (m_compilerStop.load() && m_compilerQueue.empty())
+        if (m_compilerStop.load()
+         && m_liveQueue.empty()
+         && m_backgroundQueue.empty())
           return;
 
-        // pop highest priority entry, O(1) swap-with-back
-        auto best = m_compilerQueue.begin();
-        for (auto it = best + 1; it != m_compilerQueue.end(); ++it) {
-          if (static_cast<uint32_t>(it->priority) > static_cast<uint32_t>(best->priority))
-            best = it;
+        bool found = false;
+
+        if (!m_liveQueue.empty()) {
+          uint32_t size = uint32_t(m_liveQueue.size());
+          uint32_t scan = std::min(size, uint32_t(4));
+          for (uint32_t i = 0; i < scan; i++) {
+            uint32_t idx = size - 1 - i;
+            if (!m_liveQueue[idx].pipeline->isCompiling()) {
+              entry = std::move(m_liveQueue[idx]);
+              if (idx != size - 1)
+                m_liveQueue[idx] = std::move(m_liveQueue.back());
+              m_liveQueue.pop_back();
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            entry = std::move(m_liveQueue.back());
+            m_liveQueue.pop_back();
+            found = true;
+          }
         }
 
-        entry = std::move(*best);
-        if (best != m_compilerQueue.end() - 1)
-          *best = std::move(m_compilerQueue.back());
-        m_compilerQueue.pop_back();
+        if (!found && !m_backgroundQueue.empty()) {
+          uint32_t size = uint32_t(m_backgroundQueue.size());
+          uint32_t scan = std::min(size, uint32_t(4));
+          for (uint32_t i = 0; i < scan; i++) {
+            uint32_t idx = size - 1 - i;
+            if (!m_backgroundQueue[idx].pipeline->isCompiling()) {
+              entry = std::move(m_backgroundQueue[idx]);
+              if (idx != size - 1)
+                m_backgroundQueue[idx] = std::move(m_backgroundQueue.back());
+              m_backgroundQueue.pop_back();
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            entry = std::move(m_backgroundQueue.back());
+            m_backgroundQueue.pop_back();
+            found = true;
+          }
+        }
+
+        if (!found)
+          continue;
       }
 
       if (entry.pipeline == nullptr || entry.renderPass == nullptr) {
@@ -113,16 +155,9 @@ namespace dxvk {
         continue;
       }
 
-      auto t0 = dxvk::high_resolution_clock::now();
-
       if (entry.pipeline->compilePipeline(entry.state, entry.renderPass))
         entry.pipeline->writePipelineStateToCache(entry.state, entry.renderPass->format());
 
-      auto t1 = dxvk::high_resolution_clock::now();
-      m_totalCompileTimeUs.fetch_add(
-        std::chrono::duration_cast<std::chrono::microseconds>(t1 - t0).count(),
-        std::memory_order_relaxed);
-      m_totalCompileCount.fetch_add(1, std::memory_order_relaxed);
       m_pendingCount.fetch_sub(1, std::memory_order_relaxed);
     }
   }

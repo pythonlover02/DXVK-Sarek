@@ -49,16 +49,18 @@ namespace dxvk {
     uint64_t averageCompileTimeUs() const;
     uint32_t pendingCount() const;
 
+    void queueBatchCompilation(
+      const std::vector<DxvkPipelineEntry>& entries);
+
   private:
 
     std::atomic<bool>               m_compilerStop{false};
     std::mutex                      m_compilerLock;
     std::condition_variable         m_compilerCond;
-    std::vector<DxvkPipelineEntry>  m_compilerQueue;
+    std::vector<DxvkPipelineEntry>  m_liveQueue;
+    std::vector<DxvkPipelineEntry>  m_backgroundQueue;
     std::vector<dxvk::thread>       m_compilerThreads;
 
-    std::atomic<uint64_t>           m_totalCompileTimeUs{0};
-    std::atomic<uint32_t>           m_totalCompileCount{0};
     std::atomic<uint32_t>           m_pendingCount{0};
 
     void runCompilerThread();

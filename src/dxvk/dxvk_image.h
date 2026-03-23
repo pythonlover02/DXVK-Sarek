@@ -552,48 +552,7 @@ namespace dxvk {
         view->imageSubresources());
     }
 
-    /**
-     * \brief Sets render target usage frame number
-     *
-     * The image view will track internally when
-     * it was last used as a render target. This
-     * info is used for async shader compilation.
-     * \param [in] frameId Frame number
-     */
-    void setRtBindingFrameId(uint32_t frameId) {
-      if (frameId != m_rtBindingFrameId) {
-        if (frameId == m_rtBindingFrameId + 1)
-          m_rtBindingFrameCount += 1;
-        else
-          m_rtBindingFrameCount = 0;
-
-        m_rtBindingFrameId = frameId;
-      }
-    }
-
-    // true if this render target has been stable for enough frames
-    bool getRtBindingAsyncCompilationCompat() const {
-      return m_rtBindingFrameCount >= dyasync_rt_stability_threshold();
-    }
-
-  private:
-
-    static constexpr uint32_t dyasync_default_rt_frames() { return 3; }
-
-    static uint32_t dyasync_rt_stability_threshold() {
-      static uint32_t value = parse_rt_stability_threshold();
-      return value;
-    }
-
-    static uint32_t parse_rt_stability_threshold() {
-      std::string val = env::getEnvVar("DXVK_DYASYNC_RT_FRAMES");
-      if (val.empty())
-        return dyasync_default_rt_frames();
-      int parsed = std::atoi(val.c_str());
-      if (parsed < 1)
-        return dyasync_default_rt_frames();
-      return static_cast<uint32_t>(parsed);
-    }
+    private:
 
     Rc<vk::DeviceFn>  m_vkd;
     Rc<DxvkImage>     m_image;
@@ -604,9 +563,6 @@ namespace dxvk {
     uint64_t          m_cookie;
 
     static std::atomic<uint64_t> s_cookie;
-
-    uint32_t m_rtBindingFrameId    = 0;
-    uint32_t m_rtBindingFrameCount = 0;
 
     void createView(VkImageViewType type, uint32_t numLayers);
 
