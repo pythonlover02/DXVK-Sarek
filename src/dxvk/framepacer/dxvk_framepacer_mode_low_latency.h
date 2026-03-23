@@ -2,6 +2,7 @@
 
 #include "dxvk_framepacer_mode.h"
 #include "dxvk_gpu_progress.h"
+#include "dxvk_threaded_sleep.h"
 #include "../dxvk_options.h"
 #include "../../util/log/log.h"
 #include "../../util/util_string.h"
@@ -119,7 +120,7 @@ namespace dxvk {
         int32_t maxDelay = std::max( m_fpsLimitFrametime.load(), 20000 );
         time_point maxSleep = m->start + microseconds(maxDelay);
 
-        m_gpuProgress.waitUntil( frameId-1, targetGpuTime, props.cpuUntilGpuStart, maxSleep );
+        m_gpuProgress.waitUntil( frameId-1, targetGpuTime, props.cpuUntilGpuStart, maxSleep, m_threadedSleep );
         lastFrameFinishPrediction = high_resolution_clock::now()
           + microseconds(props.optimizedGpuTime - targetGpuTime);
       }
@@ -350,7 +351,7 @@ namespace dxvk {
       delay = std::min( delay, maxDelay );
 
       Sleep::TimePoint t2 = t + microseconds(delay);
-      Sleep::sleepUntil( t, t2 );
+      m_threadedSleep.sleepUntil(t2);
 
     }
 
@@ -369,6 +370,7 @@ namespace dxvk {
 
     std::vector<int32_t>  m_tempGpuRun;
 
+    ThreadedSleep m_threadedSleep;
     GpuProgress m_gpuProgress;
 
   };

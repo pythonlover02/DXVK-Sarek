@@ -3,6 +3,7 @@
 #include <atomic>
 #include <stdint.h>
 #include "dxvk_latency_markers.h"
+#include "dxvk_threaded_sleep.h"
 #include "../../util/log/log.h"
 #include "../../util/util_string.h"
 
@@ -102,7 +103,7 @@ namespace dxvk {
     }
 
 
-    void waitUntil( uint64_t frameId, int32_t targetGpuRuntime, int32_t cpuUntilGpuStart, time_point maxSleep ) const {
+    void waitUntil( uint64_t frameId, int32_t targetGpuRuntime, int32_t cpuUntilGpuStart, time_point maxSleep, ThreadedSleep& threadedSleep ) const {
       // GPU progress is measured as if the submits would be processed as late as possible
       // on the GPU while assuming the frame to be minimum latency since gpuStart.
       // This is necessary for this to work reliably accross games.
@@ -121,7 +122,7 @@ namespace dxvk {
 
       Sleep::TimePoint t = now + microseconds(sleepDelay);
       t = std::min(t, maxSleep);
-      Sleep::sleepUntil( now, t );
+      threadedSleep.sleepUntil( t );
 
       // For the remainder of the frame we check the progress by polling.
       // Usually this will take far less than a millisecond, with the exception
