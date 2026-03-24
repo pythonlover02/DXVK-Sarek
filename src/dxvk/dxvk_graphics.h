@@ -198,10 +198,6 @@ namespace dxvk {
       const DxvkGraphicsPipelineStateInfo&    state,
       const DxvkRenderPass*                   renderPass);
 
-    bool isCompiling() const {
-      return m_compiling.load(std::memory_order_acquire);
-    }
-
     /**
      * \brief Compiles a pipeline
      *
@@ -240,24 +236,36 @@ namespace dxvk {
       std::atomic<DxvkGraphicsPipelineInstance*> instance { nullptr };
     };
 
-    struct AtomicFallbackEntry {
-      std::atomic<const DxvkRenderPass*> renderPass { nullptr };
-      std::atomic<VkPipeline>            pipeline   { VK_NULL_HANDLE };
+    struct FallbackMapEntry {
+      std::atomic<uintptr_t>  key      { 0 };
+      std::atomic<VkPipeline> pipeline { VK_NULL_HANDLE };
+      std::atomic<uint8_t>    used     { 0 };
     };
 
-    static constexpr uint32_t InstanceMapSize    = 512;
+    static constexpr uint32_t InstanceMapSize    = 4096;
     static constexpr uint32_t InstanceMapMask    = InstanceMapSize - 1;
-    static constexpr uint32_t MaxProbeDistance    = 8;
-    static constexpr uint32_t FallbackCacheSize  = 8;
+    static constexpr uint32_t MaxProbeDistance    = 64;
+    static constexpr uint32_t OverflowMapSize    = 8192;
+    static constexpr uint32_t OverflowMapMask    = OverflowMapSize - 1;
+    static constexpr uint32_t OverflowProbeMax   = 128;
+    static constexpr uint32_t FallbackMapSize    = 2048;
+    static constexpr uint32_t FallbackMapMask    = FallbackMapSize - 1;
+    static constexpr uint32_t FallbackProbeMax   = 16;
 
-    alignas(CACHE_LINE_SIZE)
-    dxvk::mutex                               m_mutex;
-    std::atomic<bool>                         m_compiling { false };
+    static constexpr uint32_t QueuedSetSize = 4096;
+    static constexpr uint32_t QueuedSetMask = QueuedSetSize - 1;
+
     sync::List<DxvkGraphicsPipelineInstance>  m_pipelines;
 
-    std::array<LockFreeMapEntry,    InstanceMapSize>   m_instanceMap;
-    std::array<AtomicFallbackEntry, FallbackCacheSize> m_fallbackCache;
-    std::atomic<VkPipeline>                            m_basePipeline { VK_NULL_HANDLE };
+    std::array<std::atomic<size_t>, QueuedSetSize> m_queuedSet;
+
+    std::array<LockFreeMapEntry,  InstanceMapSize>   m_instanceMap;
+    std::atomic<bool>                                m_instanceMapOverflow { false };
+
+    std::array<LockFreeMapEntry,  OverflowMapSize>   m_overflowMap;
+    std::array<FallbackMapEntry,  FallbackMapSize>   m_fallbackMap;
+    std::atomic<VkPipeline>                          m_basePipeline { VK_NULL_HANDLE };
+    std::atomic<bool>                                m_hasBasePipeline { false };
 
     static size_t computeInstanceHash(
       const DxvkGraphicsPipelineStateInfo& state,
@@ -280,8 +288,13 @@ namespace dxvk {
       const DxvkGraphicsPipelineStateInfo& state,
       const DxvkRenderPass*                renderPass);
 
+    static uintptr_t computeFallbackKey(
+      const DxvkRenderPass*                renderPass);
+
     VkPipeline findFallback(
       const DxvkRenderPass*                renderPass);
+
+    std::atomic<uint32_t>                          m_fallbackEvictCounter { 0 };
 
     VkPipeline createPipeline(
       const DxvkGraphicsPipelineStateInfo& state,

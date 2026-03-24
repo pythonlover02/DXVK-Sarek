@@ -39,6 +39,9 @@ namespace dxvk {
 
     m_common.msSampleShadingEnable = m_shaders.fs != nullptr && m_shaders.fs->flags().test(DxvkShaderFlag::HasSampleRateShading);
     m_common.msSampleShadingFactor = 1.0f;
+
+    for (auto& slot : m_queuedSet)
+      slot.store(0, std::memory_order_relaxed);
   }
 
 
@@ -76,14 +79,30 @@ namespace dxvk {
     VkPipeline fallback = this->findFallback(renderPass);
 
     if (fallback != VK_NULL_HANDLE && m_pipeMgr->m_compiler != nullptr) {
-      m_pipeMgr->m_compiler->queueCompilation(
-        this, state, renderPass, DxvkPipelinePriority::High);
+      size_t h    = computeInstanceHash(state, renderPass);
+      uint32_t qs = uint32_t(h) & QueuedSetMask;
+      size_t expected = 0;
+      if (m_queuedSet[qs].compare_exchange_strong(expected, h,
+              std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        if (!m_pipeMgr->m_compiler->queueCompilation(
+              this, state, renderPass, DxvkPipelinePriority::Live)) {
+          m_queuedSet[qs].store(0, std::memory_order_release);
+        }
+      } else if (expected != h) {
+        uint32_t qs2 = ((qs >> 7) ^ qs ^ 0x55u) & QueuedSetMask;
+        expected = 0;
+        if (m_queuedSet[qs2].compare_exchange_strong(expected, h,
+                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+          if (!m_pipeMgr->m_compiler->queueCompilation(
+                this, state, renderPass, DxvkPipelinePriority::Live)) {
+            m_queuedSet[qs2].store(0, std::memory_order_release);
+          }
+        }
+      }
       return fallback;
     }
 
-    std::lock_guard<dxvk::mutex> lock(m_mutex);
-
-    instance = this->findInstance(state, renderPass);
+    instance = this->findInstanceLockFree(state, renderPass);
     if (instance != nullptr)
       return instance->pipeline();
 
@@ -106,16 +125,21 @@ namespace dxvk {
     if (this->findInstanceLockFree(state, renderPass) != nullptr)
       return false;
 
-    m_compiling.store(true, std::memory_order_release);
+    auto* instance = this->createInstance(state, renderPass);
+    bool result = (instance != nullptr);
 
-    std::lock_guard<dxvk::mutex> lock(m_mutex);
+    size_t h    = computeInstanceHash(state, renderPass);
+    uint32_t qs = uint32_t(h) & QueuedSetMask;
+    size_t current = m_queuedSet[qs].load(std::memory_order_acquire);
+    if (current == h)
+      m_queuedSet[qs].compare_exchange_strong(current, size_t(0),
+        std::memory_order_release, std::memory_order_relaxed);
+    uint32_t qs2 = ((qs >> 7) ^ qs ^ 0x55u) & QueuedSetMask;
+    current = m_queuedSet[qs2].load(std::memory_order_acquire);
+    if (current == h)
+      m_queuedSet[qs2].compare_exchange_strong(current, size_t(0),
+        std::memory_order_release, std::memory_order_relaxed);
 
-    bool result = false;
-
-    if (this->findInstance(state, renderPass) == nullptr)
-      result = this->createInstance(state, renderPass) != nullptr;
-
-    m_compiling.store(false, std::memory_order_release);
     return result;
   }
 
@@ -140,7 +164,8 @@ namespace dxvk {
       std::memcpy(&word, data + offset, remaining);
       hash.add(word);
     }
-    return static_cast<size_t>(hash) | 1;
+    size_t h = static_cast<size_t>(hash);
+    return h == 0 ? 1 : h;
   }
 
 
@@ -154,10 +179,28 @@ namespace dxvk {
       size_t stored = m_instanceMap[slot].hash.load(std::memory_order_acquire);
 
       if (stored == 0)
-        return nullptr;
+        break;
 
       if (stored == h) {
         auto* inst = m_instanceMap[slot].instance.load(std::memory_order_acquire);
+        if (inst != nullptr && inst->isCompatible(state, renderPass))
+          return inst;
+      }
+    }
+
+    if (!m_instanceMapOverflow.load(std::memory_order_acquire))
+      return nullptr;
+
+    size_t h2 = (h ^ (h >> 16)) * 0x45d9f3bu;
+    for (uint32_t i = 0; i < OverflowProbeMax; i++) {
+      uint32_t slot = (uint32_t(h2) + i) & OverflowMapMask;
+      size_t stored = m_overflowMap[slot].hash.load(std::memory_order_acquire);
+
+      if (stored == 0)
+        return nullptr;
+
+      if (stored == h) {
+        auto* inst = m_overflowMap[slot].instance.load(std::memory_order_acquire);
         if (inst != nullptr && inst->isCompatible(state, renderPass))
           return inst;
       }
@@ -184,34 +227,101 @@ namespace dxvk {
       }
 
       if (expected == h) {
+        auto* existing = m_instanceMap[slot].instance.load(std::memory_order_acquire);
+        if (existing != nullptr) {
+          if (existing->isCompatible(state, renderPass))
+            return;
+          continue;
+        }
         m_instanceMap[slot].instance.store(inst, std::memory_order_release);
         return;
       }
     }
 
-    Logger::warn("DxvkGraphicsPipeline: Instance map probe limit reached, lock-free lookup will miss this entry");
+    m_instanceMapOverflow.store(true, std::memory_order_release);
+
+    size_t h2 = (h ^ (h >> 16)) * 0x45d9f3bu;
+    for (uint32_t i = 0; i < OverflowProbeMax; i++) {
+      uint32_t slot = (uint32_t(h2) + i) & OverflowMapMask;
+      size_t expected = 0;
+
+      if (m_overflowMap[slot].hash.compare_exchange_strong(
+              expected, h, std::memory_order_acq_rel)) {
+        m_overflowMap[slot].instance.store(inst, std::memory_order_release);
+        return;
+      }
+
+      if (expected == h) {
+        auto* existing = m_overflowMap[slot].instance.load(std::memory_order_acquire);
+        if (existing != nullptr) {
+          if (existing->isCompatible(state, renderPass))
+            return;
+          continue;
+        }
+        m_overflowMap[slot].instance.store(inst, std::memory_order_release);
+        return;
+      }
+    }
   }
 
 
   DxvkGraphicsPipelineInstance* DxvkGraphicsPipeline::createInstance(
     const DxvkGraphicsPipelineStateInfo& state,
     const DxvkRenderPass*                renderPass) {
+    auto* existing = this->findInstanceLockFree(state, renderPass);
+    if (existing != nullptr)
+      return existing;
+
     VkPipeline pipeline = this->createPipeline(state, renderPass);
+
+    existing = this->findInstanceLockFree(state, renderPass);
+    if (existing != nullptr) {
+      this->destroyPipeline(pipeline);
+      return existing;
+    }
 
     m_pipeMgr->m_numGraphicsPipelines += 1;
     auto& inst = *m_pipelines.emplace(state, renderPass, pipeline);
 
     this->insertInstanceToMap(state, renderPass, &inst);
 
-    if (pipeline != VK_NULL_HANDLE) {
+    if (pipeline != VK_NULL_HANDLE && !m_hasBasePipeline.load(std::memory_order_acquire)) {
       VkPipeline expected = VK_NULL_HANDLE;
-      m_basePipeline.compare_exchange_strong(expected, pipeline, std::memory_order_relaxed);
+      if (m_basePipeline.compare_exchange_strong(expected, pipeline,
+              std::memory_order_release, std::memory_order_relaxed))
+        m_hasBasePipeline.store(true, std::memory_order_release);
     }
 
     if (pipeline != VK_NULL_HANDLE) {
-      size_t fbIdx = reinterpret_cast<uintptr_t>(renderPass) % FallbackCacheSize;
-      m_fallbackCache[fbIdx].renderPass.store(renderPass, std::memory_order_relaxed);
-      m_fallbackCache[fbIdx].pipeline.store(pipeline, std::memory_order_release);
+      uintptr_t key = computeFallbackKey(renderPass);
+      size_t base = size_t(key) & FallbackMapMask;
+
+      for (uint32_t i = 0; i < FallbackProbeMax; i++) {
+        size_t slot = (base + i) & FallbackMapMask;
+        uintptr_t stored = m_fallbackMap[slot].key.load(std::memory_order_relaxed);
+
+        if (stored == key) {
+          m_fallbackMap[slot].pipeline.store(pipeline, std::memory_order_release);
+          m_fallbackMap[slot].used.store(1, std::memory_order_relaxed);
+          break;
+        }
+
+        uintptr_t expected = 0;
+        if (stored == 0 && m_fallbackMap[slot].key.compare_exchange_strong(
+                expected, key, std::memory_order_acq_rel)) {
+          m_fallbackMap[slot].pipeline.store(pipeline, std::memory_order_release);
+          m_fallbackMap[slot].used.store(1, std::memory_order_relaxed);
+          break;
+        }
+
+        if (i == FallbackProbeMax - 1) {
+          uint32_t evictIdx = m_fallbackEvictCounter.fetch_add(1, std::memory_order_relaxed) % FallbackProbeMax;
+          size_t evictSlot = (base + evictIdx) & FallbackMapMask;
+          m_fallbackMap[evictSlot].key.store(key, std::memory_order_release);
+          m_fallbackMap[evictSlot].pipeline.store(pipeline, std::memory_order_release);
+          m_fallbackMap[evictSlot].used.store(1, std::memory_order_relaxed);
+        }
+      }
     }
 
     return &inst;
@@ -230,24 +340,34 @@ namespace dxvk {
   }
 
 
+  uintptr_t DxvkGraphicsPipeline::computeFallbackKey(
+    const DxvkRenderPass*                renderPass) {
+    uintptr_t key = reinterpret_cast<uintptr_t>(renderPass);
+    key = ((key >> 16) ^ key) * 0x45d9f3bu;
+    key = ((key >> 16) ^ key) * 0x45d9f3bu;
+    key = (key >> 16) ^ key;
+    return key;
+  }
+
   VkPipeline DxvkGraphicsPipeline::findFallback(
     const DxvkRenderPass*                renderPass) {
-    size_t fbIdx = reinterpret_cast<uintptr_t>(renderPass) % FallbackCacheSize;
-    auto& cached = m_fallbackCache[fbIdx];
+    uintptr_t key = computeFallbackKey(renderPass);
+    size_t base = size_t(key) & FallbackMapMask;
 
-    VkPipeline cachedPipeline = cached.pipeline.load(std::memory_order_acquire);
-    const DxvkRenderPass* cachedPass = cached.renderPass.load(std::memory_order_relaxed);
+    for (uint32_t i = 0; i < FallbackProbeMax; i++) {
+      size_t slot = (base + i) & FallbackMapMask;
+      uintptr_t stored = m_fallbackMap[slot].key.load(std::memory_order_acquire);
 
-    if (cachedPass == renderPass && cachedPipeline != VK_NULL_HANDLE)
-      return cachedPipeline;
-
-    for (auto& instance : m_pipelines) {
-      if (instance.renderPass() == renderPass
-       && instance.pipeline()   != VK_NULL_HANDLE) {
-        cached.renderPass.store(renderPass, std::memory_order_relaxed);
-        cached.pipeline.store(instance.pipeline(), std::memory_order_release);
-        return instance.pipeline();
+      if (stored == key) {
+        VkPipeline p = m_fallbackMap[slot].pipeline.load(std::memory_order_acquire);
+        if (p != VK_NULL_HANDLE) {
+          m_fallbackMap[slot].used.store(1, std::memory_order_relaxed);
+          return p;
+        }
       }
+
+      if (stored == 0)
+        return VK_NULL_HANDLE;
     }
 
     return VK_NULL_HANDLE;
@@ -540,9 +660,11 @@ namespace dxvk {
     info.layout                   = m_layout->pipelineLayout();
     info.renderPass               = renderPass->getDefaultHandle();
     info.subpass                  = 0;
-    VkPipeline base = m_basePipeline.load(std::memory_order_relaxed);
+    VkPipeline base = m_basePipeline.load(std::memory_order_acquire);
     if (base != VK_NULL_HANDLE)
       info.flags |= VK_PIPELINE_CREATE_DERIVATIVE_BIT;
+    else
+      info.flags |= VK_PIPELINE_CREATE_ALLOW_DERIVATIVES_BIT;
     info.basePipelineHandle       = base;
     info.basePipelineIndex        = -1;
 
