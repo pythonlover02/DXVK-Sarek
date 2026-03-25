@@ -10,21 +10,10 @@ namespace dxvk {
   : m_device    (device),
     m_cache     (new DxvkPipelineCache(device->vkd())) {
 
-    std::string useStateCache   = env::getEnvVar("DXVK_STATE_CACHE");
-    std::string disableDyasync  = env::getEnvVar("DXVK_DISABLE_DYASYNC");
-    std::string disableAsync    = env::getEnvVar("DXVK_DISABLE_ASYNC");
+    if (env::getEnvVar("DXVK_DISABLE_DYASYNC") != "1" && device->config().enableDyasync)
+      m_compiler = new DxvkPipelineCompiler(device);
 
-    bool forceDisable = disableDyasync == "1" || disableAsync == "1";
-
-    if (!forceDisable) {
-      std::string useAsync   = env::getEnvVar("DXVK_ASYNC");
-      std::string useDyasync = env::getEnvVar("DXVK_DYASYNC");
-
-      if (useAsync == "1" || useDyasync == "1" || device->config().enableDyasync)
-        m_compiler = new DxvkPipelineCompiler(device);
-    }
-
-    if (useStateCache != "0" && device->config().enableStateCache)
+    if (env::getEnvVar("DXVK_STATE_CACHE") != "0" && device->config().enableStateCache)
       m_stateCache = new DxvkStateCache(device, this, passManager);
   }
 

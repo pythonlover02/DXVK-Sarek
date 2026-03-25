@@ -30,7 +30,6 @@ namespace dxvk {
     DxvkPipelinePriority          priority;
   };
 
-  // Asynchronous pipeline compiler
   class DxvkPipelineCompiler : public RcObject {
 
   public:
@@ -46,8 +45,8 @@ namespace dxvk {
 
   private:
 
-    static constexpr uint32_t RingCapacity = 4096;
-    static constexpr uint32_t RingMask     = RingCapacity - 1;
+    static constexpr uint32_t get_ring_capacity() { return 4096; }
+    static constexpr uint32_t get_ring_mask()     { return get_ring_capacity() - 1; }
 
     struct RingCell {
       std::atomic<uint32_t> sequence;
@@ -57,17 +56,17 @@ namespace dxvk {
     struct MpmcRing {
       alignas(CACHE_LINE_SIZE) std::atomic<uint32_t> head{0};
       alignas(CACHE_LINE_SIZE) std::atomic<uint32_t> tail{0};
-      std::array<RingCell, RingCapacity> cells;
+      std::array<RingCell, get_ring_capacity()> cells;
 
       MpmcRing() {
-        for (uint32_t i = 0; i < RingCapacity; i++)
+        for (uint32_t i = 0; i < get_ring_capacity(); i++)
           cells[i].sequence.store(i, std::memory_order_relaxed);
       }
 
       bool tryPush(DxvkPipelineEntry&& entry) {
         uint32_t pos = tail.load(std::memory_order_relaxed);
         for (;;) {
-          auto& cell = cells[pos & RingMask];
+          auto& cell = cells[pos & get_ring_mask()];
           uint32_t seq = cell.sequence.load(std::memory_order_acquire);
           int32_t diff = int32_t(seq) - int32_t(pos);
           if (diff == 0) {
@@ -87,13 +86,13 @@ namespace dxvk {
       bool tryPop(DxvkPipelineEntry& entry) {
         uint32_t pos = head.load(std::memory_order_relaxed);
         for (;;) {
-          auto& cell = cells[pos & RingMask];
+          auto& cell = cells[pos & get_ring_mask()];
           uint32_t seq = cell.sequence.load(std::memory_order_acquire);
           int32_t diff = int32_t(seq) - int32_t(pos + 1);
           if (diff == 0) {
             if (head.compare_exchange_weak(pos, pos + 1, std::memory_order_relaxed)) {
               entry = std::move(cell.data);
-              cell.sequence.store(pos + RingCapacity, std::memory_order_release);
+              cell.sequence.store(pos + get_ring_capacity(), std::memory_order_release);
               return true;
             }
           } else if (diff < 0) {

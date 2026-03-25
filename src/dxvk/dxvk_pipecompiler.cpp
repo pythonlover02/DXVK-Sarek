@@ -4,25 +4,45 @@
 
 namespace dxvk {
 
-  constexpr uint32_t dyasync_min_workers()       { return 1;  }
-  constexpr uint32_t dyasync_max_workers()       { return 32; }
-  constexpr uint32_t dyasync_max_workers_32bit() { return 16; }
+  constexpr uint32_t get_dyasync_min_workers()       { return 1;  }
+  constexpr uint32_t get_dyasync_max_workers()       { return 32; }
+  constexpr uint32_t get_dyasync_max_workers_32bit() { return 16; }
+
+  uint32_t calculate_base_worker_count(uint32_t cpu_cores) {
+    return ((std::max(1u, cpu_cores) - 1) * 5) / 7;
+  }
+
+  uint32_t clamp_worker_count(uint32_t count) {
+    return std::clamp(count, get_dyasync_min_workers(), get_dyasync_max_workers());
+  }
+
+  uint32_t apply_platform_cap(uint32_t count, bool is_32bit) {
+    if (!is_32bit)
+      return count;
+    return std::min(count, get_dyasync_max_workers_32bit());
+  }
+
+  uint32_t calculate_worker_count(
+      uint32_t cpu_cores,
+      int32_t  config_thread_count,
+      bool     is_32bit,
+      bool     use_all_cores) {
+    if (use_all_cores)
+      return cpu_cores;
+    if (config_thread_count > 0)
+      return static_cast<uint32_t>(config_thread_count);
+    return apply_platform_cap(
+      clamp_worker_count(
+        calculate_base_worker_count(cpu_cores)),
+      is_32bit);
+  }
 
   DxvkPipelineCompiler::DxvkPipelineCompiler(const DxvkDevice* device) {
-    uint32_t numCpuCores = dxvk::thread::hardware_concurrency();
-    uint32_t numWorkers  = ((std::max(1u, numCpuCores) - 1) * 5) / 7;
-
-    if (numWorkers < dyasync_min_workers()) numWorkers = dyasync_min_workers();
-    if (numWorkers > dyasync_max_workers()) numWorkers = dyasync_max_workers();
-
-    if (env::is32BitHostPlatform())
-      numWorkers = std::min(numWorkers, dyasync_max_workers_32bit());
-
-    if (device->config().numDyasyncThreads > 0)
-      numWorkers = static_cast<uint32_t>(device->config().numDyasyncThreads);
-
-    if (env::getEnvVar("DXVK_ALL_CORES") == "1")
-      numWorkers = numCpuCores;
+    uint32_t numWorkers = calculate_worker_count(
+      dxvk::thread::hardware_concurrency(),
+      device->config().numDyasyncThreads,
+      env::is32BitHostPlatform(),
+      env::getEnvVar("DXVK_ALL_CORES") == "1");
 
     Logger::info(str::format("DXVK: Using ", numWorkers, " dyasync compiler threads"));
 
