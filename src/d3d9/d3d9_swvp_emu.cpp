@@ -3,6 +3,8 @@
 #include "d3d9_device.h"
 #include "d3d9_vertex_declaration.h"
 
+#include "../dxvk/dxvk_shader_spirv.h"
+
 #include "../spirv/spirv_module.h"
 
 namespace dxvk {
@@ -306,15 +308,12 @@ namespace dxvk {
         spv::ExecutionModelGeometry, "main");
       m_module.setDebugName(m_entryPointId, "main");
 
-      DxvkShaderCreateInfo info;
-      info.stage = VK_SHADER_STAGE_GEOMETRY_BIT;
+      DxvkSpirvShaderCreateInfo info = { };
       info.bindingCount = 1;
       info.bindings = &m_bufferBinding;
       info.localPushData = DxvkPushDataBlock(MaxSharedPushDataSize, sizeof(D3D9SwvpEmuArgs), 4u, 0u);
-      info.inputMask = m_inputMask;
-      info.inputTopology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
 
-      return new DxvkShader(info, m_module.compile());
+      return new DxvkSpirvShader(info, m_module.compile());
     }
 
   private:
@@ -339,7 +338,7 @@ namespace dxvk {
     Sha1Hash hash = Sha1Hash::compute(
       elements.data(), elements.size() * sizeof(elements[0]));
 
-    DxvkShaderKey key = { VK_SHADER_STAGE_GEOMETRY_BIT , hash };
+    DxvkShaderHash key(VK_SHADER_STAGE_GEOMETRY_BIT, 0u, hash.digest(), hash.digestLength());
     std::string name = str::format("SWVP_", key.toString());
     
     // This shader has not been compiled yet, so we have to create a
@@ -348,7 +347,6 @@ namespace dxvk {
     generator.compile(elements);
     Rc<DxvkShader> shader = generator.finalize();
 
-    shader->setShaderKey(key);
     pDevice->GetDXVKDevice()->registerShader(shader);
 
     const std::string& dumpPath = pDevice->GetOptions()->shaderDumpPath;

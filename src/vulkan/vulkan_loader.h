@@ -168,12 +168,20 @@ namespace dxvk::vk {
     VULKAN_FN(vkGetPhysicalDeviceCalibrateableTimeDomainsKHR);
     #endif
 
+    #ifdef VK_EXT_descriptor_heap
+    VULKAN_FN(vkGetPhysicalDeviceDescriptorSizeEXT);
+    #endif
+
     #ifdef VK_EXT_full_screen_exclusive
     VULKAN_FN(vkGetPhysicalDeviceSurfacePresentModes2EXT);
     #endif
 
     #ifdef VK_EXT_swapchain_maintenance1
     VULKAN_FN(vkReleaseSwapchainImagesEXT);
+    #endif
+
+    #ifdef VK_EXT_sample_locations
+    VULKAN_FN(vkGetPhysicalDeviceMultisamplePropertiesEXT);
     #endif
   };
   
@@ -385,6 +393,17 @@ namespace dxvk::vk {
     VULKAN_FN(vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT);
     #endif
 
+    #ifdef VK_EXT_descriptor_heap
+    VULKAN_FN(vkWriteSamplerDescriptorsEXT);
+    VULKAN_FN(vkWriteResourceDescriptorsEXT);
+    VULKAN_FN(vkCmdBindSamplerHeapEXT);
+    VULKAN_FN(vkCmdBindResourceHeapEXT);
+    VULKAN_FN(vkCmdPushDataEXT);
+    VULKAN_FN(vkGetImageOpaqueCaptureDataEXT);
+    VULKAN_FN(vkRegisterCustomBorderColorEXT);
+    VULKAN_FN(vkUnregisterCustomBorderColorEXT);
+    #endif
+
     #ifdef VK_EXT_debug_utils
     VULKAN_FN(vkQueueBeginDebugUtilsLabelEXT);
     VULKAN_FN(vkQueueEndDebugUtilsLabelEXT);
@@ -409,6 +428,7 @@ namespace dxvk::vk {
     VULKAN_FN(vkCmdSetConservativeRasterizationModeEXT);
     VULKAN_FN(vkCmdSetExtraPrimitiveOverestimationSizeEXT);
     VULKAN_FN(vkCmdSetDepthClipEnableEXT);
+    VULKAN_FN(vkCmdSetSampleLocationsEnableEXT);
     VULKAN_FN(vkCmdSetLineRasterizationModeEXT);
     #endif
 
@@ -429,6 +449,10 @@ namespace dxvk::vk {
     #ifdef VK_EXT_multi_draw
     VULKAN_FN(vkCmdDrawMultiEXT);
     VULKAN_FN(vkCmdDrawMultiIndexedEXT);
+    #endif
+
+    #ifdef VK_EXT_sample_locations
+    VULKAN_FN(vkCmdSetSampleLocationsEXT);
     #endif
 
     #ifdef VK_EXT_shader_module_identifier
@@ -486,6 +510,10 @@ namespace dxvk::vk {
 
     #ifdef VK_KHR_present_wait
     VULKAN_FN(vkWaitForPresentKHR);
+    #endif
+
+    #ifdef VK_KHR_present_wait2
+    VULKAN_FN(vkWaitForPresent2KHR);
     #endif
 
     #ifdef VK_EXT_calibrated_timestamps

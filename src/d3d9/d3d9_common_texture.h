@@ -195,6 +195,17 @@ namespace dxvk {
             D3D9_COMMON_TEXTURE_DESC*  pDesc);
 
     /**
+     * \brief Returns whether a Vulkan image is used for this D3D9 texture
+     *
+     * \param pDesc The texture description
+     */
+    static bool TextureUsesImage(const D3D9_COMMON_TEXTURE_DESC* pDesc) {
+      return pDesc->Pool   != D3DPOOL_SYSTEMMEM
+          && pDesc->Pool   != D3DPOOL_SCRATCH
+          && pDesc->Format != D3D9Format::NULL_FORMAT;
+    }
+
+    /**
      * \brief Shadow
      * \returns Whether the texture is to be depth compared
      */
@@ -360,7 +371,7 @@ namespace dxvk {
     Rc<DxvkImageView> CreateView(
             UINT                   Layer,
             UINT                   Lod,
-            VkImageUsageFlagBits   UsageFlags,
+            VkImageUsageFlags      UsageFlags,
             VkImageLayout          Layout,
             bool                   Srgb);
     D3D9SubresourceBitset& GetUploadBitmask() { return m_needsUpload; }
@@ -476,9 +487,10 @@ namespace dxvk {
      * \brief Creates a buffer
      * Creates the mapping buffer if necessary
      * \param [in] Initialize Whether to copy over existing data (or clear if there is no data)
+     * \param [in] Size The size of the buffer
      * \returns Whether an allocation happened
      */
-    void CreateBuffer(bool Initialize);
+    void CreateBuffer(bool Initialize, uint32_t Size);
 
     ID3D9VkInteropTexture* GetVkInterop() { return &m_d3d9Interop; }
 

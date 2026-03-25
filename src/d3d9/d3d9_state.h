@@ -109,6 +109,66 @@ namespace dxvk {
     float Phi;
   };
 
+  struct D3D9FFShaderKeyVSData {
+    union {
+      struct {
+        uint32_t TexcoordIndices : 24;
+
+        uint32_t VertexHasPositionT : 1;
+
+        uint32_t VertexHasColor0 : 1; // Diffuse
+        uint32_t VertexHasColor1 : 1; // Specular
+
+        uint32_t VertexHasPointSize : 1;
+
+        uint32_t UseLighting : 1;
+
+        uint32_t NormalizeNormals : 1;
+        uint32_t LocalViewer : 1;
+        uint32_t RangeFog : 1;
+
+        // End of uint32_t
+
+        uint32_t TexcoordFlags : 24;
+
+        uint32_t DiffuseSource : 2;
+        uint32_t AmbientSource : 2;
+        uint32_t SpecularSource : 2;
+        uint32_t EmissiveSource : 2;
+
+        // Next uint32_t
+
+        uint32_t TransformFlags : 24;
+
+        uint32_t LightCount : 4;
+        uint32_t SpecularEnabled : 1;
+
+        // End of uint32_t
+
+        uint32_t VertexTexcoordDeclMask : 24;
+        uint32_t VertexHasFog : 1;
+
+        uint32_t VertexBlendMode    : 2;
+        uint32_t VertexBlendIndexed : 1;
+        uint32_t VertexBlendCount   : 2;
+
+        uint32_t VertexClipping     : 1;
+
+        // End of uint32_t
+      } Contents;
+
+      uint32_t Primitive[5];
+    };
+  };
+
+  struct D3D9FFShaderKeyVS {
+    D3D9FFShaderKeyVS() {
+      // memcmp safety
+      std::memset(&Data, 0, sizeof(Data));
+    }
+
+    D3D9FFShaderKeyVSData Data;
+  };
 
   struct D3D9FixedFunctionVS {
     Matrix4 WorldView;
@@ -124,6 +184,8 @@ namespace dxvk {
     std::array<D3D9Light, caps::MaxEnabledLights> Lights;
     D3DMATERIAL9 Material;
     float TweenFactor;
+
+    D3D9FFShaderKeyVSData Key;
   };
 
 
@@ -137,8 +199,48 @@ namespace dxvk {
   };
 
 
+  struct D3D9FFShaderStage {
+    union {
+      struct {
+        uint32_t     ColorOp   : 5;
+        uint32_t     ColorArg0 : 6;
+        uint32_t     ColorArg1 : 6;
+        uint32_t     ColorArg2 : 6;
+
+        uint32_t     AlphaOp   : 5;
+        uint32_t     AlphaArg0 : 6;
+        uint32_t     AlphaArg1 : 6;
+        uint32_t     AlphaArg2 : 6;
+
+        uint32_t     ResultIsTemp : 1;
+
+        // Included in here, read from Stage 0 for packing reasons
+        // Affects all stages.
+        uint32_t     GlobalSpecularEnable : 1;
+      } Contents;
+
+      uint32_t Primitive[2];
+    };
+  };
+
+  struct D3D9FFShaderKeyFS {
+    D3D9FFShaderKeyFS() {
+      // memcmp safety
+      std::memset(Stages, 0, sizeof(Stages));
+
+      // Normalize this. DISABLE != 0.
+      for (uint32_t i = 0; i < caps::TextureStageCount; i++) {
+        Stages[i].Contents.ColorOp = D3DTOP_DISABLE;
+        Stages[i].Contents.AlphaOp = D3DTOP_DISABLE;
+      }
+    }
+
+    D3D9FFShaderStage Stages[caps::TextureStageCount];
+  };
+
   struct D3D9FixedFunctionPS {
     Vector4 textureFactor;
+    D3D9FFShaderKeyFS Key;
   };
 
   enum D3D9SharedPSStages {
@@ -317,7 +419,7 @@ namespace dxvk {
   using D3D9DeviceState = D3D9State<static_item>;
 
   template <
-    DxsoProgramType  ProgramType,
+    D3D9ShaderType   ShaderType,
     D3D9ConstantType ConstantType,
     typename         T,
     typename         StateType>
@@ -362,7 +464,7 @@ namespace dxvk {
       return D3D_OK;
     };
 
-    return ProgramType == DxsoProgramTypes::VertexShader
+    return ShaderType == D3D9ShaderType::VertexShader
       ? UpdateHelper(pState->vsConsts)
       : UpdateHelper(pState->psConsts);
   }

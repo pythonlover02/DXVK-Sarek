@@ -2,8 +2,6 @@
 
 #include <mutex>
 
-#include "../util/sync/sync_list.h"
-
 #include "dxvk_bind_mask.h"
 #include "dxvk_constant_state.h"
 #include "dxvk_graphics_state.h"
@@ -244,11 +242,11 @@ namespace dxvk {
       const DxvkGraphicsPipelineShaders&    shaders,
       const DxvkGraphicsPipelineStateInfo&  state);
 
-    DxvkShaderModuleCreateInfo vsInfo;
-    DxvkShaderModuleCreateInfo tcsInfo;
-    DxvkShaderModuleCreateInfo tesInfo;
-    DxvkShaderModuleCreateInfo gsInfo;
-    DxvkShaderModuleCreateInfo fsInfo;
+    DxvkShaderLinkage vsInfo;
+    DxvkShaderLinkage tcsInfo;
+    DxvkShaderLinkage tesInfo;
+    DxvkShaderLinkage gsInfo;
+    DxvkShaderLinkage fsInfo;
 
     bool eq(const DxvkGraphicsPipelineShaderState& other) const;
 
@@ -256,7 +254,7 @@ namespace dxvk {
 
   private:
 
-    DxvkShaderModuleCreateInfo getCreateInfo(
+    DxvkShaderLinkage getLinkage(
       const DxvkGraphicsPipelineShaders&    shaders,
       const Rc<DxvkShader>&                 shader,
       const DxvkGraphicsPipelineStateInfo&  state);
@@ -313,11 +311,11 @@ namespace dxvk {
 
     size_t hash() const {
       DxvkHashState state;
-      state.add(DxvkShader::getHash(vs));
-      state.add(DxvkShader::getHash(tcs));
-      state.add(DxvkShader::getHash(tes));
-      state.add(DxvkShader::getHash(gs));
-      state.add(DxvkShader::getHash(fs));
+      state.add(DxvkShader::getCookie(vs));
+      state.add(DxvkShader::getCookie(tcs));
+      state.add(DxvkShader::getCookie(tes));
+      state.add(DxvkShader::getCookie(gs));
+      state.add(DxvkShader::getCookie(fs));
       return state;
     }
 
@@ -330,7 +328,7 @@ namespace dxvk {
     }
 
     static bool validateShaderType(const Rc<DxvkShader>& shader, VkShaderStageFlagBits stage) {
-      return shader == nullptr || shader->info().stage == stage;
+      return shader == nullptr || shader->metadata().stage == stage;
     }
   };
 
@@ -363,17 +361,14 @@ namespace dxvk {
   struct DxvkGraphicsPipelineInstance {
     DxvkGraphicsPipelineInstance() { }
     DxvkGraphicsPipelineInstance(
-      const DxvkGraphicsPipelineStateInfo&  state_,
             VkPipeline                      baseHandle_,
             VkPipeline                      fastHandle_,
             DxvkAttachmentMask              attachments_)
-    : state       (state_),
-      baseHandle  (baseHandle_),
+    : baseHandle  (baseHandle_),
       fastHandle  (fastHandle_),
       isCompiling (fastHandle_ != VK_NULL_HANDLE),
       attachments (attachments_) { }
 
-    DxvkGraphicsPipelineStateInfo state;
     std::atomic<VkPipeline>       baseHandle  = { VK_NULL_HANDLE };
     std::atomic<VkPipeline>       fastHandle  = { VK_NULL_HANDLE };
     std::atomic<VkBool32>         isCompiling = { VK_FALSE };
@@ -617,7 +612,9 @@ namespace dxvk {
 
     alignas(CACHE_LINE_SIZE)
     dxvk::mutex                                   m_mutex;
-    sync::List<DxvkGraphicsPipelineInstance>      m_pipelines;
+    DxvkPipelineVariantTable<
+      DxvkGraphicsPipelineStateInfo,
+      DxvkGraphicsPipelineInstance>               m_pipelines;
     uint32_t                                      m_useCount = 0;
 
     std::unordered_map<
@@ -657,12 +654,12 @@ namespace dxvk {
     void destroyOptimizedPipelines();
 
     void destroyVulkanPipeline(
-            VkPipeline                     pipeline) const;
-    
+            VkPipeline                    pipeline) const;
+
     SpirvCodeBuffer getShaderCode(
-      const Rc<DxvkShader>&                shader,
-      const DxvkShaderModuleCreateInfo&    info) const;
-    
+            DxvkShader&                   shader,
+      const DxvkShaderLinkage&            linkage) const;
+
     uint32_t computeSpecConstantMask() const;
 
     DxvkAttachmentMask computeAttachmentMask(

@@ -7,7 +7,10 @@ namespace dxvk {
     enableMemoryDefrag    = config.getOption<Tristate>("dxvk.enableMemoryDefrag",     Tristate::Auto);
     numCompilerThreads    = config.getOption<int32_t> ("dxvk.numCompilerThreads",     0);
     enableGraphicsPipelineLibrary = config.getOption<Tristate>("dxvk.enableGraphicsPipelineLibrary", Tristate::Auto);
+    enableDescriptorHeap  = config.getOption<Tristate>("dxvk.enableDescriptorHeap",   Tristate::False);
     enableDescriptorBuffer = config.getOption<Tristate>("dxvk.enableDescriptorBuffer", Tristate::Auto);
+    enableUnifiedImageLayout = config.getOption<bool> ("dxvk.enableUnifiedImageLayouts", true);
+    enableImplicitResolves = config.getOption<bool>   ("dxvk.enableImplicitResolves", true);
     trackPipelineLifetime = config.getOption<Tristate>("dxvk.trackPipelineLifetime",  Tristate::Auto);
     useRawSsbo            = config.getOption<Tristate>("dxvk.useRawSsbo",             Tristate::Auto);
     hud                   = config.getOption<std::string>("dxvk.hud", "");
@@ -23,6 +26,7 @@ namespace dxvk {
     lowLatencyAllowCpuFramesOverlap
                           = config.getOption<bool>    ("dxvk.lowLatencyAllowCpuFramesOverlap", true);
     deviceFilter          = config.getOption<std::string>("dxvk.deviceFilter",        "");
+    lowerSinCos           = config.getOption<Tristate>("dxvk.lowerSinCos",            Tristate::Auto);
     tilerMode             = config.getOption<Tristate>("dxvk.tilerMode",              Tristate::Auto);
 
     auto budget = config.getOption<int32_t>("dxvk.maxMemoryBudget", 0);

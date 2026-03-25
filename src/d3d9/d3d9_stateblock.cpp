@@ -46,6 +46,8 @@ namespace dxvk {
 
 
   HRESULT STDMETHODCALLTYPE D3D9StateBlock::Capture() {
+    D3D9DeviceLock lock = m_parent->LockDevice();
+
     // A state block can't capture state while another is being recorded.
     if (unlikely(m_parent->ShouldRecord()))
       return D3DERR_INVALIDCALL;
@@ -60,6 +62,8 @@ namespace dxvk {
 
 
   HRESULT STDMETHODCALLTYPE D3D9StateBlock::Apply() {
+    D3D9DeviceLock lock = m_parent->LockDevice();
+
     // A state block can't be applied while another is being recorded.
     if (unlikely(m_parent->ShouldRecord()))
       return D3DERR_INVALIDCALL;
@@ -279,7 +283,7 @@ namespace dxvk {
     const float* pConstantData,
           UINT   Vector4fCount) {
     return SetShaderConstants<
-      DxsoProgramTypes::VertexShader,
+      D3D9ShaderType::VertexShader,
       D3D9ConstantType::Float>(
         StartRegister,
         pConstantData,
@@ -292,7 +296,7 @@ namespace dxvk {
     const int* pConstantData,
           UINT Vector4iCount) {
     return SetShaderConstants<
-      DxsoProgramTypes::VertexShader,
+      D3D9ShaderType::VertexShader,
       D3D9ConstantType::Int>(
         StartRegister,
         pConstantData,
@@ -305,7 +309,7 @@ namespace dxvk {
     const BOOL* pConstantData,
           UINT  BoolCount) {
     return SetShaderConstants<
-      DxsoProgramTypes::VertexShader,
+      D3D9ShaderType::VertexShader,
       D3D9ConstantType::Bool>(
         StartRegister,
         pConstantData,
@@ -318,7 +322,7 @@ namespace dxvk {
     const float* pConstantData,
           UINT   Vector4fCount) {
     return SetShaderConstants<
-      DxsoProgramTypes::PixelShader,
+      D3D9ShaderType::PixelShader,
       D3D9ConstantType::Float>(
         StartRegister,
         pConstantData,
@@ -331,7 +335,7 @@ namespace dxvk {
     const int* pConstantData,
           UINT Vector4iCount) {
     return SetShaderConstants<
-      DxsoProgramTypes::PixelShader,
+      D3D9ShaderType::PixelShader,
       D3D9ConstantType::Int>(
         StartRegister,
         pConstantData,
@@ -344,7 +348,7 @@ namespace dxvk {
     const BOOL* pConstantData,
           UINT  BoolCount) {
     return SetShaderConstants<
-      DxsoProgramTypes::PixelShader,
+      D3D9ShaderType::PixelShader,
       D3D9ConstantType::Bool>(
         StartRegister,
         pConstantData,

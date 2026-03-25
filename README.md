@@ -199,9 +199,6 @@ When used with Wine, DXVK will print log messages to `stderr`. Additionally, sta
 
 On Windows, log files will be created in the game's working directory by default, which is usually next to the game executable.
 
-### Frame rate limit
-The `DXVK_FRAME_RATE` environment variable can be used to limit the frame rate. A value of `0` uncaps the frame rate, while any positive value will limit rendering to the given number of frames per second. Alternatively, the configuration file can be used.
-
 ### Device filter
 Some applications do not provide a method to select a different GPU. In that case, DXVK can be forced to use a given device:
 - `DXVK_FILTER_DEVICE_NAME="Device Name"` Selects devices with a matching Vulkan device name, which can be retrieved with tools such as `vulkaninfo`. Matches on substrings, so "VEGA" or "AMD RADV VEGA10" is supported if the full device name is "AMD RADV VEGA10 (LLVM 9.0.0)", for example. If the substring matches more than one device, the first device matched will be used.
@@ -217,6 +214,9 @@ The following environment variables can be used for **debugging** purposes.
 - `DXVK_DEBUG=markers|validation` Enables use of the `VK_EXT_debug_utils` extension for translating performance event markers, or to enable Vulkan validation, respecticely.
 - `DXVK_CONFIG_FILE=/xxx/dxvk.conf` Sets path to the configuration file.
 - `DXVK_CONFIG="dxgi.hideAmdGpu = True; dxgi.syncInterval = 0"` Can be used to set config variables through the environment instead of a configuration file using the same syntax. `;` is used as a seperator.
+- `DXVK_SHADER_CACHE=0`: Disables the internal shader cache.
+- `DXVK_SHADER_CACHE_PATH=/some/directory`: Path to internal shader cache files. By default, this will use `%LOCALAPPDATA%/dxvk` in a Windows
+  or Wine environment, and `$HOME/.cache` or `$XDG_CACHE_HOME` in a native Linux environment.
 
 ### Graphics Pipeline Library
 On drivers which support `VK_EXT_graphics_pipeline_library` Vulkan shaders will be compiled at the time the game loads its D3D shaders, rather than at draw time. This reduces or eliminates shader compile stutter in many games when compared to the previous system.
@@ -233,7 +233,7 @@ git clone --recursive https://github.com/doitsujin/dxvk.git
 ```
 
 ### Requirements:
-- [wine 7.1](https://www.winehq.org/) or newer
+- [wine 10.0](https://www.winehq.org/) or newer
 - [Meson](https://mesonbuild.com/) build system (at least version 0.58)
 - [Mingw-w64](https://www.mingw-w64.org) compiler and headers (at least version 10.0)
 - [glslang](https://github.com/KhronosGroup/glslang) compiler

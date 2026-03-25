@@ -6,6 +6,8 @@
 #include <d3d11_video_blit_frag.h>
 #include <d3d11_video_blit_vert.h>
 
+#include "../dxvk/dxvk_shader_spirv.h"
+
 namespace dxvk {
 
   D3D11VideoProcessorEnumerator::D3D11VideoProcessorEnumerator(
@@ -1593,27 +1595,19 @@ namespace dxvk {
 
 
   void D3D11VideoContext::CreateShaders() {
-    SpirvCodeBuffer vsCode(d3d11_video_blit_vert);
-    SpirvCodeBuffer fsCode(d3d11_video_blit_frag);
-
     const std::array<DxvkBindingInfo, 3> fsBindings = {{
       { 0u, 0u, 0u, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1u, VK_IMAGE_VIEW_TYPE_MAX_ENUM, VK_ACCESS_UNIFORM_READ_BIT, DxvkDescriptorFlag::UniformBuffer },
       { 0u, 1u, 1u, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,  1u, VK_IMAGE_VIEW_TYPE_2D,       VK_ACCESS_SHADER_READ_BIT },
       { 0u, 2u, 2u, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,  1u, VK_IMAGE_VIEW_TYPE_2D,       VK_ACCESS_SHADER_READ_BIT },
     }};
 
-    DxvkShaderCreateInfo vsInfo;
-    vsInfo.stage = VK_SHADER_STAGE_VERTEX_BIT;
-    vsInfo.outputMask = 0x1;
-    m_vs = new DxvkShader(vsInfo, std::move(vsCode));
+    DxvkSpirvShaderCreateInfo vsInfo = { };
+    m_vs = new DxvkSpirvShader(vsInfo, d3d11_video_blit_vert);
 
-    DxvkShaderCreateInfo fsInfo;
-    fsInfo.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+    DxvkSpirvShaderCreateInfo fsInfo = { };
     fsInfo.bindingCount = fsBindings.size();
     fsInfo.bindings = fsBindings.data();
-    fsInfo.inputMask = 0x1;
-    fsInfo.outputMask = 0x1;
-    m_fs = new DxvkShader(fsInfo, std::move(fsCode));
+    m_fs = new DxvkSpirvShader(fsInfo, d3d11_video_blit_frag);
   }
 
 

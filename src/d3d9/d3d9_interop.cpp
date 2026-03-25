@@ -331,8 +331,9 @@ namespace dxvk {
     
     D3DRESOURCETYPE textureType = params->Type == D3DRTYPE_SURFACE ? D3DRTYPE_TEXTURE : params->Type;
 
-    if (FAILED(D3D9CommonTexture::NormalizeTextureProperties(m_device, textureType, &desc)))
-      return D3DERR_INVALIDCALL;
+    HRESULT hr = D3D9CommonTexture::NormalizeTextureProperties(m_device, textureType, &desc);
+    if (FAILED(hr))
+      return hr;
 
     switch (params->Type) {
       case D3DRTYPE_SURFACE:
@@ -370,6 +371,29 @@ namespace dxvk {
       Logger::err(e.message());
       return D3DERR_OUTOFVIDEOMEMORY;
     }
+  }
+
+  D3D9VkExtInterface::D3D9VkExtInterface(D3D9InterfaceEx *pInterface)
+    : m_interface(pInterface) {
+
+  }
+  
+  ULONG STDMETHODCALLTYPE D3D9VkExtInterface::AddRef() {
+    return m_interface->AddRef();
+  }
+  
+  ULONG STDMETHODCALLTYPE D3D9VkExtInterface::Release() {
+    return m_interface->Release();
+  }
+  
+  HRESULT STDMETHODCALLTYPE D3D9VkExtInterface::QueryInterface(
+          REFIID                  riid,
+          void**                  ppvObject) {
+    return m_interface->QueryInterface(riid, ppvObject);
+  }
+
+  void STDMETHODCALLTYPE D3D9VkExtInterface::UnlockAdditionalFormats() {
+    m_interface->EnableAdditionalFormats();
   }
 
 }

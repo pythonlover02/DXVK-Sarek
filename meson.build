@@ -108,6 +108,7 @@ if platform == 'windows'
   lib_d3d9    = cpp.find_library('d3d9')
   lib_d3d11   = cpp.find_library('d3d11')
   lib_dxgi    = cpp.find_library('dxgi')
+  lib_gdi32   = cpp.find_library('gdi32')
 
   if dxvk_is_msvc
     res_ext = '.res'
@@ -151,7 +152,7 @@ else
 
   lib_sdl3 = dependency('sdl3', required: get_option('native_sdl3'))
   lib_sdl2 = dependency('sdl2', required: get_option('native_sdl2'))
-  lib_glfw = dependency('glfw', required: get_option('native_glfw'))
+  lib_glfw = dependency('glfw3', required: get_option('native_glfw'))
   if lib_sdl3.found()
     compiler_args += ['-DDXVK_WSI_SDL3']
   endif
@@ -174,6 +175,9 @@ else
   ]
 endif
 
+dxbc_spirv = subproject('dxbc-spirv')
+dxbc_spirv_dep = dxbc_spirv.get_variable('dxbc_spv_dep')
+
 dxvk_include_path = include_directories(dxvk_include_dirs)
 
 add_project_arguments(cpp.get_supported_arguments(compiler_args), language: 'cpp')
@@ -193,6 +197,9 @@ glsl_args = [
   '@INPUT@',
   '-o', '@OUTPUT@',
 ]
+if get_option('debug')
+  glsl_args += ['-gVS']
+endif
 glsl_generator = generator(
   glsl_compiler,
   output    : [ '@BASENAME@.h' ],

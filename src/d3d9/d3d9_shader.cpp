@@ -11,7 +11,7 @@ namespace dxvk {
   D3D9CommonShader::D3D9CommonShader(
             D3D9DeviceEx*         pDevice,
             VkShaderStageFlagBits ShaderStage,
-      const DxvkShaderKey&        Key,
+      const DxvkShaderHash&       Key,
       const DxsoModuleInfo*       pDxsoModuleInfo,
       const void*                 pShaderBytecode,
       const DxsoAnalysisInfo&     AnalysisInfo,
@@ -74,8 +74,6 @@ namespace dxvk {
     m_maxDefinedIntConst   = pModule->maxDefinedIntConstant();
     m_maxDefinedBoolConst  = pModule->maxDefinedBoolConstant();
 
-    m_shader->setShaderKey(Key);
-
     if (dumpPath.size() != 0) {
       std::ofstream dumpStream(
         str::topath(str::format(dumpPath, "/", name, ".spv").c_str()).c_str(),
@@ -136,9 +134,12 @@ namespace dxvk {
     DxsoAnalysisInfo info = module.analyze();
     *pLength = info.bytecodeByteLength;
 
-    DxvkShaderKey lookupKey = DxvkShaderKey(
+    Sha1Hash hash = Sha1Hash::compute(pShaderBytecode, info.bytecodeByteLength);
+    DxvkShaderHash lookupKey = DxvkShaderHash(
       ShaderStage,
-      Sha1Hash::compute(pShaderBytecode, info.bytecodeByteLength));
+      info.bytecodeByteLength,
+      hash.digest(),
+      hash.digestLength());
 
     // Use the shader's unique key for the lookup
     { std::unique_lock<dxvk::mutex> lock(m_mutex);

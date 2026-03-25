@@ -4,6 +4,116 @@
 
 namespace dxvk {
   
+  DxvkKeyedMutex::DxvkKeyedMutex(
+      const Rc<DxvkDevice>& device,
+            uint64_t        initialValue,
+            bool            ntShared)
+  : m_vkd(device->vkd()) {
+    DxvkFenceCreateInfo fenceInfo;
+    fenceInfo.initialValue = 0;
+    fenceInfo.sharedType = ntShared
+      ? VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_BIT
+      : VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_WIN32_KMT_BIT;
+    m_fence = device->createFence(fenceInfo);
+    if (!m_fence)
+      throw DxvkError("DxvkKeyedMutex: Failed to create fence");
+
+    D3DKMT_CREATEKEYEDMUTEX2 create = { };
+    create.Flags.NtSecuritySharing = ntShared;
+    create.InitialValue = initialValue;
+    if (D3DKMTCreateKeyedMutex2(&create))
+      throw DxvkError("DxvkKeyedMutex: Failed to create mutex");
+
+    m_kmtLocal = create.hKeyedMutex;
+    m_kmtGlobal = create.hSharedHandle;
+  }
+
+
+  DxvkKeyedMutex::DxvkKeyedMutex(
+      const Rc<DxvkDevice>& device,
+            Rc<DxvkFence>&& fence,
+            D3DKMT_HANDLE   kmtLocal,
+            D3DKMT_HANDLE   kmtGlobal)
+  : m_vkd(device->vkd()),
+    m_fence(fence),
+    m_kmtLocal(kmtLocal),
+    m_kmtGlobal(kmtGlobal) {
+    if (!fence)
+      Logger::err("DxvkKeyedMutex::DxvkKeyedMutex: No fence provided");
+  }
+
+    
+  DxvkKeyedMutex::~DxvkKeyedMutex() {
+    if (m_kmtLocal) {
+      D3DKMT_DESTROYKEYEDMUTEX destroy = { };
+      destroy.hKeyedMutex = m_kmtLocal;
+      D3DKMTDestroyKeyedMutex(&destroy);
+    }
+  }
+
+
+  HRESULT DxvkKeyedMutex::AcquireSync(UINT64 key, DWORD  milliseconds) {
+    if (m_owned.load(std::memory_order_acquire))
+      return DXGI_ERROR_INVALID_CALL;
+
+    LARGE_INTEGER timeout = { };
+    D3DKMT_ACQUIREKEYEDMUTEX acquire = { };
+    acquire.hKeyedMutex = m_kmtLocal;
+    acquire.Key = key;
+    acquire.pTimeout = &timeout;
+    timeout.QuadPart = milliseconds * -10000;
+
+    NTSTATUS status = D3DKMTAcquireKeyedMutex(&acquire);
+    if (status == STATUS_TIMEOUT)
+      return WAIT_TIMEOUT;
+    if (status)
+      return DXGI_ERROR_INVALID_CALL;
+
+    VkSemaphore semaphore = m_fence->handle();
+    VkSemaphoreWaitInfo info = { VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO };
+    info.semaphoreCount = 1;
+    info.pSemaphores = &semaphore;
+    info.pValues = &acquire.FenceValue;
+
+    if (m_vkd->vkWaitSemaphores(m_vkd->device(), &info, -1)) {
+      Logger::warn("DxvkKeyedMutex::AcquireSync: Failed to wait semaphore");
+      return DXGI_ERROR_INVALID_CALL;
+    }
+
+    m_fenceValue = acquire.FenceValue;
+    m_owned.store(true, std::memory_order_release);
+    return S_OK;
+  }
+
+
+  HRESULT DxvkKeyedMutex::ReleaseSync(UINT64 key) {
+    if (!m_owned.load(std::memory_order_acquire))
+      return DXGI_ERROR_INVALID_CALL;
+
+    VkSemaphoreSignalInfo info = { VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO };
+    info.semaphore = m_fence->handle();
+    info.value = m_fenceValue + 1;
+
+    if (m_vkd->vkSignalSemaphore(m_vkd->device(), &info)) {
+      Logger::warn("D3D11DXGIKeyedMutex::ReleaseSync: Failed to signal semaphore");
+      return DXGI_ERROR_INVALID_CALL;
+    }
+
+    D3DKMT_RELEASEKEYEDMUTEX release = { };
+    release.hKeyedMutex = m_kmtLocal;
+    release.Key = key;
+    release.FenceValue = m_fenceValue + 1;
+
+    if (D3DKMTReleaseKeyedMutex(&release)) {
+      Logger::warn("D3D11DXGIKeyedMutex::ReleaseSync: Failed to release mutex.");
+      return DXGI_ERROR_INVALID_CALL;
+    }
+
+    m_owned.store(false, std::memory_order_release);
+    return S_OK;
+  }
+
+
   DxvkImage::DxvkImage(
           DxvkDevice*           device,
     const DxvkImageCreateInfo&  createInfo,
@@ -17,6 +127,7 @@ namespace dxvk {
     m_allocator->registerResource(this);
 
     copyFormatList(createInfo.viewFormatCount, createInfo.viewFormats);
+    m_unifiedLayoutAvailable = device->features().khrUnifiedImageLayouts.unifiedImageLayouts;
 
     // Assign debug name to image
     if (device->debugFlags().test(DxvkDebugFlag::Capture)) {
@@ -32,12 +143,19 @@ namespace dxvk {
     if (lookupFormatInfo(createInfo.format)->aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
       m_info.usage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
 
+    // Check whether the unified layout path can be used once
+    // we know all image properties
+    m_unifiedLayoutEnabled = canUseUnifiedLayout(*device);
+
+    if (m_unifiedLayoutEnabled)
+      m_info.layout = VK_IMAGE_LAYOUT_GENERAL;
+
     // Determine whether the image is shareable before creating the resource
     VkImageCreateInfo imageInfo = getImageCreateInfo(DxvkImageUsageInfo());
     m_shared = canShareImage(device, imageInfo, m_info.sharing);
 
-    if (m_info.sharing.mode != DxvkSharedHandleMode::Import)
-      m_uninitializedSubresourceCount = m_info.numLayers * m_info.mipLevels;
+    m_globalLayout = (m_info.sharing.mode != DxvkSharedHandleMode::Import)
+      ? m_info.initialLayout : m_info.layout;
 
     assignStorage(allocateStorage());
   }
@@ -54,7 +172,8 @@ namespace dxvk {
     m_properties    (memFlags),
     m_shaderStages  (util::shaderStages(createInfo.stages)),
     m_info          (createInfo),
-    m_stableAddress (true) {
+    m_stableAddress (true),
+    m_globalLayout  (createInfo.initialLayout) {
     m_allocator->registerResource(this);
 
     copyFormatList(createInfo.viewFormatCount, createInfo.viewFormats);
@@ -114,11 +233,11 @@ namespace dxvk {
   }
 
 
-  uint64_t DxvkImage::getTrackingAddress(uint32_t mip, uint32_t layer, VkOffset3D coord) const {
+  uint64_t DxvkImage::getSubresourceAddressAt(uint32_t mip, uint32_t layer, VkOffset3D coord) const {
     // For 2D and 3D images, use morton codes to linearize the address ranges
     // of pixel blocks. This helps reduce false positives in common use cases
     // where the application copies aligned power-of-two blocks around.
-    uint64_t base = getTrackingAddress(mip, layer);
+    uint64_t base = getSubresourceStartAddress(mip, layer);
 
     if (likely(m_info.type == VK_IMAGE_TYPE_2D))
       return base + bit::interleave(coord.x, coord.y);
@@ -215,6 +334,7 @@ namespace dxvk {
     allocationInfo.resourceCookie = cookie();
     allocationInfo.properties = m_properties;
     allocationInfo.mode = mode;
+    allocationInfo.handleType = m_info.sharing.type;
 
     if (m_info.transient)
       allocationInfo.mode.set(DxvkAllocationMode::NoDedicated);
@@ -257,11 +377,6 @@ namespace dxvk {
     m_info.stages |= usageInfo.stages;
     m_info.access |= usageInfo.access;
 
-    if (usageInfo.layout != VK_IMAGE_LAYOUT_UNDEFINED) {
-      m_info.layout = usageInfo.layout;
-      invalidateViews = true;
-    }
-
     if (usageInfo.colorSpace != VK_COLOR_SPACE_MAX_ENUM_KHR)
       m_info.colorSpace = usageInfo.colorSpace;
 
@@ -273,6 +388,16 @@ namespace dxvk {
     if (!m_viewFormats.empty()) {
       m_info.viewFormatCount = m_viewFormats.size();
       m_info.viewFormats = m_viewFormats.data();
+    }
+
+    // If feedback loops are enabled and the unified layout extension is
+    // not natively supported, we need to disable the unified layout path
+    if (m_info.usage & VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)
+      m_unifiedLayoutEnabled = m_unifiedLayoutEnabled && m_unifiedLayoutAvailable;
+
+    if (usageInfo.layout != VK_IMAGE_LAYOUT_UNDEFINED && !m_unifiedLayoutEnabled) {
+      m_info.layout = usageInfo.layout;
+      invalidateViews = true;
     }
 
     m_stableAddress |= usageInfo.stableGpuAddress;
@@ -292,53 +417,133 @@ namespace dxvk {
   }
 
 
-  void DxvkImage::trackInitialization(
-    const VkImageSubresourceRange& subresources) {
-    if (!m_uninitializedSubresourceCount)
-      return;
+  bool DxvkImage::isInitialized(const VkImageSubresource& subresource) const {
+    VkImageLayout layout = queryLayout(subresource);
 
-    if (subresources.levelCount == m_info.mipLevels && subresources.layerCount == m_info.numLayers) {
-      // Trivial case, everything gets initialized at once
-      m_uninitializedSubresourceCount = 0u;
-      m_uninitializedMipsPerLayer.clear();
+    return layout != VK_IMAGE_LAYOUT_UNDEFINED
+        && layout != VK_IMAGE_LAYOUT_PREINITIALIZED;
+  }
+
+
+  bool DxvkImage::isInitialized(const VkImageSubresourceRange& subresources) const {
+    if (m_globalLayout != VK_IMAGE_LAYOUT_MAX_ENUM) {
+      return m_globalLayout != VK_IMAGE_LAYOUT_UNDEFINED
+          && m_globalLayout != VK_IMAGE_LAYOUT_PREINITIALIZED;
     } else {
-      // Partial initialization. Track each layer individually.
-      if (m_uninitializedMipsPerLayer.empty()) {
-        m_uninitializedMipsPerLayer.resize(m_info.numLayers);
+      // Check each individual subresource layout
+      VkImageAspectFlags aspects = subresources.aspectMask;
 
-        for (uint32_t i = 0; i < m_info.numLayers; i++)
-          m_uninitializedMipsPerLayer[i] = uint16_t(1u << m_info.mipLevels) - 1u;
+      while (aspects) {
+        VkImageSubresource subresource = { };
+        subresource.aspectMask = vk::getNextAspect(aspects);
+        subresource.mipLevel = subresources.baseMipLevel;
+        subresource.arrayLayer = subresources.baseArrayLayer;
+
+        for (uint32_t m = 0u; m < subresources.levelCount; m++) {
+          uint32_t index = computeSubresourceIndex(subresource);
+
+          for (uint32_t l = 0u; l < subresources.layerCount; l++) {
+            VkImageLayout layout = m_localLayouts[index + l];
+
+            if (layout == VK_IMAGE_LAYOUT_UNDEFINED
+             || layout == VK_IMAGE_LAYOUT_PREINITIALIZED)
+              return false;
+          }
+
+          subresource.mipLevel += 1u;
+        }
       }
 
-      uint16_t mipMask = ((1u << subresources.levelCount) - 1u) << subresources.baseMipLevel;
-
-      for (uint32_t i = subresources.baseArrayLayer; i < subresources.baseArrayLayer + subresources.layerCount; i++) {
-        m_uninitializedSubresourceCount -= bit::popcnt(uint16_t(m_uninitializedMipsPerLayer[i] & mipMask));
-        m_uninitializedMipsPerLayer[i] &= ~mipMask;
-      }
-
-      if (!m_uninitializedSubresourceCount)
-        m_uninitializedMipsPerLayer.clear();
+      return true;
     }
   }
 
 
-  bool DxvkImage::isInitialized(
-    const VkImageSubresourceRange& subresources) const {
-    if (likely(!m_uninitializedSubresourceCount))
-      return true;
+  VkImageLayout DxvkImage::queryLayout(const VkImageSubresourceRange& subresources) const {
+    // Check whether the entire resource is in the same layout
+    if (m_globalLayout != VK_IMAGE_LAYOUT_MAX_ENUM)
+      return m_globalLayout;
 
-    if (m_uninitializedMipsPerLayer.empty())
-      return false;
+    VkImageSubresource subresource = { };
+    subresource.aspectMask = subresources.aspectMask & (subresources.aspectMask - 1u);
+    subresource.mipLevel = subresources.baseMipLevel;
+    subresource.arrayLayer = subresources.baseArrayLayer;
 
-    uint16_t mipMask = ((1u << subresources.levelCount) - 1u) << subresources.baseMipLevel;
+    VkImageLayout baseLayout = queryLayout(subresource);
 
-    for (uint32_t i = 0; i < subresources.layerCount; i++) {
-      if (m_uninitializedMipsPerLayer[subresources.baseArrayLayer + i] & mipMask)
-        return false;
+    // If only one subresource is included in the range, return its layout
+    VkImageAspectFlags nonplanarAspects = VK_IMAGE_ASPECT_COLOR_BIT
+                                        | VK_IMAGE_ASPECT_DEPTH_BIT
+                                        | VK_IMAGE_ASPECT_STENCIL_BIT;
+
+    if (subresources.levelCount == 1u
+     && subresources.layerCount == 1u
+     && (subresources.aspectMask & nonplanarAspects))
+      return baseLayout;
+
+    // Otherwise, check whether all subresources have the same layout
+    VkImageAspectFlags aspects = subresources.aspectMask;
+
+    while (aspects) {
+      subresource.aspectMask = vk::getNextAspect(aspects);
+      subresource.mipLevel = subresources.baseMipLevel;
+
+      for (uint32_t m = 0u; m < subresources.levelCount; m++) {
+        uint32_t index = computeSubresourceIndex(subresource);
+
+        for (uint32_t l = 0u; l < subresources.layerCount; l++) {
+          if (m_localLayouts[index + l] != baseLayout)
+            return VK_IMAGE_LAYOUT_MAX_ENUM;
+        }
+
+        subresource.mipLevel += 1u;
+      }
     }
 
-    return true;
+    return baseLayout;
+  }
+
+
+  void DxvkImage::trackLayout(const VkImageSubresourceRange& subresources, VkImageLayout layout) {
+    // Nothing to do if the layout doesn't change
+    if (m_globalLayout == layout)
+      return;
+
+    if (subresources == getAvailableSubresources()) {
+      // Entire resource is in the same layout
+      m_globalLayout = layout;
+    } else {
+      if (m_globalLayout != VK_IMAGE_LAYOUT_MAX_ENUM) {
+        // If previously the entire resource was in the same layout,
+        // we need to update all subresource entries to that layout
+        if (m_localLayouts.empty())
+          m_localLayouts.resize(computeSubresourceCount());
+
+        for (size_t i = 0u; i < m_localLayouts.size(); i++)
+          m_localLayouts[i] = m_globalLayout;
+
+        m_globalLayout = VK_IMAGE_LAYOUT_MAX_ENUM;
+      }
+
+      // Update entries contained in the subresource range
+      VkImageAspectFlags aspects = subresources.aspectMask;
+
+      while (aspects) {
+        VkImageSubresource subresource;
+        subresource.aspectMask = vk::getNextAspect(aspects);
+        subresource.mipLevel = subresources.baseMipLevel;
+        subresource.arrayLayer = subresources.baseArrayLayer;
+
+        for (uint32_t m = 0u; m < subresources.levelCount; m++) {
+          uint32_t index = computeSubresourceIndex(subresource);
+
+          for (uint32_t l = 0u; l < subresources.layerCount; l++)
+            m_localLayouts[index + l] = layout;
+
+          subresource.mipLevel += 1u;
+        }
+      }
+    }
   }
 
 
@@ -439,6 +644,28 @@ namespace dxvk {
   }
 
 
+  bool DxvkImage::canUseUnifiedLayout(const DxvkDevice& device) const {
+    if (m_unifiedLayoutAvailable)
+      return true;
+
+    // Always respect the config option if the extension is not supported
+    if (!device.config().enableUnifiedImageLayout)
+      return false;
+
+    // Speshul case
+    if (m_info.usage & VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)
+      return false;
+
+    // On RDNA1/2 we can enable the unified path for everything
+    // that doesn't involve feedback loops or MSAA.
+    if (device.properties().vk12.driverID == VK_DRIVER_ID_MESA_RADV
+     && device.properties().vk13.minSubgroupSize == 32u)
+      return m_info.sampleCount == VK_SAMPLE_COUNT_1_BIT;
+
+    return false;
+  }
+
+
 
 
 
@@ -448,10 +675,10 @@ namespace dxvk {
   : m_image   (image),
     m_key     (key) {
     // If the view does not define a layout, figure out a suitable
-    // layout based on image view usage and image prperties. This
+    // layout based on image view usage and image properties. This
     // will be good enough in most situations.
     if (!m_key.layout) {
-      switch (m_key.usage) {
+      switch (m_key.usage & ~VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT) {
         case VK_IMAGE_USAGE_SAMPLED_BIT:
           m_key.layout = (m_image->formatInfo()->aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
             ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
@@ -499,6 +726,14 @@ namespace dxvk {
 
     if (!(key.usage & ViewUsage))
       return nullptr;
+
+    // If the image has feedback loops enabled, forward the required
+    // usage flags to the view as well.
+    if ((m_image->info().usage & VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT)
+     && (key.usage & (VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT))) {
+      key.usage |= VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT
+                |  VK_IMAGE_USAGE_SAMPLED_BIT;
+    }
 
     // Only use one layer for non-arrayed view types
     if (type == VK_IMAGE_VIEW_TYPE_1D || type == VK_IMAGE_VIEW_TYPE_2D)
@@ -552,7 +787,7 @@ namespace dxvk {
 
     // We need to expose RT and UAV swizzles to the backend,
     // but cannot legally pass them down to Vulkan
-    if (key.usage != VK_IMAGE_USAGE_SAMPLED_BIT)
+    if ((key.usage & ~VK_IMAGE_USAGE_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT) != VK_IMAGE_USAGE_SAMPLED_BIT)
       key.packedSwizzle = 0u;
 
     return m_image->m_storage->createImageView(key);

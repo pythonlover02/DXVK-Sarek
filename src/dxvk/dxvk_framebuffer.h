@@ -70,37 +70,13 @@ namespace dxvk {
    * \brief Rendering info
    */
   struct DxvkRenderingInfo {
+    std::array<VkRenderingAttachmentFlagsInfoKHR, MaxNumRenderTargets> colorAttachmentFlags = { };
+    std::array<VkAttachmentFeedbackLoopInfoEXT, MaxNumRenderTargets> colorFeedbackLoop = { };
     std::array<VkRenderingAttachmentInfo, MaxNumRenderTargets> color = { };
+    VkAttachmentFeedbackLoopInfoEXT depthStencilFeedbackLoop = { };
     VkRenderingAttachmentInfo depth = { };
     VkRenderingAttachmentInfo stencil = { };
     VkRenderingInfo rendering = { };
-  };
-
-
-  /**
-   * \brief Framebuffer key
-   */
-  struct DxvkFramebufferKey {
-    uint64_t            colorViews[MaxNumRenderTargets];
-    uint64_t            depthView;
-    VkRenderPass        renderPass;
-
-    size_t hash() const {
-      DxvkHashState state;
-      state.add(depthView);
-      for (uint32_t i = 0; i < MaxNumRenderTargets; i++)
-        state.add(colorViews[i]);
-      state.add(uint64_t(renderPass));
-      return state;
-    }
-
-    bool eq(const DxvkFramebufferKey& other) const {
-      bool eq = depthView   == other.depthView
-             && renderPass  == other.renderPass;
-      for (uint32_t i = 0; i < MaxNumRenderTargets; i++)
-        eq &= colorViews[i] == other.colorViews[i];
-      return eq;
-    }
   };
 
 

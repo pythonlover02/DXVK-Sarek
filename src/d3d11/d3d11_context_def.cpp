@@ -326,8 +326,7 @@ namespace dxvk {
         cImage = pTexture->GetImage(),
         cStorage = std::move(storage)
       ] (DxvkContext* ctx) {
-        ctx->invalidateImage(cImage, Rc<DxvkResourceAllocation>(cStorage));
-        ctx->initImage(cImage, VK_IMAGE_LAYOUT_PREINITIALIZED);
+        ctx->invalidateImage(cImage, Rc<DxvkResourceAllocation>(cStorage), VK_IMAGE_LAYOUT_PREINITIALIZED);
       });
 
       pMappedResource->RowPitch   = layout.RowPitch;
@@ -397,7 +396,8 @@ namespace dxvk {
   
   
   void D3D11DeferredContext::EmitCsChunk(DxvkCsChunkRef&& chunk) {
-    m_chunkId = m_commandList->AddChunk(std::move(chunk));
+    m_chunkId = m_commandList->AddChunk(std::move(chunk), m_estimatedCost);
+    m_estimatedCost = 0u;
   }
 
 

@@ -85,13 +85,13 @@ namespace dxvk {
    * The displacement map sampler will be treated as a 17th pixel shader sampler.
    *
    * @param Sampler Sampler index (according to our internal way of storing samplers)
-   * @return std::pair<DxsoProgramType, DWORD> Shader stage that it belongs to and the relative sampler index
+   * @return std::pair<D3D9ShaderType, DWORD> Shader stage that it belongs to and the relative sampler index
    */
-  inline std::pair<DxsoProgramType, DWORD> RemapStateSamplerShader(DWORD Sampler) {
+  inline std::pair<D3D9ShaderType, DWORD> RemapStateSamplerShader(DWORD Sampler) {
     if (Sampler >= FirstVSSamplerSlot)
-      return std::make_pair(DxsoProgramTypes::VertexShader, Sampler - FirstVSSamplerSlot);
+      return std::make_pair(D3D9ShaderType::VertexShader, Sampler - FirstVSSamplerSlot);
 
-    return std::make_pair(DxsoProgramTypes::PixelShader, Sampler);
+    return std::make_pair(D3D9ShaderType::PixelShader, Sampler);
   }
 
   /**
@@ -122,9 +122,9 @@ namespace dxvk {
    * @brief Remaps the sampler from an index (counted according to the API) to one relative to the shader stage and returns the shader type
    *
    * @param Sampler Sampler index (according to the API)
-   * @return std::pair<DxsoProgramType, DWORD> Shader stage that it belongs to and the relative sampler index
+   * @return std::pair<D3D9ShaderType, DWORD> Shader stage that it belongs to and the relative sampler index
    */
-  inline std::pair<DxsoProgramType, DWORD> RemapSamplerShader(DWORD Sampler) {
+  inline std::pair<D3D9ShaderType, DWORD> RemapSamplerShader(DWORD Sampler) {
     Sampler = RemapSamplerState(Sampler);
 
     return RemapStateSamplerShader(Sampler);
@@ -146,7 +146,6 @@ namespace dxvk {
           ID3DBlob** ppDisassembly);
 
   HRESULT DecodeMultiSampleType(
-    const Rc<DxvkDevice>&           pDevice,
           D3DMULTISAMPLE_TYPE       MultiSample,
           DWORD                     MultisampleQuality,
           VkSampleCountFlagBits*    pSampleCount);
@@ -161,11 +160,11 @@ namespace dxvk {
     return srgb ? srgbFormat : format;
   }
 
-  constexpr VkShaderStageFlagBits GetShaderStage(DxsoProgramType ProgramType) {
-    switch (ProgramType) {
-      case DxsoProgramTypes::VertexShader:  return VK_SHADER_STAGE_VERTEX_BIT;
-      case DxsoProgramTypes::PixelShader:   return VK_SHADER_STAGE_FRAGMENT_BIT;
-      default:                              return VkShaderStageFlagBits(0);
+  constexpr VkShaderStageFlagBits GetShaderStage(D3D9ShaderType ShaderType) {
+    switch (ShaderType) {
+      case D3D9ShaderType::VertexShader: return VK_SHADER_STAGE_VERTEX_BIT;
+      case D3D9ShaderType::PixelShader:  return VK_SHADER_STAGE_FRAGMENT_BIT;
+      default:                           return VkShaderStageFlagBits(0);
     }
   }
 
@@ -350,6 +349,9 @@ inline bool operator != (const D3DVIEWPORT9& a, const D3DVIEWPORT9& b) {
   return !(a == b);
 }
 
+
+// Missing in some versions of mingw headers
+#ifndef _MSC_VER
 inline bool operator == (const RECT& a, const RECT& b) {
   return a.left   == b.left  &&
          a.right  == b.right &&
@@ -360,6 +362,7 @@ inline bool operator == (const RECT& a, const RECT& b) {
 inline bool operator != (const RECT& a, const RECT& b) {
   return !(a == b);
 }
+#endif /* _MSC_VER */
 
 inline bool operator == (const POINT& a, const POINT& b) {
   return a.x == b.x && a.y == b.y;

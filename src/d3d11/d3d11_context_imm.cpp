@@ -261,7 +261,7 @@ namespace dxvk {
     ConsiderFlush(GpuFlushType::ImplicitWeakHint);
 
     // Dispatch command list to the CS thread
-    commandList->EmitToCsThread([this] (DxvkCsChunkRef&& chunk, GpuFlushType flushType) {
+    commandList->EmitToCsThread([this] (DxvkCsChunkRef&& chunk, uint64_t cost, GpuFlushType flushType) {
       EmitCsChunk(std::move(chunk));
 
       // Return the sequence number from before the flush since
@@ -270,6 +270,7 @@ namespace dxvk {
 
       // Consider a flush after every chunk in case the app
       // submits a very large command list or the GPU is idle
+      AddCost(cost);
       ConsiderFlush(flushType);
       return csSeqNum;
     });
@@ -510,8 +511,7 @@ namespace dxvk {
           cImage = std::move(mappedImage),
           cStorage = pResource->DiscardStorage()
         ] (DxvkContext* ctx) {
-          ctx->invalidateImage(cImage, Rc<DxvkResourceAllocation>(cStorage));
-          ctx->initImage(cImage, VK_IMAGE_LAYOUT_PREINITIALIZED);
+          ctx->invalidateImage(cImage, Rc<DxvkResourceAllocation>(cStorage), VK_IMAGE_LAYOUT_PREINITIALIZED);
         });
 
         ThrottleDiscard(layout.Size);
@@ -815,27 +815,19 @@ namespace dxvk {
     auto texture = GetCommonTexture(pResource);
     auto buffer = GetCommonBuffer(pResource);
 
-    if (buffer) {
+    Rc<DxvkPagedResource> resource;
+
+    if (texture)
+      resource = texture->GetImage();
+    else if (buffer)
+      resource = buffer->GetBuffer();
+
+    if (resource) {
       EmitCs([
-        cBuffer   = buffer->GetBuffer()
-      ] (DxvkContext* ctx) {
-        ctx->emitBufferBarrier(cBuffer,
-          VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-          VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT,
-          cBuffer->info().stages,
-          cBuffer->info().access);
-      });
-    } else if (texture) {
-      EmitCs([
-        cImage    = texture->GetImage(),
+        cResource = std::move(resource),
         cLayout   = SrcLayout
       ] (DxvkContext* ctx) {
-        ctx->emitImageBarrier(cImage, cLayout,
-          VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-          VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT,
-          cImage->info().layout,
-          cImage->info().stages,
-          cImage->info().access);
+        ctx->acquireExternalResource(cResource, cLayout);
       });
     }
   }
@@ -849,27 +841,19 @@ namespace dxvk {
     auto texture = GetCommonTexture(pResource);
     auto buffer = GetCommonBuffer(pResource);
 
-    if (buffer) {
+    Rc<DxvkPagedResource> resource;
+
+    if (texture)
+      resource = texture->GetImage();
+    else if (buffer)
+      resource = buffer->GetBuffer();
+
+    if (resource) {
       EmitCs([
-        cBuffer   = buffer->GetBuffer()
-      ] (DxvkContext* ctx) {
-        ctx->emitBufferBarrier(cBuffer,
-          cBuffer->info().stages,
-          cBuffer->info().access,
-          VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-          VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT);
-      });
-    } else if (texture) {
-      EmitCs([
-        cImage    = texture->GetImage(),
+        cResource = std::move(resource),
         cLayout   = DstLayout
       ] (DxvkContext* ctx) {
-        ctx->emitImageBarrier(cImage,
-          cImage->info().layout,
-          cImage->info().stages,
-          cImage->info().access,
-          cLayout, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
-          VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_MEMORY_READ_BIT);
+        ctx->releaseExternalResource(cResource, cLayout);
       });
     }
   }
@@ -1020,24 +1004,24 @@ namespace dxvk {
     EmitCs<false>([
       cDirtyState = dirtyState
     ] (DxvkContext* ctx) {
-      for (uint32_t i = 0; i < uint32_t(DxbcProgramType::Count); i++) {
-        auto dxStage = DxbcProgramType(i);
+      for (uint32_t i = 0; i < D3D11ShaderTypeCount; i++) {
+        auto dxStage = D3D11ShaderType(i);
         auto vkStage = GetShaderStage(dxStage);
 
         // Unbind all dirty constant buffers
-        auto cbvSlot = computeConstantBufferBinding(dxStage, 0);
+        auto cbvSlot = D3D11ShaderResourceMapping::computeCbvBinding(dxStage, 0);
 
         for (uint32_t index : bit::BitMask(cDirtyState[dxStage].cbvMask))
           ctx->bindUniformBuffer(vkStage, cbvSlot + index, DxvkBufferSlice());
 
         // Unbind all dirty samplers
-        auto samplerSlot = computeSamplerBinding(dxStage, 0);
+        auto samplerSlot = D3D11ShaderResourceMapping::computeSamplerBinding(dxStage, 0);
 
         for (uint32_t index : bit::BitMask(cDirtyState[dxStage].samplerMask))
           ctx->bindResourceSampler(vkStage, samplerSlot + index, nullptr);
 
         // Unbind all dirty shader resource views
-        auto srvSlot = computeSrvBinding(dxStage, 0);
+        auto srvSlot = D3D11ShaderResourceMapping::computeSrvBinding(dxStage, 0);
 
         for (uint32_t m = 0; m < cDirtyState[dxStage].srvMask.size(); m++) {
           for (uint32_t index : bit::BitMask(cDirtyState[dxStage].srvMask[m]))
@@ -1047,14 +1031,14 @@ namespace dxvk {
         // Unbind all dirty unordered access views
         VkShaderStageFlags uavStages = 0u;
 
-        if (dxStage == DxbcProgramType::ComputeShader)
+        if (dxStage == D3D11ShaderType::eCompute)
           uavStages = VK_SHADER_STAGE_COMPUTE_BIT;
-        else if (dxStage == DxbcProgramType::PixelShader)
+        else if (dxStage == D3D11ShaderType::ePixel)
           uavStages = VK_SHADER_STAGE_ALL_GRAPHICS;
 
         if (uavStages) {
-          auto uavSlot = computeUavBinding(dxStage, 0);
-          auto ctrSlot = computeUavCounterBinding(dxStage, 0);
+          auto uavSlot = D3D11ShaderResourceMapping::computeUavBinding(dxStage, 0);
+          auto ctrSlot = D3D11ShaderResourceMapping::computeUavCounterBinding(dxStage, 0);
 
           for (uint32_t index : bit::BitMask(cDirtyState[dxStage].uavMask)) {
             ctx->bindResourceImageView(vkStage, uavSlot + index, nullptr);
@@ -1066,8 +1050,8 @@ namespace dxvk {
 
     // Since we set the DXVK context bindings to null, any bindings that are null
     // on the D3D context are no longer dirty, so we can clear the respective bits.
-    for (uint32_t i = 0; i < uint32_t(DxbcProgramType::Count); i++) {
-      auto stage = DxbcProgramType(i);
+    for (uint32_t i = 0; i < D3D11ShaderTypeCount; i++) {
+      auto stage = D3D11ShaderType(i);
 
       for (uint32_t index : bit::BitMask(dirtyState[stage].cbvMask)) {
         if (!m_state.cbv[stage].buffers[index].buffer.ptr())
@@ -1086,8 +1070,8 @@ namespace dxvk {
         }
       }
 
-      if (stage == DxbcProgramType::ComputeShader || stage == DxbcProgramType::PixelShader) {
-        auto& uavs = stage == DxbcProgramType::ComputeShader ? m_state.uav.views : m_state.om.uavs;
+      if (stage == D3D11ShaderType::eCompute || stage == D3D11ShaderType::ePixel) {
+        auto& uavs = stage == D3D11ShaderType::eCompute ? m_state.uav.views : m_state.om.uavs;
 
         for (uint32_t index : bit::BitMask(dirtyState[stage].uavMask)) {
           if (!uavs[index].ptr())
@@ -1110,7 +1094,7 @@ namespace dxvk {
     uint64_t chunkId = GetCurrentSequenceNumber();
     uint64_t submissionId = m_submissionFence->value();
 
-    if (m_flushTracker.considerFlush(FlushType, chunkId, submissionId))
+    if (m_flushTracker.considerFlush(FlushType, chunkId, submissionId, m_estimatedCost))
       ExecuteFlush(FlushType, nullptr, false);
   }
 
@@ -1173,6 +1157,9 @@ namespace dxvk {
     // Reset counter for discarded memory in flight
     m_discardMemoryOnFlush = m_discardMemoryCounter;
 
+    // Reset GPU execution cost estimate
+    m_estimatedCost = 0u;
+
     // Notify the device that the context has been flushed,
     // this resets some resource initialization heuristics.
     m_parent->NotifyContextFlush();
@@ -1209,6 +1196,9 @@ namespace dxvk {
 
 
   void D3D11ImmediateContext::NotifyRenderPassBoundary() {
+    // Doing this makes it less likely to flush during render passes
+    ConsiderFlush(GpuFlushType::ImplicitWeakHint);
+
     if (m_device->perfHints().preferRenderPassOps) {
       // On tilers, we want to avoid submitting during a render pass or a sequence
       // of render passes as much as possible, but if a submission request has been
@@ -1217,9 +1207,6 @@ namespace dxvk {
 
       if (pending != GpuFlushType::None)
         ExecuteFlush(pending, nullptr, false);
-    } else {
-      // Doing this makes it less likely to flush during render passes
-      ConsiderFlush(GpuFlushType::ImplicitWeakHint);
     }
   }
 

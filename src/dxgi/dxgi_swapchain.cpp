@@ -356,7 +356,9 @@ namespace dxvk {
       SyncInterval = options->syncInterval;
 
     UpdateGlobalHDRState();
-    UpdateTargetFrameRate(SyncInterval);
+
+    if (!(PresentFlags & DXGI_PRESENT_TEST))
+      UpdateTargetFrameRate(SyncInterval);
 
     std::lock_guard<dxvk::recursive_mutex> lockWin(m_lockWindow);
     HRESULT hr = S_OK;
@@ -491,12 +493,23 @@ namespace dxvk {
         Logger::err("DXGI: ResizeTarget: Failed to query containing output");
         return E_FAIL;
       }
-      
-      ChangeDisplayMode(output.ptr(), &newDisplayMode);
 
+      RECT bounds = { };
+      wsi::getDesktopCoordinates(m_monitor, &bounds);
+
+      uint32_t width = 0u;
+      uint32_t height = 0u;
+
+      wsi::getWindowSize(m_window, &width, &height);
+
+      // Window bounds were changed behind our back, update saved state
+      if (uint32_t(bounds.right - bounds.left) != width || uint32_t(bounds.bottom - bounds.top) != height)
+        wsi::saveWindowState(m_window, &m_windowState, false);
+
+      ChangeDisplayMode(output.ptr(), &newDisplayMode);
       wsi::updateFullscreenWindow(m_monitor, m_window, false);
     }
-    
+
     return S_OK;
   }
   
@@ -542,7 +555,11 @@ namespace dxvk {
   
   HRESULT STDMETHODCALLTYPE DxgiSwapChain::SetRotation(
           DXGI_MODE_ROTATION        Rotation) {
-    Logger::err("DxgiSwapChain::SetRotation: Not implemented");
+
+    if (Rotation == DXGI_MODE_ROTATION_IDENTITY)
+      return S_OK;
+
+    Logger::err(str::format("DxgiSwapChain::SetRotation(", Rotation,"): Not implemented"));
     return E_NOTIMPL;
   }
   
@@ -732,6 +749,8 @@ namespace dxvk {
     DXGI_OUTPUT_DESC desc;
     output->GetDesc(&desc);
 
+    wsi::saveWindowState(m_window, &m_windowState, true);
+
     if (!wsi::enterFullscreenMode(desc.Monitor, m_window, &m_windowState, modeSwitch)) {
       Logger::err("DXGI: EnterFullscreenMode: Failed to enter fullscreen mode");
       return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
@@ -784,10 +803,11 @@ namespace dxvk {
     if (!wsi::isWindow(m_window))
       return S_OK;
     
-    if (!wsi::leaveFullscreenMode(m_window, &m_windowState, true)) {
+    if (!wsi::leaveFullscreenMode(m_window, &m_windowState)) {
       Logger::err("DXGI: LeaveFullscreenMode: Failed to exit fullscreen mode");
       return DXGI_ERROR_NOT_CURRENTLY_AVAILABLE;
     }
+    wsi::restoreWindowState(m_window, &m_windowState, true);
     
     return S_OK;
   }
@@ -1038,14 +1058,16 @@ namespace dxvk {
 
     // Use a negative number to indicate that the limiter should only
     // be engaged if the target frame rate is actually exceeded
-    double frameRate = std::max(m_frameRateOption, 0.0);
+    double frameRate = m_frameRateOption;
 
-    if (SyncInterval && m_frameRateOption == 0.0)
-      frameRate = -m_frameRateRefresh / double(SyncInterval);
+    if (frameRate != -1.0) {
+      if (SyncInterval && frameRate == 0.0)
+        frameRate = -m_frameRateRefresh / double(SyncInterval);
 
-    if (m_frameRateLimit != frameRate) {
-      m_frameRateLimit = frameRate;
-      m_presenter2->SetTargetFrameRate(frameRate);
+      if (m_frameRateLimit != frameRate) {
+        m_frameRateLimit = frameRate;
+        m_presenter2->SetTargetFrameRate(frameRate);
+      }
     }
   }
 

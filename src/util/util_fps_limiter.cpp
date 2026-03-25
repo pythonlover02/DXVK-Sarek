@@ -14,12 +14,7 @@ using namespace std::chrono_literals;
 namespace dxvk {
   
   FpsLimiter::FpsLimiter() {
-    auto override = getEnvironmentOverride();
 
-    if (override) {
-      setTargetFrameRate(*override, 0);
-      m_envOverride = true;
-    }
   }
 
 
@@ -31,20 +26,18 @@ namespace dxvk {
   void FpsLimiter::setTargetFrameRate(double frameRate, uint32_t maxLatency) {
     std::lock_guard<dxvk::mutex> lock(m_mutex);
 
-    if (!m_envOverride) {
-      TimerDuration interval = frameRate != 0.0
-        ? TimerDuration(int64_t(double(TimerDuration::period::den) / frameRate))
-        : TimerDuration::zero();
+    TimerDuration interval = frameRate != 0.0
+      ? TimerDuration(int64_t(double(TimerDuration::period::den) / frameRate))
+      : TimerDuration::zero();
 
-      if (m_targetInterval != interval) {
-        m_targetInterval = interval;
+    if (m_targetInterval != interval) {
+      m_targetInterval = interval;
 
-        m_heuristicFrameTime = TimePoint();
-        m_heuristicFrameCount = 0;
-        m_heuristicEnable = false;
+      m_heuristicFrameTime = TimePoint();
+      m_heuristicFrameCount = 0;
+      m_heuristicEnable = false;
 
-        m_maxLatency = maxLatency;
-      }
+      m_maxLatency = maxLatency;
     }
   }
 
@@ -133,21 +126,6 @@ namespace dxvk {
 
     m_heuristicFrameCount += 1;
     return false;
-  }
-
-
-  std::optional<double> FpsLimiter::getEnvironmentOverride() {
-    std::string env = env::getEnvVar("DXVK_FRAME_RATE");
-
-    if (!env.empty()) {
-      try {
-        return std::stod(env);
-      } catch (const std::invalid_argument&) {
-        // no op
-      }
-    }
-
-    return std::nullopt;
   }
 
 }

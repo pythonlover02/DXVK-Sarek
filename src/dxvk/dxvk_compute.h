@@ -1,8 +1,7 @@
 #pragma once
 
+#include <optional>
 #include <vector>
-
-#include "../util/sync/sync_list.h"
 
 #include "dxvk_bind_mask.h"
 #include "dxvk_graphics_state.h"
@@ -28,7 +27,7 @@ namespace dxvk {
     }
 
     size_t hash() const {
-      return DxvkShader::getHash(cs);
+      return DxvkShader::getCookie(cs);
     }
   };
 
@@ -38,13 +37,10 @@ namespace dxvk {
    */
   struct DxvkComputePipelineInstance {
     DxvkComputePipelineInstance() { }
-    DxvkComputePipelineInstance(
-      const DxvkComputePipelineStateInfo& state_,
-            VkPipeline                    handle_)
-    : state(state_), handle(handle_) { }
+    DxvkComputePipelineInstance(VkPipeline handle_)
+    : handle(handle_) { }
 
-    DxvkComputePipelineStateInfo state;
-    VkPipeline                   handle = VK_NULL_HANDLE;
+    VkPipeline handle = VK_NULL_HANDLE;
   };
   
   
@@ -92,7 +88,7 @@ namespace dxvk {
      */
     uint32_t getSpecConstantMask() const {
       constexpr uint32_t globalMask = (1u << MaxNumSpecConstants) - 1;
-      return m_shaders.cs->getSpecConstantMask() & globalMask;
+      return m_shaders.cs->metadata().specConstantMask & globalMask;
     }
     
     /**
@@ -126,11 +122,11 @@ namespace dxvk {
 
   private:
     
-    DxvkDevice*                 m_device;    
-    DxvkPipelineStats*          m_stats;
+    DxvkDevice*                 m_device = nullptr;
+    DxvkPipelineStats*          m_stats = nullptr;
 
-    DxvkShaderPipelineLibrary*  m_library;
-    VkPipeline                  m_libraryHandle;
+    DxvkShaderPipelineLibrary*  m_library = nullptr;
+    std::optional<VkPipeline>   m_libraryHandle;
 
     DxvkComputePipelineShaders  m_shaders;
     DxvkPipelineBindings        m_layout;
@@ -139,7 +135,9 @@ namespace dxvk {
 
     alignas(CACHE_LINE_SIZE)
     dxvk::mutex                             m_mutex;
-    sync::List<DxvkComputePipelineInstance> m_pipelines;
+    DxvkPipelineVariantTable<
+      DxvkComputePipelineStateInfo,
+      DxvkComputePipelineInstance>          m_pipelines;
     
     DxvkComputePipelineInstance* createInstance(
       const DxvkComputePipelineStateInfo& state);
