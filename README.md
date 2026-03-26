@@ -134,11 +134,11 @@ DXVK-Sarek includes **dyasync (Dynamic Asynchronous Pipeline Compilation)**, ena
 
 When a shader is encountered for the very first time, it must be compiled synchronously, this is unavoidable and may cause a brief stutter. However, every variant after that is handled differently. A variant is created whenever the game uses the same shaders with a different combination of fixed-function state (blend mode, depth test, cull mode, render pass, etc.), each unique combination counts as a new variant.
 
-When a new variant is needed, dyasync does not stall the game to compile it. Instead, it grabs the closest already-compiled pipeline for those same shaders (perhaps one compiled with different blend settings) and uses it as a placeholder while the correct variant builds in a background thread. Once the background compilation finishes, it silently swaps in the correct pipeline. This reduces stuttering and improves frametimes.
+When a new variant is needed, dyasync does not stall the game to compile it. Instead, it grabs the closest already compiled pipeline for those same shaders (perhaps one compiled with different blend settings) and uses it as a placeholder while the correct variant builds in a background thread. Once the background compilation finishes, it silently swaps in the correct pipeline. This reduces stuttering and improves frametimes.
 
-This approach is safer than a traditional async patch because something valid is always being rendered on screen, there are no invisible or missing objects. That said, during the brief placeholder period, minor visual inaccuracies are possible (e.g. slightly wrong blending). **Use in multiplayer games at your own discretion.**
+This approach is safer than the traditional async patch because something valid is always being rendered on screen, there are no invisible or missing objects. That said, during the brief placeholder period, minor visual inaccuracies are possible (e.g. slightly wrong blending). **Use in multiplayer games at your own discretion.**
 
-Dyasync can be disabled by setting `dxvk.enableDyasync = False` in `dxvk.conf` or or by using the environment variable `DXVK_DISABLE_DYASYNC=1`.
+Dyasync can be disabled by setting `dxvk.enableDyasync = False` in `dxvk.conf`, in the `DXVK_CONFIG` environment variable, or by using the environment variable `DXVK_DISABLE_DYASYNC=1`.
 
 - `DXVK_ALL_CORES=1`
 When this env var is used, it overwrites the default way we assign cores to compile shaders. By default, DXVK-Sarek uses roughly half the available CPU cores for background compilation, leaving the rest free for the game. On CPUs with weak per core performance that rely on all cores for good throughput, this may cause longer loading times. When `DXVK_ALL_CORES=1` is set, all available cores are used for both the game and shader compilation. This may cause brief unresponsiveness while compiling shaders but can improve the overall experience on such hardware.
