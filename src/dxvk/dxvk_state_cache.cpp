@@ -16,7 +16,7 @@ namespace dxvk {
     uint32_t entrySize : 24;
   };
 
-  
+
   /**
    * \brief State cache entry data
    *
@@ -76,7 +76,7 @@ namespace dxvk {
     bool write(const T& data) {
       if (m_size + sizeof(T) > MaxSize)
         return false;
-      
+
       std::memcpy(&m_data[m_size], &data, sizeof(T));
       m_size += sizeof(T);
       return true;
@@ -120,7 +120,7 @@ namespace dxvk {
 
     if (!stream.read(data, size))
       return false;
-    
+
     Sha1Hash expectedHash = std::exchange(entry.hash, g_nullHash);
     Sha1Hash computedHash = Sha1Hash::compute(entry);
     return expectedHash == computedHash;
@@ -186,7 +186,7 @@ namespace dxvk {
         writeCacheEntry(file, e);
     }
   }
-  
+
 
   DxvkStateCache::~DxvkStateCache() {
     this->stopWorkerThreads();
@@ -199,7 +199,7 @@ namespace dxvk {
     const DxvkRenderPassFormat&           format) {
     if (shaders.vs.eq(g_nullShaderKey))
       return;
-    
+
     // Do not add an entry that is already in the cache
     auto entries = m_entryMap.equal_range(shaders);
 
@@ -253,7 +253,7 @@ namespace dxvk {
 
     if (key.eq(g_nullShaderKey))
       return;
-    
+
     // Add the shader so we can look it up by its key
     std::unique_lock<dxvk::mutex> entryLock(m_entryLock);
     m_shaderMap.insert({ key, shader });
@@ -273,10 +273,10 @@ namespace dxvk {
        || !getShaderByKey(p->second.fs,  item.gp.fs)
        || !getShaderByKey(p->second.cs,  item.cp.cs))
         continue;
-      
+
       if (!workerLock)
         workerLock = std::unique_lock<dxvk::mutex>(m_workerLock);
-      
+
       m_workerQueue.push(item);
     }
 
@@ -300,7 +300,7 @@ namespace dxvk {
 
     for (auto& worker : m_workerThreads)
       worker.join();
-    
+
     if (m_writerThread.joinable())
       m_writerThread.join();
   }
@@ -316,7 +316,7 @@ namespace dxvk {
           Rc<DxvkShader>&           shader) const {
     if (key.eq(g_nullShaderKey))
       return true;
-    
+
     auto entry = m_shaderMap.find(key);
     if (entry == m_shaderMap.end())
       return false;
@@ -332,7 +332,7 @@ namespace dxvk {
     m_entryMap.insert({ key, entryId });
   }
 
-  
+
   void DxvkStateCache::mapShaderToPipeline(
     const DxvkShaderKey&            shader,
     const DxvkStateCacheKey&        key) {
@@ -455,7 +455,7 @@ namespace dxvk {
         " invalid state cache entries"));
       return false;
     }
-    
+
     // Rewrite entire state cache if it is outdated
     return curHeader.version == newHeader.version;
   }
@@ -471,19 +471,19 @@ namespace dxvk {
 
     if (!stream.read(data, size))
       return false;
-    
+
     for (uint32_t i = 0; i < 4; i++) {
       if (expected.magic[i] != header.magic[i])
         return false;
     }
-    
+
     return true;
   }
 
 
   bool DxvkStateCache::readCacheEntryV7(
           uint32_t                  version,
-          std::istream&             stream, 
+          std::istream&             stream,
           DxvkStateCacheEntry&      entry) const {
     if (version <= 6) {
       DxvkStateCacheEntryV6 v6;
@@ -521,7 +521,7 @@ namespace dxvk {
 
   bool DxvkStateCache::readCacheEntry(
           uint32_t                  version,
-          std::istream&             stream, 
+          std::istream&             stream,
           DxvkStateCacheEntry&      entry) const {
     if (version < 8)
       return readCacheEntryV7(version, stream, entry);
@@ -530,7 +530,7 @@ namespace dxvk {
     DxvkStateCacheEntryHeader header;
     DxvkStateCacheEntryData data;
     Sha1Hash hash;
-  
+
     if (!stream.read(reinterpret_cast<char*>(&header), sizeof(header))
      || !stream.read(reinterpret_cast<char*>(&hash), sizeof(hash))
      || !data.readFromStream(stream, header.entrySize))
@@ -644,7 +644,7 @@ namespace dxvk {
 
 
   void DxvkStateCache::writeCacheEntry(
-          std::ostream&             stream, 
+          std::ostream&             stream,
           DxvkStateCacheEntry&      entry) const {
     DxvkStateCacheEntryData data;
     VkShaderStageFlags stageMask = 0;
@@ -753,11 +753,11 @@ namespace dxvk {
 
     out.cpState.bsBindingMask           = in.cpState.bsBindingMask;
     out.gpState.bsBindingMask           = in.gpState.bsBindingMask;
-    
+
     out.gpState.iaPrimitiveTopology     = in.gpState.iaPrimitiveTopology;
     out.gpState.iaPrimitiveRestart      = in.gpState.iaPrimitiveRestart;
     out.gpState.iaPatchVertexCount      = in.gpState.iaPatchVertexCount;
-    
+
     out.gpState.ilAttributeCount        = in.gpState.ilAttributeCount;
     out.gpState.ilBindingCount          = in.gpState.ilBindingCount;
 
@@ -768,7 +768,7 @@ namespace dxvk {
       out.gpState.ilBindings[i]         = in.gpState.ilBindings[i];
       out.gpState.ilDivisors[i]         = in.gpState.ilDivisors[i];
     }
-    
+
     out.gpState.rsDepthClipEnable       = in.gpState.rsDepthClipEnable;
     out.gpState.rsDepthBiasEnable       = in.gpState.rsDepthBiasEnable;
     out.gpState.rsPolygonMode           = in.gpState.rsPolygonMode;
@@ -776,18 +776,18 @@ namespace dxvk {
     out.gpState.rsFrontFace             = in.gpState.rsFrontFace;
     out.gpState.rsViewportCount         = in.gpState.rsViewportCount;
     out.gpState.rsSampleCount           = in.gpState.rsSampleCount;
-    
+
     out.gpState.msSampleCount           = in.gpState.msSampleCount;
     out.gpState.msSampleMask            = in.gpState.msSampleMask;
     out.gpState.msEnableAlphaToCoverage = in.gpState.msEnableAlphaToCoverage;
-    
+
     out.gpState.dsEnableDepthTest       = in.gpState.dsEnableDepthTest;
     out.gpState.dsEnableDepthWrite      = in.gpState.dsEnableDepthWrite;
     out.gpState.dsEnableStencilTest     = in.gpState.dsEnableStencilTest;
     out.gpState.dsDepthCompareOp        = in.gpState.dsDepthCompareOp;
     out.gpState.dsStencilOpFront        = in.gpState.dsStencilOpFront;
     out.gpState.dsStencilOpBack         = in.gpState.dsStencilOpBack;
-    
+
     out.gpState.omEnableLogicOp         = in.gpState.omEnableLogicOp;
     out.gpState.omLogicOp               = in.gpState.omLogicOp;
 
@@ -829,11 +829,11 @@ namespace dxvk {
         in.gpState.iaPrimitiveTopology,
         in.gpState.iaPrimitiveRestart,
         in.gpState.iaPatchVertexCount);
-      
+
       out.gpState.il = DxvkIlInfo(
         in.gpState.ilAttributeCount,
         in.gpState.ilBindingCount);
-      
+
       for (uint32_t i = 0; i < in.gpState.ilAttributeCount; i++) {
         out.gpState.ilAttributes[i] = DxvkIlAttribute(
           in.gpState.ilAttributes[i].location,
@@ -841,7 +841,7 @@ namespace dxvk {
           in.gpState.ilAttributes[i].format,
           in.gpState.ilAttributes[i].offset);
       }
-      
+
       for (uint32_t i = 0; i < in.gpState.ilBindingCount; i++) {
         out.gpState.ilBindings[i] = DxvkIlBinding(
           in.gpState.ilBindings[i].binding,
@@ -849,7 +849,7 @@ namespace dxvk {
           in.gpState.ilBindings[i].inputRate,
           in.gpState.ilDivisors[i]);
       }
-      
+
       out.gpState.rs = DxvkRsInfo(
         in.gpState.rsDepthClipEnable,
         in.gpState.rsDepthBiasEnable,
@@ -864,21 +864,21 @@ namespace dxvk {
         in.gpState.msSampleCount,
         in.gpState.msSampleMask,
         in.gpState.msEnableAlphaToCoverage);
-      
+
       out.gpState.ds = DxvkDsInfo(
         in.gpState.dsEnableDepthTest,
         in.gpState.dsEnableDepthWrite,
         in.gpState.dsEnableDepthBoundsTest,
         in.gpState.dsEnableStencilTest,
         in.gpState.dsDepthCompareOp);
-      
+
       out.gpState.dsFront = DxvkDsStencilOp(in.gpState.dsStencilOpFront);
       out.gpState.dsBack  = DxvkDsStencilOp(in.gpState.dsStencilOpBack);
 
       out.gpState.om = DxvkOmInfo(
         in.gpState.omEnableLogicOp,
         in.gpState.omLogicOp);
-      
+
       for (uint32_t i = 0; i < 8 && i < MaxNumRenderTargets; i++) {
         out.gpState.omBlend[i] = DxvkOmAttachmentBlend(
           in.gpState.omBlendAttachments[i].blendEnable,
@@ -889,7 +889,7 @@ namespace dxvk {
           in.gpState.omBlendAttachments[i].dstAlphaBlendFactor,
           in.gpState.omBlendAttachments[i].alphaBlendOp,
           in.gpState.omBlendAttachments[i].colorWriteMask);
-        
+
         out.gpState.omSwizzle[i] = DxvkOmAttachmentSwizzle(
           in.gpState.omComponentMapping[i]);
       }
@@ -930,7 +930,7 @@ namespace dxvk {
 
         if (m_workerQueue.empty())
           break;
-        
+
         item = m_workerQueue.front();
         m_workerQueue.pop();
       }
@@ -1016,7 +1016,7 @@ namespace dxvk {
 
     if (!path.empty() && *path.rbegin() != '/')
       path += '/';
-    
+
     std::string exeName = env::getExeBaseName();
     path += exeName + ".dxvk-cache";
     return str::tows(path.c_str());
@@ -1024,7 +1024,28 @@ namespace dxvk {
 
 
   std::string DxvkStateCache::getCacheDir() const {
-    return env::getEnvVar("DXVK_STATE_CACHE_PATH");
+    std::string cachePath = env::getEnvVar("DXVK_STATE_CACHE_PATH");
+
+    if (cachePath.empty()) {
+#ifdef _WIN32
+      cachePath = env::getEnvVar("LOCALAPPDATA");
+#endif
+
+      if (cachePath.empty())
+        cachePath = env::getEnvVar("XDG_CACHE_HOME");
+
+      if (cachePath.empty()) {
+        cachePath = env::getEnvVar("HOME");
+
+        if (!cachePath.empty())
+          cachePath += "/.cache";
+      }
+
+      if (!cachePath.empty())
+        cachePath += "/dxvk";
+    }
+
+    return cachePath;
   }
 
 
