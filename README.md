@@ -30,11 +30,11 @@ Setting the frame pacing via the environment variable `DXVK_FRAME_PACE` is also 
 
 #### d3d9/dxgi.maxFrameRate
 
-Fps limiting is very helpful when used together with VRR to give the pacing enough space to not hit the v-sync buffering and to minimize frametime variance. For 240 Hz VRR, a limit of about 215-225 fps is recommended, and similarly for other refresh rates. Finding the best fps-limit for VRR will require some testing and also depends on the game and how much frametime variation it generates on the user's system. 
+Fps limiting is very helpful when used together with VRR to give the pacing enough space to not hit the v-sync buffering and to minimize frametime variance. For 240 Hz VRR, a limit of about 215-225 fps is recommended, and similarly for other refresh rates. Finding the best fps-limit for VRR will require some testing and also depends on the game and how much frametime variation it generates on the user's system.
 
 Note that the `"low-latency-vrr-x"` frame pacing option is also a form of fps limiting. It predictively limits at the end of the frame. The normal fps limiter limits at the (render-)start of the frame. It's often useful to have both active at the same time.
 
-Fps limiting is also useful in other modes to improve consistency and/or to save power. Limiting in the low-latency modes is tightly integrated into the frame pacing and is strongly recommended to be used in place of most ingame limiters. 
+Fps limiting is also useful in other modes to improve consistency and/or to save power. Limiting in the low-latency modes is tightly integrated into the frame pacing and is strongly recommended to be used in place of most ingame limiters.
 
 If setting an fps limit so low that it will bore your GPU, this may result in your driver's heuristic clocking down the GPU, which can cause the latency to quadruple if you are unlucky. So you may want to watch out for that and take appropriate measures if desired.
 
@@ -57,7 +57,7 @@ It's recommended to check the GPU buffer display (`dxvk.hud = "latencydetails"`)
 
 #### dxvk.lowLatencyAllowCpuFramesOverlap
 
-In case a game is generating a very high load (or specific load) on dxvk's CS thread (see `DXVK_HUD=cs`), setting `dxvk.lowLatencyAllowCpuFramesOverlap = False` will prevent the CS thread queue to create additional latency. 
+In case a game is generating a very high load (or specific load) on dxvk's CS thread (see `DXVK_HUD=cs`), setting `dxvk.lowLatencyAllowCpuFramesOverlap = False` will prevent the CS thread queue to create additional latency.
 
 Can be set to `False` on a game by game basis. By default, this option is set to `True`, because setting it to `False` can lead to certain types of stutters being magnified, for example from shader compiling, which can lead to strong fps loss in those cases.
 
@@ -71,15 +71,15 @@ Generating one frame of a video game typically can be seen as a sequence of the 
 
 `input sampling -> frame simulation -> frame rendering -> present()`
 
-This frame pacing relies on games/engines following the simple principle of starting to process a new frame after finishing the previous one by calling the present() method of D3D. In the author's opinion, most games are actually doing this (at least for mouse input), as this is baked into the Direct 3D methodology, and games which care for input lag basically don't have another option. 
+This frame pacing relies on games/engines following the simple principle of starting to process a new frame after finishing the previous one by calling the present() method of D3D. In the author's opinion, most games are actually doing this (at least for mouse input), as this is baked into the Direct 3D methodology, and games which care for input lag basically don't have another option.
 
 However, this is not guaranteed. There may be games out there not following this principle. For those, perfect frame pacing is impossible to achieve in the D3D domain.
 
 #### Display Manager Presentation
 
-When dxvk is finished rendering a frame, the resulting image still needs to be transported to the display which is relevant for latency too. 
+When dxvk is finished rendering a frame, the resulting image still needs to be transported to the display which is relevant for latency too.
 
-Since there is not that much information available on this topic, the author has tested some configurations which may help you to make an informed decision. The following results were obtained running a game at 1800 fps, which has the option to flash a monitor region instantly during a mouse button press, such that Nvidia's Reflex Analyzer is used to measure button-to-pixel latency on an Nvidia GPU (575.57.08 driver). These results may or may not be applicable to other hardware/drivers like AMD or Intel GPUs. 
+Since there is not that much information available on this topic, the author has tested some configurations which may help you to make an informed decision. The following results were obtained running a game at 1800 fps, which has the option to flash a monitor region instantly during a mouse button press, such that Nvidia's Reflex Analyzer is used to measure button-to-pixel latency on an Nvidia GPU (575.57.08 driver). These results may or may not be applicable to other hardware/drivers like AMD or Intel GPUs.
 
 The top of the screen was selected as monitor region to make VRR, Mailbox and V-Sync more comparable to tearing (Immediate) in terms of latency. Since the measured latency will depend on the state of the screen refresh when the mouse button was pressed, many such samples give a latency range. Note that Wine Wayland is still experimental. The following measurements were taken in June 2025 and will be updated soon:
 
@@ -156,7 +156,7 @@ In order to remove DXVK from a prefix, remove the DLLs and DLL overrides, and ru
 
 Tools such as Steam Play, Lutris, Bottles, Heroic Launcher, etc will automatically handle setup of dxvk on their own when enabled.
 
-#### DLL dependencies 
+#### DLL dependencies
 Listed below are the DLL requirements for using DXVK with any single API.
 
 - d3d8: `d3d8.dll` and `d3d9.dll`
@@ -225,6 +225,21 @@ In games that load their shaders during loading screens or in the menu, this can
 
 **Note:** Games which only load their D3D shaders at draw time (e.g. most Unreal Engine games) will still exhibit some stutter, although it should still be less severe than without this feature.
 
+### Shader compilation
+
+includes **dyasync (Dynamic Asynchronous Pipeline Compilation)**, enabled by default.
+
+When a shader is encountered for the very first time, it must be compiled synchronously, this is unavoidable and may cause a brief stutter. However, every variant after that is handled differently. A variant is created whenever the game uses the same shaders with a different combination of fixed-function state (blend mode, depth test, cull mode, render pass, etc.), each unique combination counts as a new variant.
+
+When a new variant is needed, dyasync does not stall the game to compile it. Instead, it grabs the closest already compiled pipeline for those same shaders (perhaps one compiled with different blend settings) and uses it as a placeholder while the correct variant builds in a background thread. Once the background compilation finishes, it silently swaps in the correct pipeline. This reduces stuttering and improves frametimes.
+
+This approach is safer than the traditional async patch because something valid is always being rendered on screen, there are no invisible or missing objects. That said, during the brief placeholder period, minor visual inaccuracies are possible (e.g. slightly wrong blending). **Use in multiplayer games at your own discretion.**
+
+Dyasync can be disabled by setting `dxvk.enableDyasync = False` in `dxvk.conf`, in the `DXVK_CONFIG` environment variable, or by using the environment variable `DXVK_DISABLE_DYASYNC=1`.
+
+- `DXVK_ALL_CORES=1`
+When this env var is used, it overwrites the default way we assign cores to compile shaders. By default, uses roughly half the available CPU cores for background compilation, leaving the rest free for the game. On CPUs with weak per core performance that rely on all cores for good throughput, this may cause longer loading times. When `DXVK_ALL_CORES=1` is set, all available cores are used for both the game and shader compilation. This may cause brief unresponsiveness while compiling shaders but can improve the overall experience on such hardware.
+
 ## Build instructions
 
 In order to pull in all submodules that are needed for building, clone the repository using the following command:
@@ -280,10 +295,10 @@ update-alternatives --config x86_64-w64-mingw32-g++
 update-alternatives --config i686-w64-mingw32-gcc
 update-alternatives --config i686-w64-mingw32-g++
 ```
-For non debian based distros, make sure that your mingw-w64-gcc cross compiler 
+For non debian based distros, make sure that your mingw-w64-gcc cross compiler
 does have `--enable-threads=posix` enabled during configure. If your distro does
 ship its mingw-w64-gcc binary with `--enable-threads=win32` you might have to
-recompile locally or open a bug at your distro's bugtracker to ask for it. 
+recompile locally or open a bug at your distro's bugtracker to ask for it.
 
 # DXVK Native
 

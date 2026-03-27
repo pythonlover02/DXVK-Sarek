@@ -29,6 +29,12 @@ namespace dxvk {
     /// Enables pipeline lifetime tracking
     Tristate trackPipelineLifetime = Tristate::Auto;
 
+    /// Enable dyasync pipeline compiler
+    bool enableDyasync = true;
+
+    /// Number of dyasync compiler threads
+    int32_t numDyasyncThreads = 0;
+
     /// Shader-related options
     Tristate useRawSsbo = Tristate::Auto;
 

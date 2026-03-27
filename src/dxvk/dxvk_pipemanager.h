@@ -7,6 +7,7 @@
 
 #include "dxvk_compute.h"
 #include "dxvk_graphics.h"
+#include "dxvk_pipecompiler.h"
 
 namespace dxvk {
 
@@ -14,7 +15,7 @@ namespace dxvk {
 
   /**
    * \brief Pipeline count
-   * 
+   *
    * Stores number of graphics and
    * compute pipelines, individually.
    */
@@ -149,10 +150,10 @@ namespace dxvk {
 
   };
 
-  
+
   /**
    * \brief Pipeline manager
-   * 
+   *
    * Creates and stores graphics pipelines and compute
    * pipelines for each combination of shaders that is
    * used within the application. This is necessary
@@ -164,15 +165,15 @@ namespace dxvk {
     friend class DxvkGraphicsPipeline;
     friend class DxvkShaderPipelineLibrary;
   public:
-    
+
     DxvkPipelineManager(
             DxvkDevice*         device);
-    
+
     ~DxvkPipelineManager();
-    
+
     /**
      * \brief Retrieves a compute pipeline object
-     * 
+     *
      * If a pipeline for the given shader stage object
      * already exists, it will be returned. Otherwise,
      * a new pipeline will be created.
@@ -181,10 +182,10 @@ namespace dxvk {
      */
     DxvkComputePipeline* createComputePipeline(
       const DxvkComputePipelineShaders& shaders);
-    
+
     /**
      * \brief Retrieves a graphics pipeline object
-     * 
+     *
      * If a pipeline for the given shader stage objects
      * already exists, it will be returned. Otherwise,
      * a new pipeline will be created.
@@ -242,7 +243,7 @@ namespace dxvk {
 
     /**
      * \brief Registers a shader
-     * 
+     *
      * Starts compiling pipelines asynchronously
      * in case the state cache contains state
      * vectors for this shader.
@@ -280,15 +281,32 @@ namespace dxvk {
      * \brief Stops async compiler threads
      */
     void stopWorkerThreads();
-    
+
+    /**
+     * \brief Queries whether dyasync compiler is available
+     * \returns \c true if the dyasync compiler exists
+     */
+    bool hasDyasyncCompiler() const {
+      return m_compiler != nullptr;
+    }
+
+    /**
+     * \brief Retrieves dyasync compiler
+     * \returns Pointer to the dyasync compiler, may be null
+     */
+    DxvkPipelineCompiler* getDyasyncCompiler() const {
+      return m_compiler.ptr();
+    }
+
   private:
-    
+
     DxvkDevice*               m_device;
     DxvkPipelineWorkers       m_workers;
     DxvkPipelineStats         m_stats;
-    
+    Rc<DxvkPipelineCompiler>  m_compiler;
+
     dxvk::mutex m_mutex;
-    
+
     std::unordered_map<
       DxvkDescriptorSetLayoutKey,
       DxvkDescriptorSetLayout,
@@ -339,5 +357,5 @@ namespace dxvk {
       const Rc<DxvkShader>& shader) const;
 
   };
-  
+
 }

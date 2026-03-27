@@ -105,6 +105,7 @@ dxvk_src = [
   'dxvk_options.cpp',
   'dxvk_pipelayout.cpp',
   'dxvk_pipemanager.cpp',
+  'dxvk_pipecompiler.cpp',
   'dxvk_platform_exts.cpp',
   'dxvk_presenter.cpp',
   'dxvk_queue.cpp',

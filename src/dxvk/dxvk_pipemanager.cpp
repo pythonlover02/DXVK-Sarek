@@ -4,7 +4,7 @@
 #include "dxvk_pipemanager.h"
 
 namespace dxvk {
-  
+
   DxvkPipelineWorkers::DxvkPipelineWorkers(
           DxvkDevice*                     device)
   : m_device(device) {
@@ -114,7 +114,7 @@ namespace dxvk {
         auto& worker = m_workers.emplace_back([this, priority] {
           runWorker(priority);
         });
-        
+
         worker.set_priority(ThreadPriority::Lowest);
       }
 
@@ -181,21 +181,24 @@ namespace dxvk {
       auto library = createNullFsPipelineLibrary();
       library->compilePipeline();
     }
+
+    if (env::getEnvVar("DXVK_DISABLE_DYASYNC") != "1" && device->config().enableDyasync)
+      m_compiler = new DxvkPipelineCompiler(device);
   }
-  
-  
+
+
   DxvkPipelineManager::~DxvkPipelineManager() {
-    
+
   }
-  
-  
+
+
   DxvkComputePipeline* DxvkPipelineManager::createComputePipeline(
     const DxvkComputePipelineShaders& shaders) {
     if (shaders.cs == nullptr)
       return nullptr;
-    
+
     std::lock_guard<dxvk::mutex> lock(m_mutex);
-    
+
     auto pair = m_computePipelines.find(shaders);
     if (pair != m_computePipelines.end())
       return &pair->second;
@@ -211,15 +214,15 @@ namespace dxvk {
       std::tuple(m_device, this, shaders, library));
     return &iter.first->second;
   }
-  
-  
+
+
   DxvkGraphicsPipeline* DxvkPipelineManager::createGraphicsPipeline(
     const DxvkGraphicsPipelineShaders& shaders) {
     if (shaders.vs == nullptr)
       return nullptr;
-    
+
     std::lock_guard<dxvk::mutex> lock(m_mutex);
-    
+
     auto pair = m_graphicsPipelines.find(shaders);
     if (pair != m_graphicsPipelines.end())
       return &pair->second;
@@ -264,7 +267,7 @@ namespace dxvk {
     return &iter.first->second;
   }
 
-  
+
   DxvkShaderPipelineLibrary* DxvkPipelineManager::createShaderPipelineLibrary(
     const DxvkShaderPipelineLibraryKey& key) {
     std::lock_guard<dxvk::mutex> lock(m_mutex);
@@ -302,8 +305,8 @@ namespace dxvk {
       std::tuple(m_device, state));
     return &iter.first->second;
   }
-  
-  
+
+
   void DxvkPipelineManager::registerShader(
     const Rc<DxvkShader>&         shader) {
     if (canPrecompileShader(shader)) {

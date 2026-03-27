@@ -13,7 +13,7 @@
 #include "dxvk_stats.h"
 
 namespace dxvk {
-  
+
   class DxvkDevice;
   class DxvkPipelineManager;
   class DxvkPipelineWorkers;
@@ -356,7 +356,7 @@ namespace dxvk {
 
   /**
    * \brief Graphics pipeline instance
-   * 
+   *
    * Stores a state vector and the
    * corresponding pipeline handle.
    */
@@ -366,32 +366,40 @@ namespace dxvk {
       const DxvkGraphicsPipelineStateInfo&  state_,
             VkPipeline                      baseHandle_,
             VkPipeline                      fastHandle_,
-            DxvkAttachmentMask              attachments_)
-    : state       (state_),
-      baseHandle  (baseHandle_),
-      fastHandle  (fastHandle_),
-      isCompiling (fastHandle_ != VK_NULL_HANDLE),
-      attachments (attachments_) { }
+            DxvkAttachmentMask              attachments_,
+            VkPipeline                      fallbackHandle_ = VK_NULL_HANDLE)
+    : state          (state_),
+      baseHandle     (baseHandle_),
+      fastHandle     (fastHandle_),
+      fallbackHandle (fallbackHandle_),
+      isCompiling    (fastHandle_ != VK_NULL_HANDLE),
+      attachments    (attachments_) { }
 
     DxvkGraphicsPipelineStateInfo state;
-    std::atomic<VkPipeline>       baseHandle  = { VK_NULL_HANDLE };
-    std::atomic<VkPipeline>       fastHandle  = { VK_NULL_HANDLE };
-    std::atomic<VkBool32>         isCompiling = { VK_FALSE };
-    DxvkAttachmentMask            attachments = { };
+    std::atomic<VkPipeline>       baseHandle     = { VK_NULL_HANDLE };
+    std::atomic<VkPipeline>       fastHandle     = { VK_NULL_HANDLE };
+    std::atomic<VkPipeline>       fallbackHandle = { VK_NULL_HANDLE };
+    std::atomic<VkBool32>         isCompiling    = { VK_FALSE };
+    DxvkAttachmentMask            attachments    = { };
 
     DxvkGraphicsPipelineHandle getHandle() const {
-      // Find a pipeline handle to use. If no optimized pipeline has
-      // been compiled yet, use the slower base pipeline instead.
       DxvkGraphicsPipelineHandle result;
-      result.handle = fastHandle.load(std::memory_order_acquire);
-      result.type = DxvkGraphicsPipelineType::FastPipeline;
       result.attachments = attachments;
 
-      if (likely(fastHandle))
+      result.handle = fastHandle.load(std::memory_order_acquire);
+      result.type = DxvkGraphicsPipelineType::FastPipeline;
+      if (likely(result.handle != VK_NULL_HANDLE))
         return result;
 
       result.handle = baseHandle.load(std::memory_order_acquire);
       result.type = DxvkGraphicsPipelineType::BasePipeline;
+      if (result.handle != VK_NULL_HANDLE)
+        return result;
+
+      // Dyasync compilation is still in flight; return the fallback
+      // pipeline so callers never receive a null handle
+      result.handle = fallbackHandle.load(std::memory_order_acquire);
+      result.type = DxvkGraphicsPipelineType::FastPipeline;
       return result;
     }
   };
@@ -478,15 +486,15 @@ namespace dxvk {
 
   /**
    * \brief Graphics pipeline
-   * 
+   *
    * Stores the pipeline layout as well as methods to
    * recompile the graphics pipeline against a given
    * pipeline state vector.
    */
   class DxvkGraphicsPipeline {
-    
+
   public:
-    
+
     DxvkGraphicsPipeline(
             DxvkDevice*                 device,
             DxvkPipelineManager*        pipeMgr,
@@ -503,7 +511,7 @@ namespace dxvk {
     const DxvkGraphicsPipelineShaders& shaders() const {
       return m_shaders;
     }
-    
+
     /**
      * \brief Returns graphics pipeline flags
      * \returns Graphics pipeline property flags
@@ -511,7 +519,7 @@ namespace dxvk {
     DxvkGraphicsPipelineFlags flags() const {
       return m_flags;
     }
-    
+
     /**
      * \brief Queries pipeline layout
      * \returns Pipeline layout
@@ -546,7 +554,7 @@ namespace dxvk {
 
     /**
      * \brief Pipeline handle
-     * 
+     *
      * Retrieves a pipeline handle for the given pipeline
      * state. If necessary, a new pipeline will be created.
      * \param [in] state Pipeline state vector
@@ -554,10 +562,10 @@ namespace dxvk {
      */
     DxvkGraphicsPipelineHandle getPipelineHandle(
       const DxvkGraphicsPipelineStateInfo&    state);
-    
+
     /**
      * \brief Compiles a pipeline
-     * 
+     *
      * Asynchronously compiles the given pipeline
      * and stores the result for future use.
      * \param [in] state Pipeline state vector
@@ -595,7 +603,7 @@ namespace dxvk {
 
   private:
 
-    DxvkDevice*                 m_device;    
+    DxvkDevice*                 m_device;
     DxvkPipelineManager*        m_manager;
     DxvkPipelineWorkers*        m_workers;
     DxvkPipelineStats*          m_stats;
@@ -615,6 +623,44 @@ namespace dxvk {
 
     std::string m_debugName;
 
+    // Lock-free instance map for fast pipeline lookups
+    struct LockFreeMapEntry {
+      std::atomic<size_t>                        hash     { 0 };
+      std::atomic<DxvkGraphicsPipelineInstance*> instance { nullptr };
+    };
+
+    static constexpr uint32_t InstanceMapSize    = 4096;
+    static constexpr uint32_t InstanceMapMask    = InstanceMapSize - 1;
+    static constexpr uint32_t MaxProbeDistance    = 64;
+    static constexpr uint32_t OverflowMapSize    = 8192;
+    static constexpr uint32_t OverflowMapMask    = OverflowMapSize - 1;
+    static constexpr uint32_t OverflowProbeMax   = 128;
+
+    std::array<LockFreeMapEntry, InstanceMapSize>  m_instanceMap;
+    std::atomic<bool>                              m_instanceMapOverflow { false };
+    std::array<LockFreeMapEntry, OverflowMapSize>  m_overflowMap;
+
+    std::atomic<VkPipeline> m_derivBasePipeline  { VK_NULL_HANDLE };
+    std::atomic<bool>       m_hasDerivBase       { false };
+
+    // Queue deduplication set for dyasync
+    static constexpr uint32_t QueuedSetSize = 4096;
+    static constexpr uint32_t QueuedSetMask = QueuedSetSize - 1;
+    std::array<std::atomic<size_t>, QueuedSetSize> m_queuedSet;
+
+    // Dyasync fallback map: stores previously compiled pipelines
+    // keyed by render target format hash for async fallback
+    struct DyasyncFallbackEntry {
+      std::atomic<uint64_t>    key      { 0 };
+      std::atomic<VkPipeline>  pipeline { VK_NULL_HANDLE };
+    };
+
+    static constexpr uint32_t DyasyncFallbackSize = 64;
+    static constexpr uint32_t DyasyncFallbackMask = DyasyncFallbackSize - 1;
+    static constexpr uint32_t DyasyncFallbackProbe = 8;
+
+    std::array<DyasyncFallbackEntry, DyasyncFallbackSize> m_dyasyncFallback;
+
     alignas(CACHE_LINE_SIZE)
     dxvk::mutex                                   m_mutex;
     sync::List<DxvkGraphicsPipelineInstance>      m_pipelines;
@@ -630,22 +676,42 @@ namespace dxvk {
       DxvkGraphicsPipelineFastInstanceKey,
       VkPipeline, DxvkHash, DxvkEq>               m_fastPipelines;
 
+    static size_t computeInstanceHash(
+      const DxvkGraphicsPipelineStateInfo& state);
+
+    DxvkGraphicsPipelineInstance* findInstanceLockFree(
+      const DxvkGraphicsPipelineStateInfo& state);
+
+    void insertInstanceToMap(
+      const DxvkGraphicsPipelineStateInfo& state,
+      DxvkGraphicsPipelineInstance*        inst);
+
     DxvkGraphicsPipelineInstance* createInstance(
       const DxvkGraphicsPipelineStateInfo& state,
             bool                           doCreateBasePipeline);
-    
+
     DxvkGraphicsPipelineInstance* findInstance(
       const DxvkGraphicsPipelineStateInfo& state);
 
     bool canCreateBasePipeline(
       const DxvkGraphicsPipelineStateInfo& state) const;
 
+    static uint64_t computeDyasyncFallbackKey(
+      const DxvkGraphicsPipelineStateInfo& state);
+
+    VkPipeline findDyasyncFallback(
+      const DxvkGraphicsPipelineStateInfo& state);
+
+    void storeDyasyncFallback(
+      const DxvkGraphicsPipelineStateInfo& state,
+            VkPipeline                     pipeline);
+
     VkPipeline getBasePipeline(
       const DxvkGraphicsPipelineStateInfo& state);
 
     VkPipeline createBasePipeline(
       const DxvkGraphicsPipelineBaseInstanceKey& key) const;
-    
+
     VkPipeline getOptimizedPipeline(
       const DxvkGraphicsPipelineStateInfo& state);
 
@@ -658,11 +724,11 @@ namespace dxvk {
 
     void destroyVulkanPipeline(
             VkPipeline                     pipeline) const;
-    
+
     SpirvCodeBuffer getShaderCode(
       const Rc<DxvkShader>&                shader,
       const DxvkShaderModuleCreateInfo&    info) const;
-    
+
     uint32_t computeSpecConstantMask() const;
 
     DxvkAttachmentMask computeAttachmentMask(
@@ -681,5 +747,5 @@ namespace dxvk {
     std::string createDebugName() const;
 
   };
-  
+
 }
