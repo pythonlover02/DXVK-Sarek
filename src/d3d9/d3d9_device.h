@@ -54,44 +54,40 @@ namespace dxvk {
   class D3D9FormatHelper;
   class D3D9UserDefinedAnnotation;
 
-  enum class D3D9DeviceFlag : uint32_t {
-    DirtyFramebuffer,
-    DirtyClipPlanes,
-    DirtyDepthStencilState,
-    DirtyBlendState,
-    DirtyRasterizerState,
-    DirtyDepthBias,
-    DirtyAlphaTestState,
-    DirtyInputLayout,
-    DirtyViewportScissor,
-    DirtyMultiSampleState,
-    DirtyVertexBuffers,
-    DirtyIndexBuffer,
+  enum class D3D9DeviceDirtyFlag : uint32_t {
+    Framebuffer,
+    ClipPlanes,
+    DepthStencilState,
+    BlendState,
+    RasterizerState,
+    DepthBias,
+    AlphaTestState,
+    InputLayout,
+    ViewportScissor,
+    MultiSampleState,
+    VertexBuffers,
+    IndexBuffer,
 
-    DirtyFogState,
-    DirtyFogColor,
-    DirtyFogDensity,
-    DirtyFogScale,
-    DirtyFogEnd,
+    FogState,
+    FogColor,
+    FogDensity,
+    FogScale,
+    FogEnd,
 
-    DirtyFFVertexData,
-    DirtyFFVertexBlend,
-    DirtyFFVertexShader,
-    DirtyFFPixelShader,
-    DirtyFFViewport,
-    DirtyFFPixelData,
-    DirtyProgVertexShader,
-    DirtySharedPixelShaderData,
-    ValidSampleMask,
-    DirtyDepthBounds,
-    DirtyPointScale,
+    FFVertexData,
+    FFVertexBlend,
+    FFVertexShader,
+    FFPixelShader,
+    FFViewport,
+    FFPixelData,
+    SharedPixelShaderData,
+    DepthBounds,
+    PointScale,
 
-    InScene,
-
-    DirtySpecializationEntries,
+    SpecializationEntries,
   };
 
-  using D3D9DeviceFlags = Flags<D3D9DeviceFlag>;
+  using D3D9DeviceDirtyFlags = Flags<D3D9DeviceDirtyFlag>;
 
   enum class D3D9DeviceLostState {
     Ok = 0,
@@ -933,8 +929,6 @@ namespace dxvk {
     void BeginFrame(Rc<DxvkLatencyTracker> LatencyTracker, uint64_t FrameId);
     void EndFrame(Rc<DxvkLatencyTracker> LatencyTracker);
 
-    void UpdateActiveRTs(uint32_t index);
-
     template <uint32_t Index>
     void UpdateAnyColorWrites();
 
@@ -1036,10 +1030,10 @@ namespace dxvk {
 
     inline void* CopySoftwareConstants(D3D9ConstantBuffer& dstBuffer, const void* src, uint32_t size);
 
-    template <DxsoProgramType ShaderStage, typename HardwareLayoutType, typename SoftwareLayoutType, typename ShaderType>
+    template <D3D9ShaderType ShaderStage, typename HardwareLayoutType, typename SoftwareLayoutType, typename ShaderType>
     inline void UploadConstantSet(const SoftwareLayoutType& Src, const D3D9ConstantLayout& Layout, const ShaderType& Shader);
 
-    template <DxsoProgramType ShaderStage>
+    template <D3D9ShaderType ShaderStage>
     void UploadConstants();
 
     void UpdateClipPlanes();
@@ -1074,6 +1068,8 @@ namespace dxvk {
 
     void MarkTextureBindingDirty(IDirect3DBaseTexture9* texture);
 
+    bool SamplerUsesBorderColor(DWORD Sampler) const;
+
     HRESULT STDMETHODCALLTYPE SetRenderTargetInternal(
             DWORD              RenderTargetIndex,
             IDirect3DSurface9* pRenderTarget);
@@ -1089,9 +1085,12 @@ namespace dxvk {
 
     void EnsureSamplerLimit();
 
-    template <DxsoProgramType ShaderStage>
+    template <D3D9ShaderType ShaderStage>
     void BindShader(
-      const D3D9CommonShader*                 pShaderModule);
+    const D3D9CommonShader*                 pShaderModule);
+
+    template <D3D9ShaderType ShaderStage>
+    void BindFFUbershader();
 
     void BindInputLayout();
 
@@ -1134,16 +1133,14 @@ namespace dxvk {
 
     void ResolveZ();
 
-    void TransitionImage(D3D9CommonTexture* pResource, VkImageLayout NewLayout);
-
     void TransformImage(
             D3D9CommonTexture*       pResource,
       const VkImageSubresourceRange* pSubresources,
             VkImageLayout            OldLayout,
             VkImageLayout            NewLayout);
 
-    const D3D9ConstantLayout& GetVertexConstantLayout() { return m_consts[DxsoProgramType::VertexShader].layout; }
-    const D3D9ConstantLayout& GetPixelConstantLayout()  { return m_consts[DxsoProgramType::PixelShader].layout; }
+    const D3D9ConstantLayout& GetVertexConstantLayout() { return m_consts[uint32_t(D3D9ShaderType::VertexShader)].layout; }
+    const D3D9ConstantLayout& GetPixelConstantLayout()  { return m_consts[uint32_t(D3D9ShaderType::PixelShader)].layout; }
 
     void ResetState(D3DPRESENT_PARAMETERS* pPresentationParameters);
     HRESULT ResetSwapChain(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode);
@@ -1272,6 +1269,10 @@ namespace dxvk {
       return m_d3d9On12Args.Enable9On12;
     }
 
+    D3D9Adapter* GetAdapter() const {
+      return m_adapter;
+    }
+
   private:
 
     template<bool AllowFlush = true, typename Cmd>
@@ -1324,7 +1325,9 @@ namespace dxvk {
     /**
      * \brief Waits until the amount of used staging memory is below a certain threshold.
      */
-    void WaitStagingBuffer();
+    void ThrottleAllocation();
+
+    DxvkStagingBufferStats GetStagingMemoryStatistics() const;
 
     HRESULT               CreateShaderModule(
             D3D9CommonShader*     pShaderModule,
@@ -1362,10 +1365,10 @@ namespace dxvk {
     }
 
     // So we don't do OOB.
-    template <DxsoProgramType  ProgramType,
+    template <D3D9ShaderType   ShaderType,
               D3D9ConstantType ConstantType>
     inline static constexpr uint32_t DetermineSoftwareRegCount() {
-      constexpr bool isVS = ProgramType == DxsoProgramType::VertexShader;
+      constexpr bool isVS = ShaderType == D3D9ShaderType::VertexShader;
 
       switch (ConstantType) {
         default:
@@ -1376,10 +1379,10 @@ namespace dxvk {
     }
 
     // So we don't copy more than we need.
-    template <DxsoProgramType  ProgramType,
+    template <D3D9ShaderType   ShaderType,
               D3D9ConstantType ConstantType>
     inline uint32_t DetermineHardwareRegCount() const {
-      const auto& layout = m_consts[ProgramType].layout;
+      const auto& layout = m_consts[uint32_t(ShaderType)].layout;
 
       switch (ConstantType) {
         default:
@@ -1394,7 +1397,7 @@ namespace dxvk {
     }
 
     template <
-      DxsoProgramType  ProgramType,
+      D3D9ShaderType   ShaderType,
       D3D9ConstantType ConstantType,
       typename         T>
       HRESULT SetShaderConstants(
@@ -1403,7 +1406,7 @@ namespace dxvk {
               UINT  Count);
 
     template <
-      DxsoProgramType  ProgramType,
+      D3D9ShaderType   ShaderType,
       D3D9ConstantType ConstantType,
       typename         T>
     HRESULT GetShaderConstants(
@@ -1411,8 +1414,8 @@ namespace dxvk {
             T*   pConstantData,
             UINT Count) {
       auto GetHelper = [&] (const auto& set) {
-        const     uint32_t regCountHardware = DetermineHardwareRegCount<ProgramType, ConstantType>();
-        constexpr uint32_t regCountSoftware = DetermineSoftwareRegCount<ProgramType, ConstantType>();
+        const     uint32_t regCountHardware = DetermineHardwareRegCount<ShaderType, ConstantType>();
+        constexpr uint32_t regCountSoftware = DetermineSoftwareRegCount<ShaderType, ConstantType>();
 
         if (StartRegister + Count > regCountSoftware)
           return D3DERR_INVALIDCALL;
@@ -1456,7 +1459,7 @@ namespace dxvk {
         return D3D_OK;
       };
 
-      return ProgramType == DxsoProgramTypes::VertexShader
+      return ShaderType == D3D9ShaderType::VertexShader
         ? GetHelper(m_state.vsConsts)
         : GetHelper(m_state.psConsts);
     }
@@ -1480,10 +1483,13 @@ namespace dxvk {
     void UpdateAlphaTestSpec(VkCompareOp alphaOp, uint32_t precision);
     void UpdateVertexBoolSpec(uint32_t value);
     void UpdatePixelBoolSpec(uint32_t value);
-    void UpdatePixelShaderSamplerSpec(uint32_t types, uint32_t projections, uint32_t fetch4);
-    void UpdateCommonSamplerSpec(uint32_t boundMask, uint32_t depthMask, uint32_t drefMask);
+    void UpdatePixelShaderSamplerSpec(uint32_t types, uint32_t fetch4);
+    void UpdateCommonSamplerSpec(uint32_t boundMask, uint32_t depthMask, uint32_t drefMask, uint32_t projections);
     void UpdatePointModeSpec(uint32_t mode);
     void UpdateFogModeSpec(bool fogEnabled, D3DFOGMODE vertexFogMode, D3DFOGMODE pixelFogMode);
+
+    D3D9FFShaderKeyVS BuildFFKeyVS(D3D9FF_VertexBlendMode vertexBlendMode, bool indexedVertexBlend) const;
+    D3D9FFShaderKeyFS BuildFFKeyFS() const;
 
     void BindSpecConstants();
 
@@ -1564,7 +1570,19 @@ namespace dxvk {
 
     GpuFlushType GetMaxFlushType() const;
 
+    bool ValidateSharedTexture(
+      HANDLE                          handle,
+      D3DRESOURCETYPE                 type,
+      const D3D9_COMMON_TEXTURE_DESC& textureDesc) const;
+
+    bool ValidateSharedBuffer(
+      HANDLE                        handle,
+      const dxvk::D3D9_BUFFER_DESC& bufferDesc) const;
+
+    bool HasFormatsUnlocked() const { return m_unlockAdditionalFormats; }
+
     Com<D3D9InterfaceEx>            m_parent;
+    D3D9Options                     m_d3d9Options;
     D3DDEVTYPE                      m_deviceType;
     HWND                            m_window;
     WORD                            m_behaviorFlags;
@@ -1607,13 +1625,15 @@ namespace dxvk {
     Rc<sync::Fence>                 m_stagingBufferFence;
     VkDeviceSize                    m_stagingMemorySignaled = 0ull;
 
+    VkDeviceSize                    m_discardMemoryCounter = 0u;
+    VkDeviceSize                    m_discardMemoryOnFlush = 0u;
+
     D3D9Cursor                      m_cursor;
 
     Com<D3D9Surface, false>         m_autoDepthStencil;
 
     Com<D3D9SwapChainEx, false>     m_implicitSwapchain;
 
-    const D3D9Options               m_d3d9Options;
     DxsoOptions                     m_dxsoOptions;
 
     std::unordered_map<
@@ -1624,7 +1644,7 @@ namespace dxvk {
     D3D9Multithread                 m_multithread;
     D3D9InputAssemblyState          m_iaState;
 
-    D3D9DeviceFlags                 m_flags;
+    D3D9DeviceDirtyFlags            m_dirty;
 
     D3D9TextureSlotTracking         m_textureSlotTracking;
 
@@ -1646,6 +1666,9 @@ namespace dxvk {
     bool                            m_atocEnabled      = false;
     bool                            m_nvdbEnabled      = false;
 
+    bool                            m_inScene          = false;
+    bool                            m_validSampleMask  = false;
+
     VkImageLayout                   m_hazardLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     bool                            m_usingGraphicsPipelines = false;
@@ -1657,7 +1680,7 @@ namespace dxvk {
     uint32_t                        m_robustSSBOAlignment     = 1;
     uint32_t                        m_robustUBOAlignment      = 1;
 
-    D3D9ConstantSets                m_consts[DxsoProgramTypes::Count];
+    D3D9ConstantSets                m_consts[uint32_t(D3D9ShaderType::PixelShader) + 1];
 
     D3D9UserDefinedAnnotation*      m_annotation = nullptr;
 
@@ -1708,6 +1731,8 @@ namespace dxvk {
     // Written by CS thread
     alignas(CACHE_LINE_SIZE)
     std::atomic<uint64_t>           m_lastSamplerStats = { 0u };
+
+    bool m_unlockAdditionalFormats = false;
   };
 
 }

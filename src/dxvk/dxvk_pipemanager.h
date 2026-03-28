@@ -305,8 +305,7 @@ namespace dxvk {
     DxvkPipelineStats         m_stats;
     Rc<DxvkPipelineCompiler>  m_compiler;
 
-    dxvk::mutex m_mutex;
-
+    dxvk::mutex m_layoutMutex;
     std::unordered_map<
       DxvkDescriptorSetLayoutKey,
       DxvkDescriptorSetLayout,
@@ -316,6 +315,8 @@ namespace dxvk {
       DxvkPipelineLayoutKey,
       DxvkPipelineLayout,
       DxvkHash, DxvkEq> m_pipelineLayouts;
+
+    dxvk::mutex m_pipelineMutex;
 
     std::unordered_map<
       DxvkGraphicsPipelineVertexInputState,
@@ -352,9 +353,6 @@ namespace dxvk {
 
     DxvkShaderPipelineLibrary* findPipelineLibraryLocked(
       const DxvkShaderPipelineLibraryKey& key);
-
-    bool canPrecompileShader(
-      const Rc<DxvkShader>& shader) const;
 
   };
 

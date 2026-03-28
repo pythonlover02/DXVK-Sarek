@@ -4,6 +4,7 @@
 #include "d3d11_context_imm.h"
 #include "d3d11_device.h"
 
+#include "../util/util_win32_compat.h"
 #include "../util/util_shared_res.h"
 
 namespace dxvk {
@@ -13,10 +14,6 @@ namespace dxvk {
           D3D11Device*    pDevice)
   : m_resource(pResource),
     m_device(pDevice) {
-
-    m_supported = m_device->GetDXVKDevice()->features().khrWin32KeyedMutex
-               && m_device->GetDXVKDevice()->vkd()->wine_vkAcquireKeyedMutex != nullptr
-               && m_device->GetDXVKDevice()->vkd()->wine_vkReleaseKeyedMutex != nullptr;
   }
 
 
@@ -84,16 +81,23 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D11DXGIKeyedMutex::AcquireSync(
           UINT64                  Key,
           DWORD                   dwMilliseconds) {
-    if (!m_supported) {
+    D3D11CommonTexture* texture = GetCommonTexture(m_resource);
+    Rc<DxvkDevice> dxvkDevice = m_device->GetDXVKDevice();
+
+    auto keyedMutex = texture->GetImage()->getKeyedMutex();
+    if (keyedMutex)
+      return keyedMutex->AcquireSync(Key, dwMilliseconds);
+
+    /* try legacy Proton shared resource implementation */
+
+    if (!m_device->GetDXVKDevice()->features().khrWin32KeyedMutex
+        || m_device->GetDXVKDevice()->vkd()->wine_vkAcquireKeyedMutex == nullptr) {
       if (!m_warned) {
         m_warned = true;
         Logger::err("D3D11DXGIKeyedMutex::AcquireSync: Not supported");
       }
       return S_OK;
     }
-
-    D3D11CommonTexture* texture = GetCommonTexture(m_resource);
-    Rc<DxvkDevice> dxvkDevice = m_device->GetDXVKDevice();
 
     VkResult vr = dxvkDevice->vkd()->wine_vkAcquireKeyedMutex(
       dxvkDevice->handle(), texture->GetImage()->getMemoryInfo().memory, Key, dwMilliseconds);
@@ -107,9 +111,6 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D11DXGIKeyedMutex::ReleaseSync(
           UINT64                  Key) {
-    if (!m_supported)
-      return S_OK;
-
     D3D11CommonTexture* texture = GetCommonTexture(m_resource);
     Rc<DxvkDevice> dxvkDevice = m_device->GetDXVKDevice();
 
@@ -123,6 +124,17 @@ namespace dxvk {
 
       D3D10DeviceLock lock = context->LockContext();
       context->WaitForResource(*texture->GetImage(), DxvkCsThread::SynchronizeAll, D3D11_MAP_READ_WRITE, 0);
+    }
+
+    auto keyedMutex = texture->GetImage()->getKeyedMutex();
+    if (keyedMutex)
+      return keyedMutex->ReleaseSync(Key);
+
+    /* try legacy Proton shared resource implementation */
+
+    if (!m_device->GetDXVKDevice()->features().khrWin32KeyedMutex
+        || m_device->GetDXVKDevice()->vkd()->wine_vkReleaseKeyedMutex == nullptr) {
+      return S_OK;
     }
 
     VkResult vr = dxvkDevice->vkd()->wine_vkReleaseKeyedMutex(
@@ -220,6 +232,14 @@ namespace dxvk {
       return S_OK;
     }
 
+    D3DKMT_HANDLE global = texture->GetImage()->storage()->kmtGlobal();
+    if (global) {
+      *pSharedHandle = reinterpret_cast<HANDLE>(global);
+      return S_OK;
+    }
+
+    /* try legacy Proton shared resource implementation */
+
     HANDLE kmtHandle = texture->GetImage()->sharedHandle();
 
     if (kmtHandle == INVALID_HANDLE_VALUE)
@@ -281,6 +301,38 @@ namespace dxvk {
         !(texture->Desc()->MiscFlags & D3D11_RESOURCE_MISC_SHARED_NTHANDLE))
       return E_INVALIDARG;
 
+    OBJECT_ATTRIBUTES attr = { };
+    attr.Length = sizeof(attr);
+    attr.SecurityDescriptor = const_cast<SECURITY_ATTRIBUTES*>(pAttributes);
+
+    WCHAR buffer[MAX_PATH];
+    UNICODE_STRING name_str;
+    if (lpName) {
+        DWORD session, len, name_len = wcslen(lpName);
+
+        ProcessIdToSessionId(GetCurrentProcessId(), &session);
+        len = swprintf(buffer, ARRAYSIZE(buffer), L"\\Sessions\\%u\\BaseNamedObjects\\", session);
+        memcpy(buffer + len, lpName, (name_len + 1) * sizeof(WCHAR));
+        name_str.MaximumLength = name_str.Length = (len + name_len) * sizeof(WCHAR);
+        name_str.MaximumLength += sizeof(WCHAR);
+        name_str.Buffer = buffer;
+
+        attr.ObjectName = &name_str;
+        attr.Attributes = OBJ_CASE_INSENSITIVE;
+    }
+
+    D3DKMT_HANDLE local = texture->GetImage()->storage()->kmtLocal();
+    auto keyedMutex = texture->GetImage()->getKeyedMutex();
+    if (keyedMutex) {
+      D3DKMT_HANDLE handles[] = {local, keyedMutex->kmtLocal(), keyedMutex->getSyncObject()->kmtLocal()};
+      if (!D3DKMTShareObjects(3, handles, &attr, dwAccess, pHandle))
+        return S_OK;
+    } else if (!D3DKMTShareObjects(1, &local, &attr, dwAccess, pHandle)) {
+      return S_OK;
+    }
+
+    /* try legacy Proton shared resource implementation */
+
     if (lpName)
       Logger::warn("Naming shared resources not supported");
 
@@ -297,9 +349,30 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D11DXGIResource::CreateSubresourceSurface(
           UINT                    index,
           IDXGISurface2**         ppSurface) {
-    InitReturnPtr(ppSurface);
-    Logger::err("D3D11DXGIResource::CreateSubresourceSurface: Stub");
-    return E_NOTIMPL;
+    auto buffer  = GetCommonBuffer (m_resource);
+    auto texture = GetCommonTexture(m_resource);
+    UINT subresourceCount;
+
+    if (buffer) {
+      subresourceCount = 1;
+    } else if (texture) {
+      D3D11_RESOURCE_DIMENSION resourceDim;
+
+      m_resource->GetType(&resourceDim);
+      if (resourceDim == D3D11_RESOURCE_DIMENSION_TEXTURE3D && texture->Desc()->Depth > 1)
+        return E_INVALIDARG;
+
+      subresourceCount = texture->CountSubresources();
+    } else {
+      return DXGI_ERROR_INVALID_CALL;
+    }
+
+    if (index >= subresourceCount)
+      return E_INVALIDARG;
+
+    const Com<D3D11DXGISurface> surface = new D3D11DXGISurface(m_resource, index);
+    *ppSurface = surface.ref();
+    return S_OK;
   }
   
 

@@ -114,6 +114,7 @@ namespace dxvk {
     R2VB = MAKEFOURCC('R', '2', 'V', 'B'),
     COPM = MAKEFOURCC('C', 'O', 'P', 'M'),
     SSAA = MAKEFOURCC('S', 'S', 'A', 'A'),
+    NVCS = MAKEFOURCC('N', 'V', 'C', 'S'),
     NVHS = MAKEFOURCC('N', 'V', 'H', 'S'),
     NVHU = MAKEFOURCC('N', 'V', 'H', 'U'),
 
@@ -221,6 +222,9 @@ namespace dxvk {
     const DxvkFormatInfo* GetUnsupportedFormatInfo(
       D3D9Format            Format) const;
 
+    void RefreshFormatSupport(
+      const D3D9Adapter*          pParent);
+
   private:
 
     bool CheckImageFormatSupport(
@@ -228,13 +232,14 @@ namespace dxvk {
             VkFormat              Format,
             VkFormatFeatureFlags2 Features) const;
 
-    D3D9Adapter* m_parent = nullptr;
+    bool m_isExtended;
 
     bool m_d24s8Support;
     bool m_d16s8Support;
 
     bool m_dfSupport;
     bool m_x4r4g4b4Support;
+    bool m_w11v11u10Support;
     bool m_d16lockableSupport;
 
     bool m_d32flockableSupport;

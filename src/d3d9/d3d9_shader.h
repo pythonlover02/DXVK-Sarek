@@ -1,7 +1,11 @@
 #pragma once
 
-#include "d3d9_resource.h"
 #include "../dxso/dxso_module.h"
+
+#include "../dxvk/dxvk_shader.h"
+#include "../dxvk/dxvk_shader_key.h"
+
+#include "d3d9_resource.h"
 #include "d3d9_util.h"
 #include "d3d9_mem.h"
 
@@ -26,7 +30,7 @@ namespace dxvk {
     D3D9CommonShader(
             D3D9DeviceEx*         pDevice,
             VkShaderStageFlagBits ShaderStage,
-      const DxvkShaderKey&        Key,
+      const DxvkShaderHash&       Key,
       const DxsoModuleInfo*       pDxbcModuleInfo,
       const void*                 pShaderBytecode,
       const DxsoAnalysisInfo&     AnalysisInfo,
@@ -214,7 +218,7 @@ namespace dxvk {
     dxvk::mutex m_mutex;
     
     std::unordered_map<
-      DxvkShaderKey,
+      DxvkShaderHash,
       D3D9CommonShader,
       DxvkHash, DxvkEq> m_modules;
     

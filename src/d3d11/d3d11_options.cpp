@@ -13,7 +13,7 @@ namespace dxvk {
   }
 
   D3D11Options::D3D11Options(const Config& config) {
-    this->forceVolatileTgsmAccess = config.getOption<bool>("d3d11.forceVolatileTgsmAccess", false);
+    this->forceComputeLdsBarriers = config.getOption<bool>("d3d11.forceComputeLdsBarriers", false);
     this->forceComputeUavBarriers = config.getOption<bool>("d3d11.forceComputeUavBarriers", false);
     this->relaxedBarriers       = config.getOption<bool>("d3d11.relaxedBarriers", false);
     this->relaxedGraphicsBarriers = config.getOption<bool>("d3d11.relaxedGraphicsBarriers", false);
@@ -21,8 +21,6 @@ namespace dxvk {
     this->samplerAnisotropy     = config.getOption<int32_t>("d3d11.samplerAnisotropy", -1);
     this->samplerLodBias        = config.getOption<float>("d3d11.samplerLodBias", 0.0f);
     this->clampNegativeLodBias  = config.getOption<bool>("d3d11.clampNegativeLodBias", false);
-    this->invariantPosition     = config.getOption<bool>("d3d11.invariantPosition", true);
-    this->floatControls         = config.getOption<bool>("d3d11.floatControls", true);
     this->forceSampleRateShading = config.getOption<bool>("d3d11.forceSampleRateShading", false);
     this->disableMsaa           = config.getOption<bool>("d3d11.disableMsaa", false);
     this->enableContextLock     = config.getOption<bool>("d3d11.enableContextLock", false);
@@ -31,7 +29,6 @@ namespace dxvk {
     this->exposeDriverCommandLists = config.getOption<bool>("d3d11.exposeDriverCommandLists", true);
     this->reproducibleCommandStream = config.getOption<bool>("d3d11.reproducibleCommandStream", false);
     this->disableDirectImageMapping = config.getOption<bool>("d3d11.disableDirectImageMapping", false);
-    this->sincosEmulation       = config.getOption<Tristate>("d3d11.sincosEmulation", Tristate::Auto);
 
     // Clamp LOD bias so that people don't abuse this in unintended ways
     this->samplerLodBias = dxvk::fclamp(this->samplerLodBias, -2.0f, 1.0f);

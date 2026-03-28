@@ -3,8 +3,6 @@
 #include <mutex>
 #include <vector>
 
-#include "../dxbc/dxbc_options.h"
-
 #include "../dxgi/dxgi_object.h"
 #include "../dxgi/dxgi_interfaces.h"
 
@@ -503,13 +501,13 @@ namespace dxvk {
     
     const DXGIVkFormatTable         m_d3d11Formats;
     const D3D11Options              m_d3d11Options;
-    const DxbcOptions               m_dxbcOptions;
-    
+
+    DxvkShaderOptions               m_shaderOptions = { };
+
     DxvkCsChunkPool                 m_csChunkPool;
-    
+
     D3D11Initializer*               m_initializer = nullptr;
     D3D10Device*                    m_d3d10Device = nullptr;
-    Com<D3D11ImmediateContext, false> m_context;
 
     D3D11StateObjectSet<D3D11BlendState>        m_bsStateObjects;
     D3D11StateObjectSet<D3D11DepthStencilState> m_dsStateObjects;
@@ -520,14 +518,31 @@ namespace dxvk {
     D3D_FEATURE_LEVEL               m_maxFeatureLevel;
     D3D11DeviceFeatures             m_deviceFeatures;
 
+    Com<D3D11ImmediateContext, false> m_context;
+
     HRESULT CreateShaderModule(
             D3D11CommonShader*      pShaderModule,
-            DxvkShaderKey           ShaderKey,
+            ID3D11ClassLinkage*     pLinkage,
+      const DxvkShaderHash&         ShaderKey,
       const void*                   pShaderBytecode,
             size_t                  BytecodeLength,
-            ID3D11ClassLinkage*     pClassLinkage,
-      const DxbcModuleInfo*         pModuleInfo);
-    
+      const DxvkIrShaderCreateInfo& ModuleInfo);
+
+    DxvkShaderHash ComputeShaderKey(
+            VkShaderStageFlagBits   Stage,
+      const void*                   pShaderBytecode,
+            size_t                  BytecodeLength);
+
+    DxvkShaderHash ComputeShaderKey(
+            VkShaderStageFlagBits   Stage,
+      const void*                   pShaderBytecode,
+            size_t                  BytecodeLength,
+      const D3D11_SO_DECLARATION_ENTRY* pSODeclaration,
+            UINT                    NumEntries,
+      const UINT*                   pBufferStrides,
+            UINT                    NumStrides,
+            UINT                    RasterizedStream);
+
     HRESULT GetFormatSupportFlags(
             DXGI_FORMAT             Format,
             UINT*                   pFlags1,
@@ -556,7 +571,16 @@ namespace dxvk {
             D3D11CommonTexture*         pTexture,
             UINT                        Subresource,
       const D3D11_BOX*                  pBox);
-    
+
+    static DxvkShaderOptions GetShaderOptions(
+      const Rc<DxvkDevice>&             Device,
+      const D3D11Options&               Options);
+
+    static bool ConvertRuntimeDescriptor(
+      UINT                       size,
+      const union d3dkmt_desc&   d3dkmt,
+      D3D11_COMMON_TEXTURE_DESC* desc);
+
   };
   
   

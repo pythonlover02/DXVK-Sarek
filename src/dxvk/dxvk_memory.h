@@ -334,7 +334,7 @@ namespace dxvk {
     /// View type
     VkImageViewType viewType = VK_IMAGE_VIEW_TYPE_MAX_ENUM;
     /// View usage flags
-    VkImageUsageFlagBits usage = VkImageUsageFlagBits(0u);
+    VkImageUsageFlags usage = VkImageUsageFlags(0u);
     /// View format
     VkFormat format = VK_FORMAT_UNDEFINED;
     /// Image layout that the view will be used as
@@ -551,6 +551,24 @@ namespace dxvk {
     }
 
     /**
+     * \brief D3DKMT resource local handle
+     * \returns The resource D3DKMT local handle
+     * \returns \c 0 if resource is not shared
+     */
+    D3DKMT_HANDLE kmtLocal() const {
+      return m_kmtLocal;
+    }
+
+    /**
+     * \brief D3DKMT resource global handle
+     * \returns The resource D3DKMT global handle
+     * \returns \c 0 if resource is not shared or shared with NT handle
+     */
+    D3DKMT_HANDLE kmtGlobal() const {
+      return m_kmtGlobal;
+    }
+
+    /**
      * \brief Queries memory info
      * \returns Memory info
      */
@@ -644,6 +662,8 @@ namespace dxvk {
 
     VkImage                     m_image = VK_NULL_HANDLE;
     DxvkResourceImageViewMap*   m_imageViews = nullptr;
+    D3DKMT_HANDLE               m_kmtLocal = 0;
+    D3DKMT_HANDLE               m_kmtGlobal = 0;
 
     DxvkSparsePageTable*        m_sparsePageTable = nullptr;
 
@@ -654,6 +674,8 @@ namespace dxvk {
 
     DxvkResourceAllocation*     m_prevInChunk = nullptr;
     DxvkResourceAllocation*     m_nextInChunk = nullptr;
+
+    void initKmtHandles(VkExternalMemoryHandleTypeFlagBits handleType);
 
     void destroyBufferViews();
 
@@ -992,6 +1014,8 @@ namespace dxvk {
     VkMemoryPropertyFlags properties = 0u;
     /// Allocation mode flags
     DxvkAllocationModes mode = 0u;
+    /// Shared handle type
+    VkExternalMemoryHandleTypeFlagBits handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_FLAG_BITS_MAX_ENUM;
   };
 
 
@@ -1117,6 +1141,10 @@ namespace dxvk {
     constexpr static VkBufferUsageFlags DescriptorBufferUsage =
       VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
       VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT;
+
+    // Buffer usage flag for descriptor heaps
+    constexpr static VkBufferUsageFlags DescriptorHeapUsage =
+      VK_BUFFER_USAGE_DESCRIPTOR_HEAP_BIT_EXT;
   public:
     
     DxvkMemoryAllocator(DxvkDevice* device);

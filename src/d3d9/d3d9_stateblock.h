@@ -66,19 +66,20 @@ namespace dxvk {
     bit::bitvector                                      lightEnabledChanges;
   };
 
-  enum class D3D9StateBlockType :uint32_t {
+  enum class D3D9StateBlockType : uint8_t {
     None,
-    VertexState,
+    All,
     PixelState,
-    All
+    VertexState,
+    Unknown
   };
 
   inline D3D9StateBlockType ConvertStateBlockType(D3DSTATEBLOCKTYPE type) {
     switch (type) {
+      case D3DSBT_ALL:         return D3D9StateBlockType::All;
       case D3DSBT_PIXELSTATE:  return D3D9StateBlockType::PixelState;
       case D3DSBT_VERTEXSTATE: return D3D9StateBlockType::VertexState;
-      default:
-      case D3DSBT_ALL:         return D3D9StateBlockType::All;
+      default:                 return D3D9StateBlockType::Unknown;
     }
   }
 
@@ -344,7 +345,7 @@ namespace dxvk {
     }
 
     template <
-      DxsoProgramType  ProgramType,
+      D3D9ShaderType   ShaderType,
       D3D9ConstantType ConstantType,
       typename         T>
     HRESULT SetShaderConstants(
@@ -352,7 +353,7 @@ namespace dxvk {
       const T*    pConstantData,
             UINT  Count) {
       auto SetHelper = [&](auto& setCaptures) {
-        if constexpr (ProgramType == DxsoProgramTypes::VertexShader)
+        if constexpr (ShaderType == D3D9ShaderType::VertexShader)
           m_captures.flags.set(D3D9CapturedStateFlag::VsConstants);
         else
           m_captures.flags.set(D3D9CapturedStateFlag::PsConstants);
@@ -368,7 +369,7 @@ namespace dxvk {
         }
 
         UpdateStateConstants<
-          ProgramType,
+          ShaderType,
           ConstantType,
           T>(
             &m_state,
@@ -380,7 +381,7 @@ namespace dxvk {
         return D3D_OK;
       };
 
-      return ProgramType == DxsoProgramTypes::VertexShader
+      return ShaderType == D3D9ShaderType::VertexShader
         ? SetHelper(m_captures.vsConsts)
         : SetHelper(m_captures.psConsts);
     }

@@ -55,6 +55,10 @@ namespace dxvk {
     { R"(\\ACShadows\.exe$)", {{
       { "dxgi.enableDummyCompositionSwapchain", "True" }
     }} },
+    /* Anno 117: Uses composition swapchain        */
+    { R"(\\Anno117\.exe$)", {{
+      { "dxgi.enableDummyCompositionSwapchain", "True" }
+    }} },
 
     /**********************************************/
     /* D3D11 GAMES                                */
@@ -103,6 +107,12 @@ namespace dxvk {
       { "dxgi.hideNvidiaGpu",              "False" },
       { "dxgi.hideIntelGpu",                "True" },
     }} },
+    /* Far Cry 5 and New Dawn: Unsynchronized     *
+     * write-after-read in some compute shaders   *
+     * cause invisible terrain on some GPUs.      */
+    { R"(\\FarCry(5|NewDawn)\.exe$)", {{
+      { "d3d11.forceComputeLdsBarriers",    "True" },
+    }} },
     /* Frostpunk: Renders one frame with D3D9     *
      * after creating the DXGI swap chain         */
     { R"(\\Frostpunk\.exe$)", {{
@@ -119,7 +129,7 @@ namespace dxvk {
     }} },
     /* Fifa '19+: Binds typed buffer SRV to shader *
      * that expects raw/structured buffer SRV      */
-    { R"(\\FIFA(19|[2-9][0-9])(_demo)?\.exe$)", {{
+    { R"(\\FIFA(19|20|21|22)(_demo)?\.exe$)", {{
       { "dxvk.useRawSsbo",                  "True" },
     }} },
     /* Resident Evil 2/3: Ignore WaW hazards      */
@@ -165,6 +175,16 @@ namespace dxvk {
     }} },
     /* H2M-Mod - Modern Warfare Remastered        */
     { R"(\\h2m-mod\.exe$)", {{
+      { "dxgi.customVendorId",              "10de" },
+    }} },
+    /* HMW-Mod - Modern Warfare Remastered        *
+     * AMD AGS crash                              */
+    { R"(\\hmw-mod\.exe$)", {{
+      { "dxgi.customVendorId",              "10de" },
+    }} },
+    /* Infinite Warfare                           *
+     * AMD AGS crash                              */
+    { R"(\\iw7(_ship|-mod)\.exe$)", {{
       { "dxgi.customVendorId",              "10de" },
     }} },
     /* Modern Warfare 2 Campaign Remastered       *
@@ -223,7 +243,7 @@ namespace dxvk {
     /* F1 games - do not synchronize TGSM access  *
      * in a compute shader, causing artifacts     */
     { R"(\\F1_20(1[89]|[2-9][0-9])\.exe$)", {{
-      { "d3d11.forceVolatileTgsmAccess",    "True" },
+      { "d3d11.forceComputeLdsBarriers",    "True" },
     }} },
     /* Darksiders Warmastered - apparently reads  *
      * from write-only mapped buffers             */
@@ -250,25 +270,23 @@ namespace dxvk {
     { R"(\\armoredwarfare\.exe$)", {{
       { "d3d11.cachedDynamicResources",        "c" },
     }} },
-    /* Shadow of the Tomb Raider - invariant      *
-     * position breaks character rendering on NV  */
-    { R"(\\SOTTR\.exe$)", {{
-      { "d3d11.invariantPosition",         "False" },
-      { "d3d11.floatControls",             "False" },
-    }} },
-    /* Nioh 2                                     */
+    /* Nioh 2 - Fixes some fires looking glitchy  */
     { R"(\\nioh2\.exe$)", {{
       { "dxgi.deferSurfaceCreation",        "True" },
+      { "dxvk.zeroMappedMemory",            "True" },
     }} },
     /* Crazy Machines 3 - crashes on long device  *
      * descriptions                               */
     { R"(\\cm3\.exe$)", {{
-      { "dxgi.customDeviceDesc",    "DXVK Adapter" },
+      { "dxgi.customDeviceDesc",            "DXVK Device" },
     }} },
-    /* World of Final Fantasy: Broken and useless *
-     * use of 4x MSAA throughout the renderer     */
+    /* World of Final Fantasy: Broken and useless use     *
+     * of 4x MSAA throughout the renderer. Water doesn't  *
+     * render if the GPU name contains "Radeon", clearly  *
+     * us plebs aren't worthy of the divine pixel liquid. */
     { R"(\\WOFF\.exe$)", {{
       { "d3d11.disableMsaa",                "True" },
+      { "dxgi.customDeviceDesc",            "DXVK Device" },
     }} },
     /* Mary Skelter 2 - Broken MSAA               */
     { R"(\\MarySkelter2\.exe$)", {{
@@ -334,17 +352,17 @@ namespace dxvk {
     /* Shantae and the Pirate's Curse             *
      * Game speeds up above 60 fps                */
     { R"(\\ShantaeCurse\.exe$)", {{
-      { "dxgi.maxFrameRate",                  "60" },
+      { "dxgi.maxFrameRate",                 "-60" },
     }} },
     /* Mighty Switch Force! Collection            *
      * Games speed up above 60 fps                */
     { R"(\\MSFC\.exe$)", {{
-      { "dxgi.maxFrameRate",                  "60" },
+      { "dxgi.maxFrameRate",                 "-60" },
     }} },
-    /* Battlefield: Bad Company 2                 *
-     * Gets rid of black flickering               */
-    { R"(\\BFBC2Game\.exe$)", {{
-      { "d3d11.floatControls",             "False" },
+    /* The Evil Within 2 *
+    * Game speeds up above 120 fps */
+    { R"(\\TEW2\.exe$)", {{
+      { "dxgi.maxFrameRate",                 "-120" },
     }} },
     /* Sonic Frontiers - flickering shadows and   *
      * vegetation when GPU-bound                  */
@@ -386,7 +404,7 @@ namespace dxvk {
      * Game speed increases when above 60 fps in  *
      * the tavern area                            */
     { R"(\\BLADESTORM Nightmare\\Launch_(EA|JP)\.exe$)", {{
-      { "dxgi.maxFrameRate",                  "60" },
+      { "dxgi.maxFrameRate",                 "-60" },
     }} },
     /* Vindictus d3d11 CPU bound perf, and work   *
      * around the game not properly initializing  *
@@ -445,7 +463,7 @@ namespace dxvk {
     /* The Hurricane of the Varstray              *
      * Too fast above 60fps                       */
     { R"(\\Varstray_steam(_demo)?\.exe$)", {{
-      { "dxgi.maxFrameRate",                  "60" },
+      { "dxgi.maxFrameRate",                 "-60" },
     }} },
     /* Watch Dogs 2 - ships broken compute shaders *
      * with no barriers when they are needed       */
@@ -469,11 +487,20 @@ namespace dxvk {
     }} },
     /* Guilty Gear - Speeds up above 60 fps         */
     { R"(\\GuiltyGear\.exe$)", {{
-      { "dxgi.maxFrameRate",                  "60" },
+      { "dxgi.maxFrameRate",                 "-60" },
     }} },
     /* Everybody's Gone to the Rapture - CPU perf   */
     { R"(\\Rapture_Release\.exe$)", {{
       { "d3d11.cachedDynamicResources",        "a" },
+    }} },
+    /* Total War Pharaoh Dynasties: Broken menu   *
+     * because the game doesn't manage to respect *
+     * pitch for an A8_UNORM image. Resolves are  *
+     * not needed because the game dynamically    *
+     * checks sample count in affected shaders.   */
+    { R"(\\Pharaoh\.exe$)", {{
+      { "d3d11.disableDirectImageMapping",  "True" },
+      { "dxvk.enableImplicitResolves",     "False" },
     }} },
 
     /**********************************************/
@@ -482,7 +509,6 @@ namespace dxvk {
 
     /* A Hat in Time                              */
     { R"(\\HatinTimeGame\.exe$)", {{
-      { "d3d9.strictPow",                  "False" },
       { "d3d9.lenientClear",                "True" },
     }} },
     /* Anarchy Online                             */
@@ -513,7 +539,7 @@ namespace dxvk {
     /* Sonic Adventure 2                          */
     { R"(\\Sonic Adventure 2\\(launcher|sonic2app)\.exe$)", {{
       { "d3d9.floatEmulation",            "Strict" },
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* The Sims 2,                                *
      * Body Shop,                                 *
@@ -529,7 +555,7 @@ namespace dxvk {
       { "d3d9.supportX4R4G4B4",            "False" },
       { "d3d9.maxAvailableMemory",          "2048" },
       { "d3d9.memoryTrackTest",             "True" },
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Dead Space                                 *
      * Uses the a NULL render target instead      *
@@ -538,14 +564,14 @@ namespace dxvk {
      * Built-in Vsync Locks the game to 30 FPS    */
     { R"(\\Dead Space\.exe$)", {{
       { "d3d9.supportDFFormats",           "False" },
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
       { "d3d9.presentInterval",                "1" },
     }} },
     /* Dead Space 2                               *
      * Physics issues above 60 FPS                *
      * Built-in Vsync Locks the game to 30 FPS    */
     { R"(\\deadspace2\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
       { "d3d9.presentInterval",                "1" },
     }} },
     /* Halo CE/HaloPC                             */
@@ -624,12 +650,12 @@ namespace dxvk {
      * D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY buffer. *
      * Legend flickers with next gen content option. */
     { R"(\\(trl|tra|tru)\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Everquest                                  */
     { R"(\\eqgame\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Dark Messiah of Might & Magic              */
     { R"(\\mm\.exe$)", {{
@@ -668,7 +694,7 @@ namespace dxvk {
     }} },
     /* Demon Stone breaks at frame rates > 60fps  */
     { R"(\\Demonstone\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Far Cry 1                                  *
      * Has worse water rendering on AMD GPUs      */
@@ -677,7 +703,7 @@ namespace dxvk {
     }} },
     /* Sine Mora EX                               */
     { R"(\\SineMoraEX\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Red Orchestra 2                            */
     { R"(\\ROGame\.exe$)", {{
@@ -710,11 +736,10 @@ namespace dxvk {
     /* BlazBlue Centralfiction                    */
     { R"(\\BBCF\.exe$)", {{
       { "d3d9.floatEmulation",            "Strict" },
-      { "d3d9.textureMemory",                  "0" },
     }} },
     /* Limbo                                      */
     { R"(\\limbo\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Escape from Tarkov launcher                *
      * Work around partial presentation issues    */
@@ -732,8 +757,8 @@ namespace dxvk {
      * Resolution change crash and cached         *
      * dynamic buffers for performance reasons    */
     { R"(\\eoa\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
-      { "d3d9.countLosableResources",      "False" },
+      { "d3d9.cachedWriteOnlyBuffers",        "True" },
+      { "d3d9.countLosableResources",         "False" },
     }} },
     /* Supreme Commander & Forged Alliance Forever */
     { R"(\\(SupremeCommander|ForgedAlliance)\.exe$)", {{
@@ -742,17 +767,17 @@ namespace dxvk {
     /* Bionic Commando                            *
      * Physics break at high fps                  */
     { R"(\\bionic_commando\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Beyond Good And Evil                       *
      * UI breaks at high fps                      */
     { R"(\\BGE\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* King Of Fighters XIII                      *
      * In-game speed increases on high FPS        */
     { R"(\\kof(xiii|13_win32_Release)\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* YS Origin                                  *
      * Helps very bad frametimes in some areas    */
@@ -763,17 +788,15 @@ namespace dxvk {
     { R"(\\SR2_pc\.exe$)", {{
       { "d3d9.textureMemory",                  "0" },
     }} },
-    /* Witcher 1: Very long loading times         *
+    /* The Witcher (2007)                         *
      * Inventory hair explosion at very high fps  */
     { R"(\\witcher\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
-      { "d3d9.maxFrameRate",                 "300" },
+      { "d3d9.maxFrameRate",                "-300" },
     }} },
     /* Guitar Hero World Tour                     *
      * Very prone to address space crashes        */
     { R"(\\(GHWT|GHWT_Definitive)\.exe$)", {{
       { "d3d9.textureMemory",                 "16" },
-      { "d3d9.allowDirectBufferMapping",   "False" },
     }} },
     /* The Ship (2004)                            */
     { R"(\\ship\.exe$)", {{
@@ -785,20 +808,13 @@ namespace dxvk {
     }} },
     /* Hammer World Editor                        */
     { R"(\\(hammer(plusplus)?|mallet|wc)\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
-    }} },
-    /* Dragon Age Origins                         *
-     * Keeps unmapping the same 3 1MB buffers     *
-     * thousands of times when you alt-tab out    *
-     * Causing it to crash OOM                    */
-    { R"(\\DAOrigins\.exe$)" , {{
-      { "d3d9.allowDirectBufferMapping",   "False" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Sonic & All-Stars Racing Transformed       *
      * Helps performance when Resizable BAR       *
      * is enabled                                 */
     { R"(\\ASN_App_PcDx9_Final\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Final Fantasy XIV - Direct3D 9 mode        *
      * Can crash with unmapping                   */
@@ -815,14 +831,14 @@ namespace dxvk {
     /* Battle Fantasia Revised Edition            *
      * Speedup above 60fps                        */
     { R"(\\bf10\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Codename Panzers Phase One/Two             *
      * Main menu won't render after intros        *
      * and CPU bound performance                  */
     { R"(\\(PANZERS|PANZERS_Phase_2)\.exe$)", {{
       { "d3d9.deferSurfaceCreation",        "True" },
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* DC Universe Online                         *
      * Freezes after alt tabbing                  */
@@ -842,7 +858,7 @@ namespace dxvk {
     }} },
     /* STEINS;GATE ELITE                          */
     { R"(\\SG_ELITE\\Game\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* The Incredibles                            */
     { R"(\\IncPC\.exe$)", {{
@@ -850,15 +866,15 @@ namespace dxvk {
     }} },
     /* Conflict Vietnam                           */
     { R"(\\Vietnam\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Project: Snowblind                         */
     { R"(\\Snowblind\.(SP|MP|exe)$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Aviary Attorney                            */
     { R"(\\Aviary Attorney\\nw\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Drakensang: The Dark Eye                   */
     { R"(\\drakensang\.exe$)", {{
@@ -870,12 +886,7 @@ namespace dxvk {
     }} },
     /* Battlestations Midway                      */
     { R"(\\Battlestationsmidway\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
-    }} },
-    /* SkyDrift                                   *
-     * Works around alt tab OOM crash             */
-    { R"(\\SkyDrift\.exe$)" , {{
-      { "d3d9.allowDirectBufferMapping",   "False" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Assassin's Creed 2                         *
      * Helps alt tab crash on Linux               */
@@ -884,7 +895,7 @@ namespace dxvk {
     }} },
     /* Sonic CD                                   */
     { R"(\\soniccd\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* UK Truck Simulator 1                       */
     { R"(\\UK Truck Simulator\\bin\\win_x86\\game\.exe$)", {{
@@ -903,7 +914,7 @@ namespace dxvk {
     }} },
     /* Dark Void - Crashes above 60fps in places  */
     { R"(\\ShippingPC-SkyGame\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* 9th Dawn II                                *
      * OpenGL game that also spins up d3d9        *
@@ -913,7 +924,7 @@ namespace dxvk {
     }} },
     /* Delta Force: Xtreme 1 & 2 - Performance    */
     { R"(\\(DFX|dfx2)\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Prototype                                  *
      * Incorrect shadows on AMD & Intel.          *
@@ -938,17 +949,17 @@ namespace dxvk {
     /* Dungeons and Dragons: Dragonshard          *
      * Massive FPS decreases in some scenes       */
     { R"(\\Dragonshard\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Battle for Middle-earth 2 and expansion    *
      * Slowdowns in certain scenarios             */
     { R"(\\(The Battle for Middle-earth( \(tm\))? II( Demo)?)"
       R"(|The Lord of the Rings, The Rise of the Witch-king)\\game\.dat$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* WRC4 - Audio breaks above 60fps            */
     { R"(\\WRC4\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Splinter Cell Conviction                   *
      * Unsupported GPU complaint                  */
@@ -964,11 +975,11 @@ namespace dxvk {
     /* APB: Reloaded                              *
      * Fixes frametime jumps when shooting        */
     { R"(\\APB\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Battle Mages - helps CPU bound perf        */
     { R"(\\Battle Mages\\mages\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Prince of Persia (2008) - Can get stuck    *
      * during loading at very high fps            */
@@ -978,7 +989,7 @@ namespace dxvk {
     /* F.E.A.R 1 & expansions                     *
      * Graphics glitches at very high fps         */
     { R"(\\FEAR(MP|XP|XP2)?\.exe$)", {{
-      { "d3d9.maxFrameRate",                 "360" },
+      { "d3d9.maxFrameRate",                "-360" },
     }} },
     /* Secret World Legends - d3d9 mode only sees *
      * 512MB vram locking higher graphics presets */
@@ -989,7 +1000,7 @@ namespace dxvk {
      * Set cached dynamic buffers to True to      *
      * improve perf on all hardware.              */
     { R"(\\(FarCry2|farcry2game)\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Dark Sector - Crashes in places            */
     { R"(\\DS\.exe$)", {{
@@ -998,7 +1009,7 @@ namespace dxvk {
     /* Arcana Heart 3 Love Max + Xtend version    *
      * Game speed is too fast above 60 fps        */
     { R"(\\(AH3LM|AALib)\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* May Payne 3 - Visual issues on drivers     *
      * such as ANV (and amdvlk when set to True)  */
@@ -1030,12 +1041,12 @@ namespace dxvk {
     /* Lego Indiana Jones: The Original Adventures *
      * Fix UI performance                          */
     { R"(\\LEGOIndy\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Lego Batman: The Videogame                 *
      * Fix UI performance                         */
     { R"((\\LEGOBatman|LegoBatman\\Game)\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Thumper - Fixes missing track              */
     { R"(\\THUMPER_dx9\.exe$)", {{
@@ -1064,7 +1075,7 @@ namespace dxvk {
      * game speed is too fast above 60 fps.       */
     { R"(\\Astebreed\.exe$)", {{
       { "d3d9.countLosableResources",      "False" },
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Dungeon Lords - Crash when saving game     */
     { R"(\\(DLSteamEdition|dlords)\.exe$)", {{
@@ -1090,7 +1101,7 @@ namespace dxvk {
     /* Psi-Ops: The Mindgate Conspiracy           *
      * Broken input and physics above 60 fps      */
     { R"(\\PsiOps\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Alone in the Dark (2008)                   *
      * Crashes when selecting the graphics menu   *
@@ -1103,6 +1114,48 @@ namespace dxvk {
     { R"(\\Scarface\.exe$)", {{
       { "d3d9.allowDiscard",               "False" },
     }} },
+    /* Heroes of Annihilated Empires              *
+     * Cursor and other animations play back too  *
+     * fast without a frame cap in place.         */
+    { R"(\\Heroes of Annihilated Empires.*\\engine\.exe$)", {{
+      { "d3d9.maxFrameRate",                 "-60" },
+    }} },
+    /* RaceRoom Racing Experience                 *
+     * Game depends on NvAPI_D3D9_StretchRectEx   */
+    { R"(\\RRRE(64)?\.exe$)", {{
+      { "d3d9.hideNvidiaGpu",               "True" },
+    }} },
+    /* Blitzkrieg 2 - Startup crash               */
+    { R"(\\Blitzkrieg 2( - Fall of the Reich| - Liberation)?\\bin\\game\.exe$)", {{
+      { "d3d9.memoryTrackTest",             "True" },
+    }} },
+    /* Core Awaken series (Jilelen and LittleSnow/The Yuka) & *
+     * Mine Dungeon 2 ~Rurumu's trip~                         *
+     * Freezes on boot                                        */
+    { R"(\\(BioDungeon|BioLab2|MineDungeon2)\.exe$)", {{
+      { "d3d9.countLosableResources",      "False" },
+    }} },
+    /* Ridge Racer Unbounded - Vertex explosions  */
+    { R"(\\RRU(_demo)?\.exe$)", {{
+      { "dxvk.zeroMappedMemory",            "True" },
+    }} },
+    /* Sims 3                                     *
+     * Worse shadow quality on unknown AMD cards  */
+    { R"(\\TS3(W)?\.exe$)", {{
+      { "d3d9.customVendorId",              "10de" },
+      { "d3d9.customDeviceId",              "1080" },
+      { "d3d9.customDeviceDesc", "Geforce GTX 580" },
+    }} },
+    /* Sid Meier's Pirates!: Live the Life        *
+     * Fixes a crash on resolution change         */
+    { R"(\\Pirates!\.exe$)", {{
+      { "d3d9.countLosableResources",      "False" },
+    }} },
+    /* Warhammer 40,000: Dawn of War DE           *
+     * Fixes occasional vertex explosions         */
+    { R"(\\W40k(_gog)?\.exe$)", {{
+      { "dxvk.zeroMappedMemory",            "True" },
+    }} },
 
     /**********************************************/
     /* D3D8 GAMES                                 */
@@ -1110,33 +1163,20 @@ namespace dxvk {
 
     /* Duke Nukem Forever (2001)                  */
     { R"(\\DukeForever\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Anito: Defend a Land Enraged               */
     { R"(\\Anito\.exe$)", {{
       { "d3d9.memoryTrackTest",             "True" },
       { "d3d9.maxAvailableMemory",          "1024" },
     }} },
-    /* Red Faction                                *
-     * Fixes crashing when starting a new game    */
-    { R"(\\RF\.exe$)", {{
-      { "d3d9.allowDirectBufferMapping",   "False" },
-    }} },
-    /* Commandos 3                                *
-     * The game doesn't use NOOVERWRITE properly  *
-     * and reads from actively modified buffers,  *
-     * which causes graphical glitches at times   */
-    { R"(\\Commandos3\.exe$)", {{
-      { "d3d9.allowDirectBufferMapping",   "False" },
-    }} },
     /* Motor City Online                          */
     { R"(\\MCity_d\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
       { "d3d8.batching",                    "True" },
     }} },
     /* Railroad Tycoon 3                          */
     { R"(\\RT3\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Pure Pinball 2.0 REDUX                     *
      * This game reads from undeclared vs inputs  *
@@ -1148,7 +1188,6 @@ namespace dxvk {
     /* Need for Speed III: Hot Pursuit            *
      * (with the "Modern Patch")                  */
     { R"(\\nfs3\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
       { "d3d8.batching",                    "True" },
     }} },
     /* Need for Speed: High Stakes / Road         *
@@ -1156,18 +1195,18 @@ namespace dxvk {
      * Won't actually render anything in game     *
      * without a memory limit in place            */
     { R"(\\nfs4\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
       { "d3d9.memoryTrackTest",             "True" },
       { "d3d9.maxAvailableMemory",          "1024" },
       { "d3d8.batching",                    "True" },
     }} },
     /* Need for Speed: Hot Pursuit 2              */
     { R"(\\NFSHP2\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
-    /* Project I.G.I. 2: Covert Strike            */
+    /* Project I.G.I. 2: Covert Strike            *
+     * Very stuttery frametime with own framecap  */
     { R"(\\igi2\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Treasure Planet: Battle at Procyon         *
      * Declares v5 as color but shader uses v6    */
@@ -1180,7 +1219,7 @@ namespace dxvk {
     }} },
     /* V-Rally 3                                  */
     { R"(\\VRally3(Demo)?\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Soldiers: Heroes Of World War II           *
      * Fills up all available memory and hangs    *
@@ -1192,11 +1231,11 @@ namespace dxvk {
     /* Cossacks II: Napoleonic Wars &             *
      * Battle for Europe                          */
     { R"(\\Cossacks II.*\\engine\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Alexander                                  */
     { R"(\\Alexander\\Data\\engine\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* 3DMark2001 (SE)                            *
      * Fixes a drastic performance drop in the    *
@@ -1206,16 +1245,16 @@ namespace dxvk {
     }} },
     /* Delta Force: Black Hawk Down               */
     { R"(\\dfbhd\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* X2: The Threat                             */
     { R"(\\X2\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* The Lord of the Rings:                     *
      * The Fellowship of the Ring                 */
     { R"(\\Fellowship\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
       { "d3d8.placeP8InScratch",            "True" },
     }} },
     /* Inquisitor (2009)                          *
@@ -1225,36 +1264,38 @@ namespace dxvk {
     }} },
     /* Art of Murder FBI Confidential - CPU perf  */
     { R"(\\Art of Murder - FBI Confidential\\game\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Max Payne 1 - Stalls waiting for an index buffer */
     { R"(\\MaxPayne\.exe$)", {{
       { "d3d9.allowDirectBufferMapping",   "False" },
     }} },
-    /* Z: Steel Soldiers                          */
-    { R"(\\z2\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
-    }} },
     /* FIFA Football 2003                         */
     { R"(\\fifa2003(demo)?\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
-    /* Splinter Cell: Pandora Tomorrow            *
-     * Broken inputs and physics above 60 FPS     */
-    { R"(\\SplinterCell2\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+    /* Splinter Cell: Pandora Tomorrow (Retail)   *
+     * Missing shadows without dref scaling and   *
+     * broken inputs and physics above 60 FPS     */
+    { R"(\\offline\\system\\SplinterCell2\.exe$)", {{
+      { "d3d9.maxFrameRate",                 "-60" },
       { "d3d8.scaleDref",                     "24" },
+    }} },
+    /* Splinter Cell: Pandora Tomorrow (Steam)    *
+     * Broken inputs and physics above 60 FPS     */
+    { R"(\\Splinter Cell Pandora Tomorrow\\system\\SplinterCell2\.exe$)", {{
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Chrome: Gold Edition                       *
      * Broken character model motion at high FPS  */
     { R"(\\Chrome(Single|Net)\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Rayman 3: Hoodlum Havoc                    *
      * Missing geometry and textures without      *
      * legacy DISCARD behavior                    */
     { R"(\\Rayman3\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
       { "d3d8.forceLegacyDiscard",          "True" },
     }} },
     /* Tom Clancy's Splinter Cell                 *
@@ -1262,7 +1303,7 @@ namespace dxvk {
      * above 60 FPS and game freezing on alt-tab  */
     { R"(\\splintercell\.exe$)", {{
       { "d3d9.hideAmdGpu",                  "True" },
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
       { "d3d9.deviceLossOnFocusLoss",       "True" },
       { "d3d8.scaleDref",                     "24" },
       { "d3d8.shadowPerspectiveDivide",     "True" },
@@ -1290,7 +1331,7 @@ namespace dxvk {
     { R"(\\GTR (- FIA GT Rac(e)?ing Game|Demo)\\(GTR(Demo)?|(3D)?Config)\.exe$)", {{
       { "d3d9.maxAvailableMemory",          "1024" },
       { "d3d9.memoryTrackTest",             "True" },
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Comanche 4 - Only enables the FSAA option  *
      * if it detects a device ID of 0x025x.       */
@@ -1310,6 +1351,16 @@ namespace dxvk {
     { R"(\\TopSpin\.exe$)", {{
       { "d3d8.forceLegacyDiscard",          "True" },
     }} },
+    /* Lego Racers 2 - Hits an incredible amount  *
+     * of queue syncs with direct buffer mapping  */
+    { R"(\\LEGO Racers 2\.exe$)", {{
+      { "d3d9.allowDirectBufferMapping",   "False" },
+    }} },
+    /* Smash Up Derby - Poor performance on Intel *
+     * due to queue syncs on certain race tracks  */
+    { R"(\\Smash up Derby\\cars\.exe$)", {{
+      { "d3d9.allowDirectBufferMapping",   "False" },
+    }} },
   };
 
 
@@ -1317,7 +1368,7 @@ namespace dxvk {
     /* Fallout 4: Defaults to 45 FPS on OLED, but also breaks above 60 FPS */
     { R"(\\Fallout4\.exe$)", {{
       { "dxgi.syncInterval",                   "1" },
-      { "dxgi.maxFrameRate",                  "60" },
+      { "dxgi.maxFrameRate",                 "-60" },
     }} },
   };
 

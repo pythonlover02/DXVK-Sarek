@@ -9,7 +9,7 @@
 namespace dxvk {
 
   class DxvkLatencyTracker;
-  
+
   /**
    * \brief Frame rate limiter
    *
@@ -62,8 +62,6 @@ namespace dxvk {
     TimerDuration   m_targetInterval  = TimerDuration::zero();
     TimePoint       m_nextFrame       = TimePoint();
     uint32_t        m_maxLatency      = 0;
-
-    bool            m_envOverride     = false;
 
     uint32_t        m_heuristicFrameCount = 0;
     TimePoint       m_heuristicFrameTime  = TimePoint();

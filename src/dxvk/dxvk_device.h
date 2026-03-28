@@ -28,7 +28,11 @@
 namespace dxvk {
   
   class DxvkInstance;
+  class DxvkShaderCache;
 
+  class DxvkIrShader;
+  class DxvkIrShaderConverter;
+  class DxvkIrShaderCreateInfo;
 
   /**
    * \brief Device performance hints
@@ -39,6 +43,8 @@ namespace dxvk {
     VkBool32 renderPassResolveFormatBug : 1;
     VkBool32 preferRenderPassOps        : 1;
     VkBool32 preferPrimaryCmdBufs       : 1;
+    VkBool32 preferComputeMipGen        : 1;
+    VkBool32 preferDescriptorByteOffsets: 1;
   };
   
   /**
@@ -48,9 +54,11 @@ namespace dxvk {
    * queue family that it belongs to.
    */
   struct DxvkDeviceQueue {
-    VkQueue   queueHandle = VK_NULL_HANDLE;
-    uint32_t  queueFamily = 0;
-    uint32_t  queueIndex  = 0;
+    VkQueue       queueHandle = VK_NULL_HANDLE;
+    uint32_t      queueFamily = 0u;
+    uint32_t      queueIndex  = 0u;
+
+    DxvkDeviceQueueInfo properties = { };
   };
 
   /**
@@ -108,6 +116,15 @@ namespace dxvk {
      */
     VkDevice handle() const {
       return m_vkd->device();
+    }
+
+    /**
+     * \brief D3DKMT device local handle
+     * \returns The device D3DKMT local handle
+     * \returns \c 0 if there's no matching D3DKMT device
+     */
+    D3DKMT_HANDLE kmtLocal() const {
+      return m_kmtLocal;
     }
 
     /**
@@ -215,6 +232,18 @@ namespace dxvk {
       return m_adapter->getFormatLimits(query);
     }
 
+
+    /**
+     * \brief Queries default shader compile options
+     *
+     * Can be overridden by the client API. Only applies to
+     * shaders using internal IR rather than SPIR-V binaries.
+     * \returns Device-global shader compile options.
+     */
+    DxvkShaderOptions getShaderCompileOptions() const {
+      return m_shaderOptions;
+    }
+
     /**
      * \brief Get device status
      * 
@@ -261,17 +290,42 @@ namespace dxvk {
     bool canUsePipelineCacheControl() const;
 
     /**
+     * \brief Checks whether sample locations can be used
+     * \returns \c true if sample locations are supported for any of the given sample counts
+     */
+    bool canUseSampleLocations(VkSampleCountFlags samples) const;
+
+    /**
      * \brief Checks whether pipelines should be tracked
      * \returns \c true if pipelines need to be tracked
      */
     bool mustTrackPipelineLifetime() const;
 
     /**
+     * \brief Checks whether descriptor heaps can be used
+     * \returns \c true if all required features are supported.
+     */
+    bool canUseDescriptorHeap() const {
+      return m_features.extDescriptorHeap.descriptorHeap;
+    }
+
+    /**
      * \brief Checks whether descriptor buffers can be used
      * \returns \c true if all required features are supported.
      */
     bool canUseDescriptorBuffer() const {
-      return m_features.extDescriptorBuffer.descriptorBuffer;
+      return m_features.extDescriptorBuffer.descriptorBuffer && !canUseDescriptorHeap();
+    }
+
+    /**
+     * \brief Checks whether CUDA interop is enabled
+     *
+     * Relevant for descriptor heap usage since CUDA interop still
+     * needs legacy image view and sampler handles.
+     * \returns \c true if all required features are supported.
+     */
+    bool hasCudaInterop() const {
+      return m_features.nvxImageViewHandle;
     }
 
     /**
@@ -430,6 +484,22 @@ namespace dxvk {
     VkPipeline createBuiltInGraphicsPipeline(
       const DxvkPipelineLayout*             layout,
       const util::DxvkBuiltInGraphicsState& state);
+
+    /**
+     * \brief Creates IR shader from cache
+     *
+     * Will try to look up and retrive the given shader from
+     * the shader cache. If no shader converter is provided
+     * and the look-up fails, this returns \c nullptr.
+     * \param [in] name Shader name
+     * \param [in] createInfo Shader create info
+     * \param [in] converter Shader converter to
+     *    use when cache look-upo fails.
+     */
+    Rc<DxvkShader> createCachedShader(
+      const std::string&                    name,
+      const DxvkIrShaderCreateInfo&         createInfo,
+      const Rc<DxvkIrShaderConverter>&      converter);
 
     /**
      * \brief Imports a buffer
@@ -673,27 +743,36 @@ namespace dxvk {
     Rc<DxvkInstance>            m_instance;
     Rc<DxvkAdapter>             m_adapter;
     Rc<vk::DeviceFn>            m_vkd;
+    D3DKMT_HANDLE               m_kmtLocal = 0;
 
     DxvkDebugFlags              m_debugFlags;
     DxvkDeviceQueueSet          m_queues;
 
     DxvkDeviceFeatures          m_features;
     DxvkDeviceInfo              m_properties;
-    
+
+    DxvkShaderOptions           m_shaderOptions;
+
     DxvkDevicePerfHints         m_perfHints;
     DxvkObjects                 m_objects;
 
     sync::Spinlock              m_statLock;
     DxvkStatCounters            m_statCounters;
-    
+
     DxvkRecycler<DxvkCommandList, 16> m_recycledCommandLists;
-    
+
     DxvkSubmissionQueue         m_submissionQueue;
 
+    Rc<DxvkShaderCache>         m_shaderCache;
+
     DxvkDevicePerfHints getPerfHints();
-    
+
     void recycleCommandList(
       const Rc<DxvkCommandList>& cmdList);
+
+    void determineShaderOptions();
+
+    void logBindingModel();
 
   };
   

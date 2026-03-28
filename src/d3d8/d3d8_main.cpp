@@ -8,7 +8,14 @@ namespace dxvk {
     if (!ppDirect3D8)
       return D3DERR_INVALIDCALL;
 
-    *ppDirect3D8 = ref(new D3D8Interface());
+    try {
+      *ppDirect3D8 = ref(new D3D8Interface());
+    } catch (const DxvkError& e) {
+      Logger::err(e.message());
+      *ppDirect3D8 = nullptr;
+      return D3DERR_NOTAVAILABLE;
+    }
+
     return D3D_OK;
   }
 
@@ -55,7 +62,7 @@ extern "C" {
       const size_t errorMessageSize = errorMessage.size() + 1;
       // Wine tests call HeapFree() on the returned error string,
       // so the expectation is for it to be allocated on the heap.
-      *pErrorString = (char*) HeapAlloc(GetProcessHeap(), 0, errorMessageSize);
+      *pErrorString = static_cast<char*>(HeapAlloc(GetProcessHeap(), 0, errorMessageSize));
       if (*pErrorString)
         memcpy(*pErrorString, errorMessage.c_str(), errorMessageSize);
     }
@@ -103,7 +110,7 @@ extern "C" {
       const size_t errorMessageSize = errorMessage.size() + 1;
       // Wine tests call HeapFree() on the returned error string,
       // so the expectation is for it to be allocated on the heap.
-      *pErrorString = (char*) HeapAlloc(GetProcessHeap(), 0, errorMessageSize);
+      *pErrorString = static_cast<char*>(HeapAlloc(GetProcessHeap(), 0, errorMessageSize));
       if (*pErrorString)
         memcpy(*pErrorString, errorMessage.c_str(), errorMessageSize);
     }

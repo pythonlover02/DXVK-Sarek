@@ -1,6 +1,7 @@
 #pragma once
 
 #include "dxvk_descriptor_pool.h"
+#include "dxvk_fence.h"
 #include "dxvk_format.h"
 #include "dxvk_memory.h"
 #include "dxvk_sparse.h"
@@ -335,6 +336,80 @@ namespace dxvk {
 
   };
 
+  class DxvkKeyedMutex : public RcObject {
+  public:
+
+    /**
+     * \brief Creates a new shared keyed mutex
+     */
+    DxvkKeyedMutex(
+      const Rc<DxvkDevice>& device,
+            uint64_t        initialValue,
+            bool            ntShared);
+
+    /**
+     * \brief Opens a shared keyed mutex from its D3DKMT handles
+     */
+    DxvkKeyedMutex(
+      const Rc<DxvkDevice>& device,
+            Rc<DxvkFence>&& fence,
+            D3DKMT_HANDLE   kmtLocal,
+            D3DKMT_HANDLE   kmtGlobal);
+    
+    ~DxvkKeyedMutex();
+    
+    /**
+     * \brief D3DKMT keyed mutex local handle
+     * \returns The keyed mutex D3DKMT local handle
+     * \returns \c 0 if fence is not shared
+     */
+    D3DKMT_HANDLE kmtLocal() const {
+      return m_kmtLocal;
+    }
+
+    /**
+     * \brief D3DKMT keyed mutex global handle
+     * \returns The keyed mutex D3DKMT global handle
+     * \returns \c 0 if keyed mutex is not shared or shared with NT handle
+     */
+    D3DKMT_HANDLE kmtGlobal() const {
+      return m_kmtGlobal;
+    }
+
+    /**
+     * \brief Retrieves current sync object
+     * \returns sync object guarding this image
+     */
+    Rc<DxvkFence> getSyncObject() const {
+      return m_fence;
+    }
+
+    /**
+     * \brief Try to acquire the keyed mutex
+     * \returns DXGI_ERROR_INVALID_CALL if owned already or on error
+     * \returns WAIT_TIMEOUT on timeout
+     * \returns S_OK on success
+     */
+    HRESULT AcquireSync(UINT64 key, DWORD milliseconds);
+
+    /**
+     * \brief Release the keyed mutex
+     * \returns DXGI_ERROR_INVALID_CALL if not owned or on error
+     * \returns S_OK on success
+     */
+    HRESULT ReleaseSync(UINT64 key);
+
+  private:
+
+    Rc<vk::DeviceFn>            m_vkd;
+    Rc<DxvkFence>               m_fence;
+    D3DKMT_HANDLE               m_kmtLocal  = 0;
+    D3DKMT_HANDLE               m_kmtGlobal = 0;
+
+    uint64_t                    m_fenceValue = 0;
+    std::atomic<bool>           m_owned = { false };
+
+  };
 
   /**
    * \brief Virtual image resource
@@ -468,6 +543,9 @@ namespace dxvk {
      * \returns A compatible image layout
      */
     VkImageLayout pickLayout(VkImageLayout layout) const {
+      if (m_unifiedLayoutEnabled)
+          return VK_IMAGE_LAYOUT_GENERAL;
+
       if (unlikely(m_info.layout == VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT)) {
         if (layout != VK_IMAGE_LAYOUT_GENERAL
          && layout != VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL
@@ -475,8 +553,8 @@ namespace dxvk {
           return VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT;
       }
 
-      return m_info.layout == VK_IMAGE_LAYOUT_GENERAL
-        ? VK_IMAGE_LAYOUT_GENERAL : layout;
+      return likely(m_info.tiling == VK_IMAGE_TILING_OPTIMAL)
+        ? layout : VK_IMAGE_LAYOUT_GENERAL;
     }
 
     /**
@@ -484,7 +562,16 @@ namespace dxvk {
      * \param [in] layout New layout
      */
     void setLayout(VkImageLayout layout) {
-      m_info.layout = layout;
+      if (!m_unifiedLayoutEnabled)
+        m_info.layout = layout;
+    }
+
+    /**
+     * \brief Checks whether layout transitions are disabled for this image
+     * \returns \c true if the image will always remain in `GENERAL`.
+     */
+    bool hasUnifiedLayout() const {
+      return m_unifiedLayoutEnabled;
     }
 
     /**
@@ -622,6 +709,21 @@ namespace dxvk {
     }
 
     /**
+     * \brief Retrieves current keyed mutex
+     * \returns Keyed mutex guarding this image
+     */
+    Rc<DxvkKeyedMutex> getKeyedMutex() const {
+      return m_mutex;
+    }
+
+    /**
+     * \brief Sets the image keyed mutex and sync object
+     */
+    void setKeyedMutex(Rc<DxvkKeyedMutex>&& mutex) {
+      m_mutex = mutex;
+    }
+
+    /**
      * \brief Retrieves resource ID for barrier tracking
      * \returns Unique resource ID
      */
@@ -638,10 +740,20 @@ namespace dxvk {
      * \param [in] mip Mip level index
      * \param [in] layer Array layer index
      */
-    uint64_t getTrackingAddress(uint32_t mip, uint32_t layer) const {
+    uint64_t getSubresourceStartAddress(uint32_t mip, uint32_t layer) const {
       // Put layers within the same mip into a contiguous range. This works well
       // for not only transfer operations but also most image view use cases.
       return uint64_t((m_info.numLayers * mip) + layer) << 48u;
+    }
+
+    /**
+     * \brief Computes virtual offset of the end of a subresource
+     *
+     * \param [in] mip Mip level index
+     * \param [in] layer Array layer index
+     */
+    uint64_t getSubresourceEndAddress(uint32_t mip, uint32_t layer) const {
+      return getSubresourceStartAddress(mip, layer) + (1ull << 48u) - 1ull;
     }
 
     /**
@@ -653,7 +765,7 @@ namespace dxvk {
      * \param [in] layer Array layer index
      * \param [in] coord Pixel coordinate within the subresource
      */
-    uint64_t getTrackingAddress(uint32_t mip, uint32_t layer, VkOffset3D coord) const;
+    uint64_t getSubresourceAddressAt(uint32_t mip, uint32_t layer, VkOffset3D coord) const;
 
     /**
      * \brief Creates or retrieves an image view
@@ -665,14 +777,13 @@ namespace dxvk {
       const DxvkImageViewKey& info);
 
     /**
-     * \brief Tracks subresource initialization
+     * \brief Checks whether an image subresource is initialized
      *
-     * Initialization happens when transitioning the image
-     * away from \c PREINITIALIZED or \c UNDEFINED layouts.
-     * \param [in] subresources Subresource range
+     * \param [in] subresource The subresource to query
+     * \returns \c true if the given subresource is initialized
      */
-    void trackInitialization(
-      const VkImageSubresourceRange& subresources);
+    bool isInitialized(
+      const VkImageSubresource& subresource) const;
 
     /**
      * \brief Checks whether subresources are initialized
@@ -682,6 +793,39 @@ namespace dxvk {
      */
     bool isInitialized(
       const VkImageSubresourceRange& subresources) const;
+
+    /**
+     * \brief Queries current layout of an image subresource
+     *
+     * \param [in] subresource The subresource. Note that the aspect
+     *    mask must not have multiple planes set for planar images.
+     * \returns Current layout of the given image subresource
+     */
+    VkImageLayout queryLayout(const VkImageSubresource& subresource) const {
+      if (m_globalLayout != VK_IMAGE_LAYOUT_MAX_ENUM)
+        return m_globalLayout;
+
+      uint32_t index = computeSubresourceIndex(subresource);
+      return m_localLayouts[index];
+    }
+
+    /**
+     * \biref Queries current layout of a subresource range
+     *
+     * If layouts diverge, this returns \c VK_IMAGE_LAYOUT_MAX_ENUM,
+     * and individual subresources must be queried manually.
+     * \param [in] subresources Subresource range to query
+     * \returns Current layout of the subresource range
+     */
+    VkImageLayout queryLayout(const VkImageSubresourceRange& subresources) const;
+
+    /**
+     * \brief Updates per-subresource layout tracking
+     *
+     * \param [in] subresources Subresource range to transition
+     * \param [in] layout New layout for the subresource range
+     */
+    void trackLayout(const VkImageSubresourceRange& subresources, VkImageLayout layout);
 
     /**
      * \brief Sets debug name for the backing resource
@@ -706,16 +850,22 @@ namespace dxvk {
     DxvkImageCreateInfo         m_info        = { };
 
     uint32_t                    m_version     = 0u;
-    VkBool32                    m_shared      = VK_FALSE;
-    VkBool32                    m_stableAddress = VK_FALSE;
+    bool                        m_shared      = false;
+    bool                        m_stableAddress = false;
+
+    bool                        m_unifiedLayoutEnabled = false;
+    bool                        m_unifiedLayoutAvailable = false;
+
+    Rc<DxvkKeyedMutex>          m_mutex       = nullptr;
 
     DxvkResourceImageInfo       m_imageInfo   = { };
 
     Rc<DxvkResourceAllocation>  m_storage     = nullptr;
 
     small_vector<VkFormat, 4>   m_viewFormats;
-    small_vector<uint16_t, 8>   m_uninitializedMipsPerLayer = { };
-    uint32_t                    m_uninitializedSubresourceCount = 0u;
+
+    VkImageLayout               m_globalLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    small_vector<VkImageLayout, 16> m_localLayouts;
 
     dxvk::mutex                 m_viewMutex;
     std::unordered_map<DxvkImageViewKey,
@@ -738,6 +888,18 @@ namespace dxvk {
             DxvkDevice*           device,
       const VkImageCreateInfo&    createInfo,
       const DxvkSharedHandleInfo& sharingInfo) const;
+
+    bool canUseUnifiedLayout(const DxvkDevice& device) const;
+
+    uint32_t computeSubresourceIndex(const VkImageSubresource& subresource) const {
+      return subresource.arrayLayer
+        + m_info.numLayers * (subresource.mipLevel
+        + m_info.mipLevels * vk::getPlaneIndex(subresource.aspectMask));
+    }
+
+    uint32_t computeSubresourceCount() const {
+      return m_info.numLayers * m_info.mipLevels * vk::getPlaneCount(formatInfo()->aspectMask);
+    }
 
   };
 

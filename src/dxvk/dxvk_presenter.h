@@ -293,6 +293,10 @@ namespace dxvk {
     bool                        m_dirtySwapchain = false;
     bool                        m_dirtySurface = false;
 
+    bool                        m_hasPresentId = false;
+    bool                        m_hasPresentWait = false;
+    bool                        m_hasSwapchainMaintenance1 = false;
+
     VkPresentModeKHR            m_presentMode = VK_PRESENT_MODE_FIFO_KHR;
 
     uint32_t                    m_imageIndex = 0;
@@ -323,6 +327,8 @@ namespace dxvk {
 
     alignas(CACHE_LINE_SIZE)
     FpsLimiter                  m_fpsLimiter;
+
+    bool                        m_hasGamescopeFenceSignalBug = false;
 
     static const std::array<std::pair<VkColorSpaceKHR, VkColorSpaceKHR>, 2> s_colorSpaceFallbacks;
 

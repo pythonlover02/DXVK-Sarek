@@ -47,9 +47,17 @@ namespace dxvk {
         uint32_t reduction      :  2;
         uint32_t pixelCoord     :  1;
         uint32_t legacyCube     :  1;
+
+        uint32_t viewSwizzleR   :  4;
+        uint32_t viewSwizzleG   :  4;
+        uint32_t viewSwizzleB   :  4;
+        uint32_t viewSwizzleA   :  4;
+        uint32_t reserved0      : 16;
+
+        uint32_t viewFormat;
       } p;
 
-      uint32_t properties[2] = { 0u, 0u };
+      uint32_t properties[4] = { 0u, 0u, 0u, 0u };
     } u;
 
     VkClearColorValue borderColor = { };
@@ -100,9 +108,19 @@ namespace dxvk {
       borderColor = color;
     }
 
+    void setViewProperties(const VkComponentMapping& mapping, VkFormat format) {
+      u.p.viewSwizzleR = uint32_t(mapping.r);
+      u.p.viewSwizzleG = uint32_t(mapping.g);
+      u.p.viewSwizzleB = uint32_t(mapping.b);
+      u.p.viewSwizzleA = uint32_t(mapping.a);
+      u.p.viewFormat = uint32_t(format);
+    }
+
     bool eq(const DxvkSamplerKey& other) const {
       bool eq = u.properties[0] == other.u.properties[0]
-             && u.properties[1] == other.u.properties[1];
+             && u.properties[1] == other.u.properties[1]
+             && u.properties[2] == other.u.properties[2]
+             && u.properties[3] == other.u.properties[3];
 
       if (eq && u.p.hasBorder) {
         eq = borderColor.uint32[0] == other.borderColor.uint32[0]
@@ -118,6 +136,8 @@ namespace dxvk {
       DxvkHashState hash;
       hash.add(u.properties[0]);
       hash.add(u.properties[1]);
+      hash.add(u.properties[2]);
+      hash.add(u.properties[3]);
 
       if (u.p.hasBorder) {
         hash.add(borderColor.uint32[0]);
@@ -131,7 +151,7 @@ namespace dxvk {
 
   };
 
-  static_assert(sizeof(DxvkSamplerKey) == 24u);
+  static_assert(sizeof(DxvkSamplerKey) == 32u);
   
   
   /**
@@ -213,8 +233,22 @@ namespace dxvk {
 
     void release();
 
-    VkBorderColor determineBorderColorType() const;
+    VkBorderColor determineBorderColorType(const VkSamplerCustomBorderColorCreateInfoEXT& info) const;
 
+    static VkClearColorValue swizzleBorderColor(const VkClearColorValue& color, VkComponentMapping mapping);
+
+    static float mapBorderColorComponent(const VkClearColorValue& color, const VkComponentMapping& mapping, VkComponentSwizzle which);
+
+  };
+
+
+  /**
+   * \brief Border color registration info
+   */
+  struct DxvkBorderColor {
+    VkFormat          format    = VK_FORMAT_UNDEFINED;
+    VkClearColorValue color     = { };
+    uint32_t          useCount  = 0u;
   };
 
 
@@ -233,7 +267,7 @@ namespace dxvk {
    * Manages a global descriptor pool and set for samplers.
    */
   class DxvkSamplerDescriptorHeap {
-
+    constexpr static uint32_t InvalidBorderColor = -1u;
   public:
 
     DxvkSamplerDescriptorHeap(
@@ -289,13 +323,32 @@ namespace dxvk {
 
       VkDeviceSize          descriptorOffset  = 0u;
       VkDeviceSize          descriptorSize    = 0u;
+
+      VkDeviceSize          reservedSize      = 0u;
     } m_heap;
+
+    struct {
+      dxvk::mutex                   mutex;
+      std::vector<uint32_t>         indexForSampler;
+      std::vector<DxvkBorderColor>  infos;
+    } m_borderColors;
 
     void initDescriptorLayout();
 
     void initDescriptorPool();
 
-    void initDescriptorBuffer();
+    void initDescriptorHeap();
+
+    uint32_t registerBorderColor(
+      const VkSamplerCustomBorderColorCreateInfoEXT*  borderColor);
+
+    uint32_t allocBorderColor(
+            uint16_t                                  sampler,
+      const VkSamplerCustomBorderColorCreateInfoEXT*  borderColor);
+
+    void freeBorderColor(uint16_t sampler);
+
+    static const VkSamplerCustomBorderColorCreateInfoEXT* findBorderColorInfo(const void* s);
 
   };
 

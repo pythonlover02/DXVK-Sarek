@@ -41,10 +41,14 @@ namespace dxvk {
         throw DxvkError(str::format("Failed to create Vulkan surface, ", vr));
     }
 
-    // If a frame signal was provided, launch thread that synchronizes
-    // with present operations and periodically signals the event
-    if (m_device->features().khrPresentWait.presentWait && m_signal != nullptr)
-      m_frameThread = dxvk::thread([this] { runFrameThread(); });
+    // KHR and EXT variants of this extension are completely identical
+    m_hasSwapchainMaintenance1 = m_device->features().khrSwapchainMaintenance1.swapchainMaintenance1
+                              || m_device->features().extSwapchainMaintenance1.swapchainMaintenance1;
+
+    // Gamescope WSI is currently broken and doesn't properly signal
+    // the present fence if presentation is queued but fails.
+    // TODO Remove this hack when this gets fixed in stable SteamOS.
+    m_hasGamescopeFenceSignalBug = env::getEnvVar("ENABLE_GAMESCOPE_WSI") == "1";
   }
 
   
@@ -175,11 +179,15 @@ namespace dxvk {
     presentId.swapchainCount = 1;
     presentId.pPresentIds   = &frameId;
 
-    VkSwapchainPresentFenceInfoEXT fenceInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT };
+    VkPresentId2KHR presentId2 = { VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR };
+    presentId2.swapchainCount = 1;
+    presentId2.pPresentIds  = &frameId;
+
+    VkSwapchainPresentFenceInfoKHR fenceInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_KHR };
     fenceInfo.swapchainCount = 1;
     fenceInfo.pFences       = &currSync.fence;
 
-    VkSwapchainPresentModeInfoEXT modeInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODE_INFO_EXT };
+    VkSwapchainPresentModeInfoKHR modeInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODE_INFO_KHR };
     modeInfo.swapchainCount = 1;
     modeInfo.pPresentModes  = &m_presentMode;
 
@@ -190,10 +198,14 @@ namespace dxvk {
     info.pSwapchains        = &m_swapchain;
     info.pImageIndices      = &m_imageIndex;
 
-    if (m_device->features().khrPresentId.presentId && frameId)
-      presentId.pNext = const_cast<void*>(std::exchange(info.pNext, &presentId));
+    if (frameId && m_hasPresentId) {
+      if (m_device->features().khrPresentId2.presentId2)
+        presentId2.pNext = const_cast<void*>(std::exchange(info.pNext, &presentId2));
+      else
+        presentId.pNext = const_cast<void*>(std::exchange(info.pNext, &presentId));
+    }
 
-    if (m_device->features().extSwapchainMaintenance1.swapchainMaintenance1) {
+    if (m_hasSwapchainMaintenance1) {
       modeInfo.pNext = const_cast<void*>(std::exchange(info.pNext, &modeInfo));
       fenceInfo.pNext = const_cast<void*>(std::exchange(info.pNext, &fenceInfo));
     }
@@ -208,10 +220,13 @@ namespace dxvk {
     // recreate the swapchain. Spec says that 'queue' operations, i.e. the
     // semaphore and fence signals, still happen if present fails with
     // normal swapchain errors, such as OUT_OF_DATE or SURFACE_LOST.
-    if (m_device->features().extSwapchainMaintenance1.swapchainMaintenance1) {
+    if (m_hasSwapchainMaintenance1) {
       currSync.fenceSignaled = status != VK_ERROR_OUT_OF_DEVICE_MEMORY
                             && status != VK_ERROR_OUT_OF_HOST_MEMORY
                             && status != VK_ERROR_DEVICE_LOST;
+
+      if (m_hasGamescopeFenceSignalBug)
+        currSync.fenceSignaled = status >= 0;
     }
 
     if (status >= 0) {
@@ -222,7 +237,7 @@ namespace dxvk {
     }
 
     // Add frame to waiter queue with current properties
-    if (m_device->features().khrPresentWait.presentWait) {
+    if (m_hasPresentWait) {
       std::lock_guard lock(m_frameMutex);
 
       auto& frame = m_frameQueue.emplace();
@@ -267,7 +282,7 @@ namespace dxvk {
     if (m_signal == nullptr || !frameId)
       return;
 
-    if (m_device->features().khrPresentWait.presentWait) {
+    if (m_hasPresentWait) {
       std::lock_guard lock(m_frameMutex);
       m_lastSignaled = frameId;
       m_frameCond.notify_one();
@@ -551,14 +566,24 @@ namespace dxvk {
     // Query surface capabilities. Some properties might have changed,
     // including the size limits and supported present modes, so we'll
     // just query everything again.
+    VkSurfaceCapabilitiesPresentWait2KHR presentWait2Caps = { VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_WAIT_2_KHR };
+    VkSurfaceCapabilitiesPresentId2KHR presentId2Caps = { VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_ID_2_KHR };
+
     VkSurfaceCapabilities2KHR caps = { VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR };
+
+    if (m_device->features().khrPresentId2.presentId2) {
+      presentId2Caps.pNext = std::exchange(caps.pNext, &presentId2Caps);
+
+      if (m_device->features().khrPresentWait2.presentWait2)
+        presentWait2Caps.pNext = std::exchange(caps.pNext, &presentWait2Caps);
+    }
 
     std::vector<VkSurfaceFormatKHR> formats;
     std::vector<VkPresentModeKHR> modes;
 
     VkResult status;
 
-    if (m_device->features().extFullScreenExclusive) {
+    if (m_device->instance()->extensions().khrGetSurfaceCapabilities2.specVersion) {
       status = m_vki->vkGetPhysicalDeviceSurfaceCapabilities2KHR(
         m_device->adapter()->handle(), &surfaceInfo, &caps);
     } else {
@@ -614,10 +639,10 @@ namespace dxvk {
     uint32_t minImageCount = caps.surfaceCapabilities.minImageCount;
     uint32_t maxImageCount = caps.surfaceCapabilities.maxImageCount;
 
-    if (m_device->features().extSwapchainMaintenance1.swapchainMaintenance1) {
-      VkSurfacePresentModeCompatibilityEXT compatibleModeInfo = { VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_EXT };
+    if (m_hasSwapchainMaintenance1) {
+      VkSurfacePresentModeCompatibilityKHR compatibleModeInfo = { VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_KHR };
 
-      VkSurfacePresentModeEXT presentModeInfo = { VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT };
+      VkSurfacePresentModeKHR presentModeInfo = { VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_KHR };
       presentModeInfo.pNext = const_cast<void*>(std::exchange(surfaceInfo.pNext, &presentModeInfo));
       presentModeInfo.presentMode = m_presentMode;
 
@@ -684,7 +709,7 @@ namespace dxvk {
     VkSurfaceFullScreenExclusiveInfoEXT fullScreenInfo = { VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT };
     fullScreenInfo.fullScreenExclusive = m_fullscreenMode;
 
-    VkSwapchainPresentModesCreateInfoEXT modeInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_EXT };
+    VkSwapchainPresentModesCreateInfoKHR modeInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_KHR };
     modeInfo.presentModeCount       = compatibleModes.size();
     modeInfo.pPresentModes          = compatibleModes.data();
 
@@ -715,10 +740,16 @@ namespace dxvk {
       formatList.pNext = std::exchange(swapInfo.pNext, &formatList);
     }
 
+    if (presentId2Caps.presentId2Supported)
+      swapInfo.flags |= VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR;
+
+    if (presentWait2Caps.presentWait2Supported)
+      swapInfo.flags |= VK_SWAPCHAIN_CREATE_PRESENT_WAIT_2_BIT_KHR;
+
     if (m_device->features().extFullScreenExclusive)
       fullScreenInfo.pNext = const_cast<void*>(std::exchange(swapInfo.pNext, &fullScreenInfo));
 
-    if (m_device->features().extSwapchainMaintenance1.swapchainMaintenance1)
+    if (m_hasSwapchainMaintenance1)
       modeInfo.pNext = std::exchange(swapInfo.pNext, &modeInfo);
 
     if (m_device->features().nvLowLatency2)
@@ -779,7 +810,7 @@ namespace dxvk {
     // that we use to ensure that semaphores are safe to access.
     uint32_t semaphoreCount = images.size();
 
-    if (!m_device->features().extSwapchainMaintenance1.swapchainMaintenance1) {
+    if (!m_hasSwapchainMaintenance1) {
       // Without support for present fences, just give up and allocate extra
       // semaphores. We have no real guarantees when they are safe to access.
       semaphoreCount *= 2u;
@@ -818,6 +849,14 @@ namespace dxvk {
     m_frameIndex = 0;
 
     m_dynamicModes = std::move(dynamicModes);
+
+    // Set up feature support for present wait / id, and launch sync thread as necessary
+    m_hasPresentId = presentId2Caps.presentId2Supported || m_device->features().khrPresentId.presentId;
+    m_hasPresentWait = presentWait2Caps.presentWait2Supported || m_device->features().khrPresentWait.presentWait;
+
+    if (m_signal && m_hasPresentWait && !m_frameThread.joinable())
+      m_frameThread = dxvk::thread([this] { runFrameThread(); });
+
     return VK_SUCCESS;
   }
 
@@ -1157,7 +1196,7 @@ namespace dxvk {
     // Without present fence support, waiting for the queue or device to go idle
     // is the only way to properly synchronize swapchain teardown. Care must be
     // taken not to call this method while the submission queue is locked.
-    if (!m_device->features().extSwapchainMaintenance1.swapchainMaintenance1)
+    if (!m_hasSwapchainMaintenance1)
       m_device->waitForIdle();
 
     // Wait for the presentWait worker to finish using
@@ -1194,6 +1233,9 @@ namespace dxvk {
 
     m_latencySleepModeDirty = true;
     m_latencySleepSupported = false;
+
+    m_hasPresentId = false;
+    m_hasPresentWait = false;
   }
 
 
@@ -1255,8 +1297,18 @@ namespace dxvk {
       // Don't bother with it on MAILBOX / IMMEDIATE modes since doing so would
       // restrict us to the display refresh rate on some platforms (XWayland).
       if (frame.result >= 0 && (frame.mode == VK_PRESENT_MODE_FIFO_KHR || frame.mode == VK_PRESENT_MODE_FIFO_RELAXED_KHR)) {
-        VkResult vr = m_vkd->vkWaitForPresentKHR(m_vkd->device(),
-          m_swapchain, frame.frameId, std::numeric_limits<uint64_t>::max());
+        VkResult vr;
+
+        if (m_device->features().khrPresentWait2.presentWait2) {
+          VkPresentWait2InfoKHR waitInfo = { VK_STRUCTURE_TYPE_PRESENT_WAIT_2_INFO_KHR };
+          waitInfo.presentId = frame.frameId;
+          waitInfo.timeout = std::numeric_limits<uint64_t>::max();
+
+          vr = m_vkd->vkWaitForPresent2KHR(m_vkd->device(), m_swapchain, &waitInfo);
+        } else {
+          vr = m_vkd->vkWaitForPresentKHR(m_vkd->device(),
+            m_swapchain, frame.frameId, std::numeric_limits<uint64_t>::max());
+        }
 
         if (vr < 0 && vr != VK_ERROR_OUT_OF_DATE_KHR && vr != VK_ERROR_SURFACE_LOST_KHR)
           Logger::err(str::format("Presenter: vkWaitForPresentKHR failed: ", vr));
