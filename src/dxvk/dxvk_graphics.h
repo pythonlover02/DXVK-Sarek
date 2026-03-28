@@ -10,6 +10,8 @@
 #include "dxvk_shader.h"
 #include "dxvk_stats.h"
 
+#include "../util/sync/sync_list.h"
+
 namespace dxvk {
 
   class DxvkDevice;
@@ -661,9 +663,7 @@ namespace dxvk {
 
     alignas(CACHE_LINE_SIZE)
     dxvk::mutex                                   m_mutex;
-    DxvkPipelineVariantTable<
-      DxvkGraphicsPipelineStateInfo,
-      DxvkGraphicsPipelineInstance>               m_pipelines;
+    sync::List<DxvkGraphicsPipelineInstance>      m_pipelines;
     uint32_t                                      m_useCount = 0;
 
     std::unordered_map<

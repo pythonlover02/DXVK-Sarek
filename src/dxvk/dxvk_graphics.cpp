@@ -1290,9 +1290,8 @@ namespace dxvk {
 
       // Remove any base pipeline references, but
       // keep the optimized pipelines around.
-      m_pipelines.forEach([] (DxvkGraphicsPipelineInstance& e) {
-        e.baseHandle.store(VK_NULL_HANDLE);
-      });
+      for (auto& entry : m_pipelines)
+        entry.baseHandle.store(VK_NULL_HANDLE);
 
       // Destroy the actual Vulkan pipelines
       this->destroyBasePipelines();
@@ -1342,7 +1341,7 @@ namespace dxvk {
   DxvkGraphicsPipelineInstance* DxvkGraphicsPipeline::findInstance(
     const DxvkGraphicsPipelineStateInfo& state) {
     for (auto& instance : m_pipelines) {
-      if (instance.state == state)
+      if (std::memcmp(&instance.state, &state, sizeof(state)) == 0)
         return &instance;
     }
 
@@ -1977,7 +1976,7 @@ namespace dxvk {
 
       if (stored == h) {
         auto* inst = m_instanceMap[slot].instance.load(std::memory_order_acquire);
-        if (inst != nullptr && inst->state == state)
+        if (inst != nullptr && std::memcmp(&inst->state, &state, sizeof(state)) == 0)
           return inst;
       }
     }
@@ -1995,7 +1994,7 @@ namespace dxvk {
 
       if (stored == h) {
         auto* inst = m_overflowMap[slot].instance.load(std::memory_order_acquire);
-        if (inst != nullptr && inst->state == state)
+        if (inst != nullptr && std::memcmp(&inst->state, &state, sizeof(state)) == 0)
           return inst;
       }
     }
@@ -2022,7 +2021,7 @@ namespace dxvk {
       if (expected == h) {
         auto* existing = m_instanceMap[slot].instance.load(std::memory_order_acquire);
         if (existing != nullptr) {
-          if (existing->state == state)
+          if (std::memcmp(&existing->state, &state, sizeof(state)) == 0)
             return;
           continue;
         }
@@ -2047,7 +2046,7 @@ namespace dxvk {
       if (expected == h) {
         auto* existing = m_overflowMap[slot].instance.load(std::memory_order_acquire);
         if (existing != nullptr) {
-          if (existing->state == state)
+          if (std::memcmp(&existing->state, &state, sizeof(state)) == 0)
             return;
           continue;
         }
