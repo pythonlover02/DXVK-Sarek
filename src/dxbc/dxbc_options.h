@@ -48,6 +48,14 @@ namespace dxvk {
     /// with storage buffers for tight bounds checking
     bool dynamicIndexedConstantBufferAsSsbo = false;
 
+    /// Enable clip-distance builtins only if the Vulkan device
+    /// actually enabled the corresponding feature.
+    bool enableClipDistance = false;
+
+    /// Enable cull-distance builtins only if the Vulkan device
+    /// actually enabled the corresponding feature.
+    bool enableCullDistance = false;
+
     /// Disable unbound texture optimization on Mali GPUs
     /// to prevent black screen issues due to strict binding validation
     bool disableUnboundTextureOptimization = false;

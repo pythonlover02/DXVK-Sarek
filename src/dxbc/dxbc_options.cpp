@@ -23,6 +23,10 @@ namespace dxvk {
       = !devFeatures.extDepthClipEnable.depthClipEnable;
     useStorageImageReadWithoutFormat
       = devFeatures.core.features.shaderStorageImageReadWithoutFormat;
+    enableClipDistance
+      = devFeatures.core.features.shaderClipDistance;
+    enableCullDistance
+      = devFeatures.core.features.shaderCullDistance;
     useSubgroupOpsForAtomicCounters
       = (devInfo.coreSubgroup.supportedStages     & VK_SHADER_STAGE_COMPUTE_BIT)
      && (devInfo.coreSubgroup.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT);
