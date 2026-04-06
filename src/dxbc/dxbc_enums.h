@@ -3,7 +3,7 @@
 #include "dxbc_include.h"
 
 namespace dxvk {
-  
+
   /**
    * \brief Instruction code listing
    */
@@ -227,8 +227,8 @@ namespace dxvk {
     ItoD                                 = 216,
     UtoD                                 = 217,
   };
-  
-  
+
+
   /**
    * \brief Extended opcode
    */
@@ -238,11 +238,11 @@ namespace dxvk {
     ResourceDim                          = 2,
     ResourceReturnType                   = 3,
   };
-  
-  
+
+
   /**
    * \brief Operand type
-   * 
+   *
    * Selects the 'register file' from which
    * to retrieve an operand's value.
    */
@@ -283,6 +283,7 @@ namespace dxvk {
     InputThreadGroupId      = 33,
     InputThreadIdInGroup    = 34,
     InputCoverageMask       = 35,
+    InputInnerCoverage      = 42,
     InputThreadIndexInGroup = 36,
     InputGsInstanceId       = 37,
     OutputDepthGe           = 38,
@@ -290,11 +291,11 @@ namespace dxvk {
     CycleCounter            = 40,
     OutputStencilRef        = 41,
   };
-  
-  
+
+
   /**
    * \brief Number of components
-   * 
+   *
    * Used by operands to determine whether the
    * operand has one, four or zero components.
    */
@@ -303,11 +304,11 @@ namespace dxvk {
     Component1 = 1,
     Component4 = 2,
   };
-  
-  
+
+
   /**
    * \brief Component selection mode
-   * 
+   *
    * When an operand has four components, the
    * component selection mode deterines which
    * components are used for the operation.
@@ -317,11 +318,11 @@ namespace dxvk {
     Swizzle = 1,
     Select1 = 2,
   };
-  
-  
+
+
   /**
    * \brief Index representation
-   * 
+   *
    * Determines how an operand
    * register index is stored.
    */
@@ -332,16 +333,16 @@ namespace dxvk {
     Imm32Relative     = 3,
     Imm64Relative     = 4,
   };
-  
-  
+
+
   /**
    * \brief Extended operand type
    */
   enum class DxbcOperandExt : uint32_t {
     OperandModifier   = 1,
   };
-  
-  
+
+
   /**
    * \brief Resource dimension
    * The type of a resource.
@@ -361,8 +362,8 @@ namespace dxvk {
     RawBuffer         = 11,
     StructuredBuffer  = 12,
   };
-  
-  
+
+
   /**
    * \brief Resource return type
    * Data type for resource read ops.
@@ -378,8 +379,8 @@ namespace dxvk {
     Continued         = 8,  /// ?
     Unused            = 9,  /// ?
   };
-  
-  
+
+
   /**
    * \brief Register component type
    * Data type of a register component.
@@ -390,8 +391,8 @@ namespace dxvk {
     Sint32            = 2,
     Float32           = 3,
   };
-  
-  
+
+
   /**
    * \brief Instruction return type
    */
@@ -399,8 +400,8 @@ namespace dxvk {
     Float             = 0,
     Uint              = 1,
   };
-  
-  
+
+
   enum class DxbcSystemValue : uint32_t {
     None                          = 0,
     Position                      = 1,
@@ -431,8 +432,8 @@ namespace dxvk {
     DepthGe                       = 67,
     DepthLe                       = 68
   };
-  
-  
+
+
   enum class DxbcInterpolationMode : uint32_t {
     Undefined                   = 0,
     Constant                    = 1,
@@ -443,38 +444,38 @@ namespace dxvk {
     LinearSample                = 6,
     LinearNoPerspectiveSample   = 7,
   };
-  
-  
+
+
   enum class DxbcGlobalFlag : uint32_t {
     RefactoringAllowed    = 0,
     DoublePrecision       = 1,
     EarlyFragmentTests    = 2,
     RawStructuredBuffers  = 3,
   };
-  
+
   using DxbcGlobalFlags = Flags<DxbcGlobalFlag>;
-  
+
   enum class DxbcZeroTest : uint32_t {
     TestZ   = 0,
     TestNz  = 1,
   };
-  
+
   enum class DxbcResinfoType : uint32_t {
     Float     = 0,
     RcpFloat  = 1,
     Uint      = 2,
   };
-  
+
   enum class DxbcSyncFlag : uint32_t {
     ThreadsInGroup                = 0,
     ThreadGroupSharedMemory       = 1,
     UavMemoryGroup                = 2,
     UavMemoryGlobal               = 3,
   };
-  
+
   using DxbcSyncFlags = Flags<DxbcSyncFlag>;
-  
-  
+
+
   /**
    * \brief Geometry shader input primitive
    */
@@ -518,8 +519,8 @@ namespace dxvk {
     Patch31           = 38,
     Patch32           = 39,
   };
-  
-  
+
+
   /**
    * \brief Geometry shader output topology
    */
@@ -535,8 +536,8 @@ namespace dxvk {
     TriangleListAdj   = 12,
     TriangleStripAdj  = 13,
   };
-  
-  
+
+
   /**
    * \brief Sampler operation mode
    */
@@ -545,11 +546,11 @@ namespace dxvk {
     Comparison        = 1,
     Mono              = 2,
   };
-  
-  
+
+
   /**
    * \brief Scalar value type
-   * 
+   *
    * Enumerates possible register component
    * types. Scalar types are represented as
    * a one-component vector type.
@@ -563,8 +564,8 @@ namespace dxvk {
     Float64   = 5,
     Bool      = 6,
   };
-  
-  
+
+
   /**
    * \brief Tessellator domain
    */
@@ -574,7 +575,7 @@ namespace dxvk {
     Triangles     = 2,
     Quads         = 3,
   };
-  
+
   /**
    * \brief Tessellator partitioning
    */
@@ -585,16 +586,17 @@ namespace dxvk {
     FractOdd      = 3,
     FractEven     = 4,
   };
-  
+
   /**
    * \brief UAV definition flags
    */
   enum class DxbcUavFlag : uint32_t {
     GloballyCoherent = 0,
+    RasterizerOrdered = 1,
   };
-  
+
   using DxbcUavFlags = Flags<DxbcUavFlag>;
-  
+
   /**
    * \brief Tessellator output primitive
    */
@@ -605,10 +607,10 @@ namespace dxvk {
     TriangleCw    = 3,
     TriangleCcw   = 4,
   };
-  
+
   /**
    * \brief Custom data class
-   * 
+   *
    * Stores which type of custom data is
    * referenced by the instruction.
    */
@@ -618,8 +620,8 @@ namespace dxvk {
     Opaque        = 2,
     ImmConstBuf   = 3,
   };
-  
-  
+
+
   enum class DxbcResourceType : uint32_t {
     Typed      = 0,
     Raw        = 1,
@@ -631,5 +633,5 @@ namespace dxvk {
     StaticallyIndexed = 0,
     DynamicallyIndexed = 1,
   };
-  
+
 }

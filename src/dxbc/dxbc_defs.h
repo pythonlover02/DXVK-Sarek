@@ -3,13 +3,13 @@
 #include "dxbc_enums.h"
 
 namespace dxvk {
-  
+
   constexpr size_t DxbcMaxInterfaceRegs = 32;
   constexpr size_t DxbcMaxOperandCount  = 8;
-  
+
   /**
    * \brief Operand kind
-   * 
+   *
    * In the instruction format definition, this specified
    * whether an operand uses an actual operand token, or
    * whether it is stored as an immediate value.
@@ -19,10 +19,10 @@ namespace dxvk {
     SrcReg, ///< Source register
     Imm32,  ///< Constant number
   };
-  
+
   /**
    * \brief Instruction class
-   * 
+   *
    * Instructions with a similar format are grouped into
    * instruction classes in order to make implementing
    * new instructions easier.
@@ -51,6 +51,7 @@ namespace dxvk {
     TextureQueryLod,    ///< Texture LOD query instruction
     TextureQueryMs,     ///< Multisample texture query
     TextureQueryMsPos,  ///< Sample position query
+    SparseCheckAccess,  ///< Verifies sparse resource access
     TextureFetch,       ///< Texture fetch instruction
     TextureGather,      ///< Texture gather instruction
     TextureSample,      ///< Texture sampling instruction
@@ -68,10 +69,10 @@ namespace dxvk {
     VectorSinCos,       ///< Sine and Cosine instruction
     Undefined,          ///< Instruction code not defined
   };
-  
+
   /**
    * \brief Instruction operand format
-   * 
+   *
    * Stores the kind and the expected data type
    * of an operand. Used when parsing instructions.
    */
@@ -79,10 +80,10 @@ namespace dxvk {
     DxbcOperandKind kind;
     DxbcScalarType  type;
   };
-  
+
   /**
    * \brief Instruction format
-   * 
+   *
    * Defines the instruction class as well as
    * the format of the insttruction operands.
    */
@@ -91,13 +92,13 @@ namespace dxvk {
     DxbcInstClass         instructionClass  = DxbcInstClass::Undefined;
     DxbcInstOperandFormat operands[DxbcMaxOperandCount];
   };
-  
+
   /**
    * \brief Retrieves instruction format info
-   * 
+   *
    * \param [in] opcode The opcode to retrieve
    * \returns Instruction format info
    */
   DxbcInstFormat dxbcInstructionFormat(DxbcOpcode opcode);
-  
+
 }
