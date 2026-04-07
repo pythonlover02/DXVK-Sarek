@@ -7,4 +7,5 @@
 #else
 #define likely(x)   (x)
 #define unlikely(x) (x)
+#define force_inline inline
 #endif
