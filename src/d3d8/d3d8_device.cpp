@@ -152,7 +152,7 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Device::GetDirect3D(IDirect3D8** ppD3D8) {
-    if (ppD3D8 == nullptr)
+    if (unlikely(ppD3D8 == nullptr))
       return D3DERR_INVALIDCALL;
 
     *ppD3D8 = m_parent.ref();
@@ -172,11 +172,11 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D8Device::GetDisplayMode(D3DDISPLAYMODE* pMode) {
     // swap chain 0
-    return GetD3D9()->GetDisplayMode(0, (d3d9::D3DDISPLAYMODE*)pMode);
+    return GetD3D9()->GetDisplayMode(0, reinterpret_cast<d3d9::D3DDISPLAYMODE*>(pMode));
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Device::GetCreationParameters(D3DDEVICE_CREATION_PARAMETERS* pParameters) {
-    return GetD3D9()->GetCreationParameters((d3d9::D3DDEVICE_CREATION_PARAMETERS*)pParameters);
+    return GetD3D9()->GetCreationParameters(reinterpret_cast<d3d9::D3DDEVICE_CREATION_PARAMETERS*>(pParameters));
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Device::SetCursorProperties(
@@ -1183,20 +1183,20 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D8Device::SetMaterial(const D3DMATERIAL8* pMaterial) {
     StateChange();
-    return GetD3D9()->SetMaterial((const d3d9::D3DMATERIAL9*)pMaterial);
+    return GetD3D9()->SetMaterial(reinterpret_cast<const d3d9::D3DMATERIAL9*>(pMaterial));
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Device::GetMaterial(D3DMATERIAL8* pMaterial) {
-    return GetD3D9()->GetMaterial((d3d9::D3DMATERIAL9*)pMaterial);
+    return GetD3D9()->GetMaterial(reinterpret_cast<d3d9::D3DMATERIAL9*>(pMaterial));
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Device::SetLight(DWORD Index, const D3DLIGHT8* pLight) {
     StateChange();
-    return GetD3D9()->SetLight(Index, (const d3d9::D3DLIGHT9*)pLight);
+    return GetD3D9()->SetLight(Index, reinterpret_cast<const d3d9::D3DLIGHT9*>(pLight));
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Device::GetLight(DWORD Index, D3DLIGHT8* pLight) {
-    return GetD3D9()->GetLight(Index, (d3d9::D3DLIGHT9*)pLight);
+    return GetD3D9()->GetLight(Index, reinterpret_cast<d3d9::D3DLIGHT9*>(pLight));
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Device::LightEnable(DWORD Index, BOOL Enable) {
@@ -1703,12 +1703,6 @@ namespace dxvk {
     return GetD3D9()->DeletePatch(Handle);
   }
 
-  // Render States //
-
-  // ZBIAS can be an integer from 0 to 16 and needs to be remapped to float
-  static constexpr float ZBIAS_SCALE     = -0.000005f;
-  static constexpr float ZBIAS_SCALE_INV = 1 / ZBIAS_SCALE;
-
   HRESULT STDMETHODCALLTYPE D3D8Device::SetRenderState(D3DRENDERSTATETYPE State, DWORD Value) {
     D3D8DeviceLock lock = LockDevice();
 
@@ -1742,7 +1736,7 @@ namespace dxvk {
 
       case D3DRS_ZBIAS:
         State9 = d3d9::D3DRS_DEPTHBIAS;
-        Value  = bit::cast<DWORD>(static_cast<float>(Value) * ZBIAS_SCALE);
+        Value  = bit::cast<DWORD>(static_cast<float>(Value) * d8caps::ZBIAS_SCALE);
         break;
 
       case D3DRS_SOFTWAREVERTEXPROCESSING:
@@ -1810,7 +1804,7 @@ namespace dxvk {
       case D3DRS_ZBIAS: {
         DWORD bias  = 0;
         HRESULT res = GetD3D9()->GetRenderState(d3d9::D3DRS_DEPTHBIAS, &bias);
-        *pValue     = static_cast<DWORD>(bit::cast<float>(bias) * ZBIAS_SCALE_INV);
+        *pValue     = static_cast<DWORD>(bit::cast<float>(bias) * d8caps::ZBIAS_SCALE_INV);
         return res;
       } break;
 
