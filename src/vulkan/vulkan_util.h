@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstring>
 #include <utility>
 
 #include "vulkan_loader.h"
