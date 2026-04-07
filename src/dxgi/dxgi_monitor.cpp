@@ -17,25 +17,25 @@ namespace dxvk {
     return m_parent->AddRef();
   }
 
-  
+
   ULONG STDMETHODCALLTYPE DxgiMonitorInfo::Release() {
     return m_parent->Release();
   }
-  
+
 
   HRESULT STDMETHODCALLTYPE DxgiMonitorInfo::QueryInterface(
           REFIID                  riid,
           void**                  ppvObject) {
     return m_parent->QueryInterface(riid, ppvObject);
   }
-  
+
 
   HRESULT STDMETHODCALLTYPE DxgiMonitorInfo::InitMonitorData(
           HMONITOR                hMonitor,
     const DXGI_VK_MONITOR_DATA*   pData) {
     if (!hMonitor || !pData)
       return E_INVALIDARG;
-    
+
     std::lock_guard<dxvk::mutex> lock(m_monitorMutex);
     auto result = m_monitorData.insert({ hMonitor, *pData });
 
@@ -50,7 +50,7 @@ namespace dxvk {
 
     if (!hMonitor || !ppData)
       return E_INVALIDARG;
-    
+
     m_monitorMutex.lock();
 
     auto entry = m_monitorData.find(hMonitor);
@@ -79,10 +79,14 @@ namespace dxvk {
       case DXGI_FORMAT_B8G8R8X8_UNORM_SRGB:
       case DXGI_FORMAT_R10G10B10A2_UNORM:
         return 32;
-      
+
       case DXGI_FORMAT_R16G16B16A16_FLOAT:
-        return 64;
-      
+        // Floating point output doesn't really make sense.
+        // This seemingly works on Windows, and based on FindClosestMode etc documentaton,
+        // this seems required to work for any format that scanout it supported for.
+        // Treat as 10-bit -> 32.
+        return 32;
+
       default:
         Logger::warn(str::format(
           "GetMonitorFormatBpp: Unknown format: ",
@@ -90,5 +94,5 @@ namespace dxvk {
         return 32;
     }
   }
-  
+
 }
