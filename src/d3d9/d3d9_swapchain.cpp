@@ -280,7 +280,7 @@ namespace dxvk {
 
     bool recreate = false;
     recreate   |= m_presenter == nullptr;
-    recreate   |= window != m_window;    
+    recreate   |= window != m_window;
     recreate   |= m_dialog != m_lastDialog;
     if (options->deferSurfaceCreation)
       recreate |= m_parent->IsDeviceReset();
@@ -367,7 +367,7 @@ namespace dxvk {
                                 | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
       resolveInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
       resolveInfo.layout        = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-      
+
       Rc<DxvkImage> resolvedSrc = m_device->createImage(
         resolveInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
@@ -422,7 +422,7 @@ namespace dxvk {
                                    | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
       blitCreateInfo.tiling        = VK_IMAGE_TILING_OPTIMAL;
       blitCreateInfo.layout        = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-      
+
       Rc<DxvkImage> blittedSrc = m_device->createImage(
         blitCreateInfo, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
 
@@ -549,7 +549,7 @@ namespace dxvk {
     return D3D_OK;
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D9SwapChainEx::GetDisplayMode(D3DDISPLAYMODE* pMode) {
     if (pMode == nullptr)
       return D3DERR_INVALIDCALL;
@@ -583,13 +583,19 @@ namespace dxvk {
 
 
   HRESULT STDMETHODCALLTYPE D3D9SwapChainEx::GetLastPresentCount(UINT* pLastPresentCount) {
-    Logger::warn("D3D9SwapChainEx::GetLastPresentCount: Stub");
+    static bool s_errorShown = false;
+
+    if (!std::exchange(s_errorShown, true))
+      Logger::warn("D3D9SwapChainEx::GetLastPresentCount: Stub");
     return D3D_OK;
   }
 
 
   HRESULT STDMETHODCALLTYPE D3D9SwapChainEx::GetPresentStats(D3DPRESENTSTATS* pPresentationStatistics) {
-    Logger::warn("D3D9SwapChainEx::GetPresentStats: Stub");
+    static bool s_errorShown = false;
+
+    if (!std::exchange(s_errorShown, true))
+      Logger::warn("D3D9SwapChainEx::GetPresentStats: Stub");
     return D3D_OK;
   }
 
@@ -652,10 +658,10 @@ namespace dxvk {
           return D3DERR_INVALIDCALL;
       }
 
-      // Move the window so that it covers the entire output    
+      // Move the window so that it covers the entire output
       RECT rect;
       GetMonitorRect(GetDefaultMonitor(), &rect);
-    
+
       ::SetWindowPos(m_window, HWND_TOPMOST,
         rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
         SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOACTIVATE);
@@ -683,17 +689,17 @@ namespace dxvk {
 
   static bool validateGammaRamp(const WORD (&ramp)[256]) {
     if (ramp[0] >= ramp[std::size(ramp) - 1]) {
-      Logger::err("validateGammaRamp: ramp inverted or flat");
+      Logger::warn("validateGammaRamp: ramp inverted or flat");
       return false;
     }
 
     for (size_t i = 1; i < std::size(ramp); i++) {
       if (ramp[i] < ramp[i - 1]) {
-        Logger::err("validateGammaRamp: ramp not monotonically increasing");
+        Logger::warn("validateGammaRamp: ramp not monotonically increasing");
         return false;
       }
       if (ramp[i] - ramp[i - 1] >= UINT16_MAX / 2) {
-        Logger::err("validateGammaRamp: huuuge jump");
+        Logger::warn("validateGammaRamp: huuuge jump");
         return false;
       }
     }
@@ -720,7 +726,7 @@ namespace dxvk {
     bool isIdentity = true;
 
     std::array<DxvkGammaCp, NumControlPoints> cp;
-      
+
     for (uint32_t i = 0; i < NumControlPoints; i++) {
       uint16_t identity = MapGammaControlPoint(float(i) / float(NumControlPoints - 1));
 
@@ -838,7 +844,7 @@ namespace dxvk {
 
       while (status != VK_SUCCESS && status != VK_SUBOPTIMAL_KHR) {
         RecreateSwapChain(m_vsync);
-        
+
         info = m_presenter->info();
         status = m_presenter->acquireNextImage(sync, imageIndex);
       }
@@ -927,7 +933,7 @@ namespace dxvk {
 
     if (m_presenter->recreateSwapChain(presenterDesc) != VK_SUCCESS)
       throw DxvkError("D3D9SwapChainEx: Failed to recreate swap chain");
-    
+
     CreateRenderTargetViews();
   }
 
@@ -998,7 +1004,7 @@ namespace dxvk {
 
     for (uint32_t i = 0; i < info.imageCount; i++) {
       VkImage imageHandle = m_presenter->getImage(i).image;
-      
+
       Rc<DxvkImage> image = new DxvkImage(
         m_device.ptr(), imageInfo, imageHandle);
 
@@ -1056,7 +1062,7 @@ namespace dxvk {
 
     m_context->beginRecording(
       m_device->createCommandList());
-    
+
     for (uint32_t i = 0; i < m_backBuffers.size(); i++) {
       m_context->initImage(
         m_backBuffers[i]->GetCommonTexture()->GetImage(),
@@ -1120,7 +1126,7 @@ namespace dxvk {
 
     switch (Format) {
       default:
-        Logger::warn(str::format("D3D9SwapChainEx: Unexpected format: ", Format));      
+        Logger::warn(str::format("D3D9SwapChainEx: Unexpected format: ", Format));
      [[fallthrough]];
 
       case D3D9Format::A8R8G8B8:
@@ -1189,10 +1195,10 @@ namespace dxvk {
 
   HRESULT D3D9SwapChainEx::EnterFullscreenMode(
           D3DPRESENT_PARAMETERS* pPresentParams,
-    const D3DDISPLAYMODEEX*      pFullscreenDisplayMode) {    
+    const D3DDISPLAYMODEEX*      pFullscreenDisplayMode) {
     // Find a display mode that matches what we need
     ::GetWindowRect(m_window, &m_windowState.rect);
-      
+
     if (FAILED(ChangeDisplayMode(pPresentParams, pFullscreenDisplayMode))) {
       Logger::err("D3D9: EnterFullscreenMode: Failed to change display mode");
       return D3DERR_INVALIDCALL;
@@ -1207,66 +1213,66 @@ namespace dxvk {
     HookWindowProc(m_window, this);
 
     D3D9WindowMessageFilter filter(m_window);
-    
+
     // Change the window flags to remove the decoration etc.
     LONG style   = ::GetWindowLongW(m_window, GWL_STYLE);
     LONG exstyle = ::GetWindowLongW(m_window, GWL_EXSTYLE);
-    
+
     m_windowState.style = style;
     m_windowState.exstyle = exstyle;
-    
+
     style   &= ~WS_OVERLAPPEDWINDOW;
     exstyle &= ~WS_EX_OVERLAPPEDWINDOW;
-    
+
     ::SetWindowLongW(m_window, GWL_STYLE, style);
     ::SetWindowLongW(m_window, GWL_EXSTYLE, exstyle);
-    
-    // Move the window so that it covers the entire output    
+
+    // Move the window so that it covers the entire output
     RECT rect;
     GetMonitorRect(GetDefaultMonitor(), &rect);
-    
+
     ::SetWindowPos(m_window, HWND_TOPMOST,
       rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
       SWP_FRAMECHANGED | SWP_SHOWWINDOW | SWP_NOACTIVATE);
-    
+
     m_monitor = GetDefaultMonitor();
     return D3D_OK;
   }
-  
-  
+
+
   HRESULT D3D9SwapChainEx::LeaveFullscreenMode() {
     if (!IsWindow(m_window))
       return D3DERR_INVALIDCALL;
-    
+
     if (FAILED(RestoreDisplayMode(m_monitor)))
       Logger::warn("D3D9: LeaveFullscreenMode: Failed to restore display mode");
-    
+
     m_monitor = nullptr;
 
     ResetWindowProc(m_window);
-    
+
     // Only restore the window style if the application hasn't
     // changed them. This is in line with what native D3D9 does.
     LONG curStyle   = ::GetWindowLongW(m_window, GWL_STYLE) & ~WS_VISIBLE;
     LONG curExstyle = ::GetWindowLongW(m_window, GWL_EXSTYLE) & ~WS_EX_TOPMOST;
-    
+
     if (curStyle == (m_windowState.style & ~(WS_VISIBLE | WS_OVERLAPPEDWINDOW))
      && curExstyle == (m_windowState.exstyle & ~(WS_EX_TOPMOST | WS_EX_OVERLAPPEDWINDOW))) {
       ::SetWindowLongW(m_window, GWL_STYLE,   m_windowState.style);
       ::SetWindowLongW(m_window, GWL_EXSTYLE, m_windowState.exstyle);
     }
-    
+
     // Restore window position and apply the style
     const RECT rect = m_windowState.rect;
-    
+
     ::SetWindowPos(m_window, 0,
       rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top,
       SWP_FRAMECHANGED | SWP_NOZORDER | SWP_NOACTIVATE);
-    
+
     return D3D_OK;
   }
-  
-  
+
+
   HRESULT D3D9SwapChainEx::ChangeDisplayMode(
           D3DPRESENT_PARAMETERS* pPresentParams,
     const D3DDISPLAYMODEEX*      pFullscreenDisplayMode) {
@@ -1289,19 +1295,19 @@ namespace dxvk {
     devMode.dmPelsWidth  = mode.Width;
     devMode.dmPelsHeight = mode.Height;
     devMode.dmBitsPerPel = GetMonitorFormatBpp(EnumerateFormat(mode.Format));
-    
+
     if (mode.RefreshRate != 0)  {
       devMode.dmFields |= DM_DISPLAYFREQUENCY;
       devMode.dmDisplayFrequency = mode.RefreshRate;
     }
-    
+
     HMONITOR monitor = GetDefaultMonitor();
 
     if (!SetMonitorDisplayMode(monitor, &devMode))
       return D3DERR_NOTAVAILABLE;
 
     devMode.dmFields = DM_DISPLAYFREQUENCY;
-    
+
     if (GetMonitorDisplayMode(monitor, ENUM_CURRENT_SETTINGS, &devMode))
       NotifyDisplayRefreshRate(double(devMode.dmDisplayFrequency));
     else
@@ -1309,12 +1315,12 @@ namespace dxvk {
 
     return D3D_OK;
   }
-  
-  
+
+
   HRESULT D3D9SwapChainEx::RestoreDisplayMode(HMONITOR hMonitor) {
     if (hMonitor == nullptr)
       return D3DERR_INVALIDCALL;
-    
+
     if (!RestoreMonitorDisplayMode())
       return D3DERR_NOTAVAILABLE;
 
@@ -1346,7 +1352,7 @@ namespace dxvk {
     else
       dstRect = *pDestRect;
 
-    bool recreate = 
+    bool recreate =
        m_dstRect.left   != dstRect.left
     || m_dstRect.top    != dstRect.top
     || m_dstRect.right  != dstRect.right

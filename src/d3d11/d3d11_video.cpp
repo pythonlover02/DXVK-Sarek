@@ -49,23 +49,50 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D11VideoProcessorEnumerator::CheckVideoProcessorFormat(
           DXGI_FORMAT             Format,
           UINT*                   pFlags) {
-    Logger::err("D3D11VideoProcessorEnumerator::CheckVideoProcessorFormat: Stub");
-    return E_NOTIMPL;
+    Logger::warn(str::format("D3D11VideoProcessorEnumerator::CheckVideoProcessorFormat: stub, format ", Format));
+
+    if (!pFlags)
+      return E_INVALIDARG;
+
+    *pFlags = D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_INPUT | D3D11_VIDEO_PROCESSOR_FORMAT_SUPPORT_OUTPUT;
+    return S_OK;
   }
 
 
   HRESULT STDMETHODCALLTYPE D3D11VideoProcessorEnumerator::GetVideoProcessorCaps(
           D3D11_VIDEO_PROCESSOR_CAPS* pCaps) {
-    Logger::err("D3D11VideoProcessorEnumerator::GetVideoProcessorCaps: Stub");
-    return E_NOTIMPL;
+    static bool s_errorShown = false;
+
+    if (!std::exchange(s_errorShown, true))
+      Logger::warn("D3D11VideoProcessorEnumerator::GetVideoProcessorCaps: semi-stub");
+
+    if (!pCaps)
+      return E_INVALIDARG;
+
+    *pCaps = {};
+    pCaps->RateConversionCapsCount = 1;
+    pCaps->MaxInputStreams = 52;
+    pCaps->MaxStreamStates = 52;
+    return S_OK;
   }
 
 
   HRESULT STDMETHODCALLTYPE D3D11VideoProcessorEnumerator::GetVideoProcessorRateConversionCaps(
           UINT                    TypeIndex,
           D3D11_VIDEO_PROCESSOR_RATE_CONVERSION_CAPS* pCaps) {
-    Logger::err("D3D11VideoProcessorEnumerator::GetVideoProcessorRateConversionCaps: Stub");
-    return E_NOTIMPL;
+    static bool s_errorShown = false;
+
+    if (!std::exchange(s_errorShown, true))
+      Logger::warn("D3D11VideoProcessorEnumerator::GetVideoProcessorRateConversionCaps: semi-stub");
+
+    if (!pCaps || TypeIndex)
+      return E_INVALIDARG;
+
+    *pCaps = {};
+    pCaps->ProcessorCaps = D3D11_VIDEO_PROCESSOR_PROCESSOR_CAPS_DEINTERLACE_BOB;
+    pCaps->PastFrames = 1;
+    pCaps->FutureFrames = 1;
+    return S_OK;
   }
 
 
@@ -780,7 +807,7 @@ namespace dxvk {
     D3D10DeviceLock lock = m_ctx->LockContext();
 
     auto state = static_cast<D3D11VideoProcessor*>(pVideoProcessor)->GetState();
-    
+
     if (pYCbCr)
       *pYCbCr = state->outputBackgroundColorIsYCbCr;
 

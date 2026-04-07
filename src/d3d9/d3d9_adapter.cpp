@@ -149,8 +149,10 @@ namespace dxvk {
         : D3DERR_NOTAVAILABLE;
 
     // I really don't want to support this...
-    if (dmap)
+    if (dmap) {
+      Logger::warn("D3D9Adapter::CheckDeviceFormat: D3DUSAGE_DMAP is unsupported");
       return D3DERR_NOTAVAILABLE;
+    }
 
     auto mapping = m_d3d9Formats.GetFormatMapping(CheckFormat);
     if (mapping.FormatColor == VK_FORMAT_UNDEFINED)
@@ -179,15 +181,28 @@ namespace dxvk {
     if (pQualityLevels != nullptr)
       *pQualityLevels = 1;
 
+    if (unlikely(MultiSampleType > D3DMULTISAMPLE_16_SAMPLES))
+      return D3DERR_INVALIDCALL;
+
+    if (unlikely(SurfaceFormat == D3D9Format::Unknown))
+      return D3DERR_INVALIDCALL;
+
     auto dst = ConvertFormatUnfixed(SurfaceFormat);
-    if (dst.FormatColor == VK_FORMAT_UNDEFINED)
+    // Wargame: European Escalation expects a D3DMULTISAMPLE_NONE
+    // NULL format check to succeed, otherwise it will crash
+    if (SurfaceFormat != D3D9Format::NULL_FORMAT && dst.FormatColor == VK_FORMAT_UNDEFINED)
       return D3DERR_NOTAVAILABLE;
 
     if (MultiSampleType != D3DMULTISAMPLE_NONE
      && (SurfaceFormat == D3D9Format::D32_LOCKABLE
       || SurfaceFormat == D3D9Format::D32F_LOCKABLE
       || SurfaceFormat == D3D9Format::D16_LOCKABLE
-      || SurfaceFormat == D3D9Format::INTZ))
+      || SurfaceFormat == D3D9Format::INTZ
+      || SurfaceFormat == D3D9Format::DXT1
+      || SurfaceFormat == D3D9Format::DXT2
+      || SurfaceFormat == D3D9Format::DXT3
+      || SurfaceFormat == D3D9Format::DXT4
+      || SurfaceFormat == D3D9Format::DXT5))
       return D3DERR_NOTAVAILABLE;
 
     uint32_t sampleCount = std::max<uint32_t>(MultiSampleType, 1u);
@@ -306,7 +321,7 @@ namespace dxvk {
                                     | D3DPRESENT_INTERVAL_FOUR
                                     | D3DPRESENT_INTERVAL_IMMEDIATE;
     // Cursor
-    pCaps->CursorCaps               = D3DCURSORCAPS_COLOR; // I do not support Cursor yet, but I don't want to say I don't support it for compatibility reasons.
+    pCaps->CursorCaps               = D3DCURSORCAPS_COLOR;
     // Dev Caps
     pCaps->DevCaps                  = D3DDEVCAPS_EXECUTESYSTEMMEMORY
                                     | D3DDEVCAPS_EXECUTEVIDEOMEMORY
@@ -563,7 +578,7 @@ namespace dxvk {
     // Max Vertex Shader Const
     pCaps->MaxVertexShaderConst       = MaxFloatConstantsVS;
     // Max PS1 Value
-    pCaps->PixelShader1xMaxValue      = maxShaderModel > 0 ? FLT_MAX : 0.0f;
+    pCaps->PixelShader1xMaxValue      = maxShaderModel > 0 ? std::numeric_limits<float>::max() : 0.0f;
     // Dev Caps 2
     pCaps->DevCaps2                   = D3DDEVCAPS2_STREAMOFFSET
                                    /* | D3DDEVCAPS2_DMAPNPATCH */
@@ -838,7 +853,7 @@ namespace dxvk {
         if (a.Height < b.Height) return true;
         if (a.Height > b.Height) return false;
 
-        return a.RefreshRate < b.RefreshRate;
+        return a.RefreshRate > b.RefreshRate;
     });
   }
 
