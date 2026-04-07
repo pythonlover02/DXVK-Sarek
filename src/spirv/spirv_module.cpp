@@ -2461,7 +2461,7 @@ namespace dxvk {
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
 
-    m_code.putIns (spv::opFUnordNotEqual, 5);
+    m_code.putIns (spv::OpFUnordNotEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(vector1);
