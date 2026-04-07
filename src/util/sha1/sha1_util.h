@@ -21,6 +21,14 @@ namespace dxvk {
     Sha1Hash(const Sha1Digest& digest)
     : m_digest(digest) { }
     
+    const uint8_t* digest() const {
+      return m_digest.data();
+    }
+
+    size_t digestLength() const {
+      return m_digest.size();
+    }
+
     std::string toString() const;
     
     uint32_t dword(uint32_t id) const {

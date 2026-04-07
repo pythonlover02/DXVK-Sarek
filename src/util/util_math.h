@@ -3,6 +3,8 @@
 #include <cmath>
 
 namespace dxvk {
+  constexpr double pi = 3.14159265359;
+
   
   constexpr size_t CACHE_LINE_SIZE = 64;
   

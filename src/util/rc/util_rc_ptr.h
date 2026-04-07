@@ -92,8 +92,15 @@ namespace dxvk {
     T* operator -> () const { return  m_object; }
     T* ptr() const { return m_object; }
     
-    bool operator == (const Rc& other) const { return m_object == other.m_object; }
-    bool operator != (const Rc& other) const { return m_object != other.m_object; }
+    template<typename Tx> bool operator == (const Rc<Tx>& other) const { return m_object == other.m_object; }
+    template<typename Tx> bool operator != (const Rc<Tx>& other) const { return m_object != other.m_object; }
+
+    template<typename Tx> bool operator == (Tx* other) const { return m_object == other; }
+    template<typename Tx> bool operator != (Tx* other) const { return m_object != other; }
+
+    explicit operator bool () const {
+      return m_object != nullptr;
+    }
     
     bool operator == (std::nullptr_t) const { return m_object == nullptr; }
     bool operator != (std::nullptr_t) const { return m_object != nullptr; }
@@ -102,12 +109,12 @@ namespace dxvk {
     
     T* m_object = nullptr;
     
-    void incRef() const {
+    force_inline void incRef() const {
       if (m_object != nullptr)
         m_object->incRef();
     }
     
-    void decRef() const {
+    force_inline void decRef() const {
       if (m_object != nullptr) {
         if (m_object->decRef() == 0)
           delete m_object;
