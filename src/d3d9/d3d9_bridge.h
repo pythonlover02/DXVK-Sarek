@@ -1,6 +1,7 @@
 #pragma once
 
 #include <windows.h>
+#include <d3d9.h>
 #include "../util/config/config.h"
 
 /**
@@ -20,6 +21,7 @@ IDxvkD3D8Bridge : public IUnknown {
   #ifdef DXVK_D3D9_NAMESPACE
     using IDirect3DSurface9 = d3d9::IDirect3DSurface9;
     using D3DFORMAT = d3d9::D3DFORMAT;
+    using D3DPRESENT_PARAMETERS = d3d9::D3DPRESENT_PARAMETERS;
   #endif
 
   /**
@@ -30,6 +32,12 @@ IDxvkD3D8Bridge : public IUnknown {
    * \param [in] pSrcRect     Source rectangle
    * \param [in] pDestPoint   Destination (top-left) point
    */
+  virtual uint32_t DetermineInitialTextureMemory() = 0;
+  virtual HRESULT ResetSwapChain(D3DPRESENT_PARAMETERS* Params) = 0;
+  virtual HRESULT SetColorKeyState(bool colorKeyState) = 0;
+  virtual HRESULT SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh) = 0;
+  virtual HRESULT SetLegacyLightsState(bool legacyLightsState, bool isD3DLight2) = 0;
+
   virtual HRESULT UpdateTextureFromBuffer(
       IDirect3DSurface9*        pDestSurface,
       IDirect3DSurface9*        pSrcSurface,
@@ -52,6 +60,10 @@ IDxvkD3D8InterfaceBridge : public IUnknown {
   /**
    * \brief Enforces D3D8-specific features and validations
    */
+  virtual void EnableD3D3CompatibilityMode() = 0;
+  virtual void EnableD3D5CompatibilityMode() = 0;
+  virtual void EnableD3D6CompatibilityMode() = 0;
+  virtual void EnableD3D7CompatibilityMode() = 0;
   virtual void EnableD3D8CompatibilityMode() = 0;
 
   /**
@@ -86,6 +98,12 @@ namespace dxvk {
             REFIID  riid,
             void** ppvObject);
 
+    uint32_t DetermineInitialTextureMemory();
+    HRESULT ResetSwapChain(D3DPRESENT_PARAMETERS* Params);
+    HRESULT SetColorKeyState(bool colorKeyState);
+    HRESULT SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh);
+    HRESULT SetLegacyLightsState(bool legacyLightsState, bool isD3DLight2);
+
     HRESULT UpdateTextureFromBuffer(
         IDirect3DSurface9*        pDestSurface,
         IDirect3DSurface9*        pSrcSurface,
@@ -114,6 +132,10 @@ namespace dxvk {
             REFIID  riid,
             void** ppvObject);
 
+    void EnableD3D3CompatibilityMode();
+    void EnableD3D5CompatibilityMode();
+    void EnableD3D6CompatibilityMode();
+    void EnableD3D7CompatibilityMode();
     void EnableD3D8CompatibilityMode();
 
     const Config* GetConfig() const;

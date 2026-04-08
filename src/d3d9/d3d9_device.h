@@ -928,12 +928,51 @@ namespace dxvk {
     const D3D9ConstantLayout& GetPixelConstantLayout()  { return m_psLayout; }
 
     HRESULT ResetState(D3DPRESENT_PARAMETERS* pPresentationParameters);
+    HRESULT SetColorKeyState(bool colorKeyState) {
+      if (likely(m_colorKeyEnabled != colorKeyState)) {
+        m_colorKeyEnabled = colorKeyState;
+      }
+      return D3D_OK;
+    }
+
+    HRESULT SetLegacyLightsState(bool legacyLightState, bool isD3DLight2) {
+      if (likely(m_useLegacyLights != legacyLightState)) {
+        m_useLegacyLights = legacyLightState;
+        m_isD3DLight2     = isD3DLight2;
+      }
+      return D3D_OK;
+    }
+
+    HRESULT SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh) {
+      if (likely(m_state.colorKeyLow != colorKeyLow || m_state.colorKeyHigh != colorKeyHigh)) {
+        m_state.colorKeyLow = colorKeyLow;
+        m_state.colorKeyHigh = colorKeyHigh;
+      }
+      return D3D_OK;
+    }
+
     HRESULT ResetSwapChain(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode);
 
     HRESULT InitialReset(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode);
 
     UINT GetSamplerCount() const {
       return m_samplerCount.load();
+    }
+
+    bool IsD3D3Compatible() const {
+      return m_isD3D3Compatible;
+    }
+
+    bool IsD3D5Compatible() const {
+      return m_isD3D5Compatible;
+    }
+
+    bool IsD3D6Compatible() const {
+      return m_isD3D6Compatible;
+    }
+
+    bool IsD3D7Compatible() const {
+      return m_isD3D7Compatible;
     }
 
     bool IsD3D8Compatible() const {
@@ -1274,6 +1313,16 @@ namespace dxvk {
     D3D9ShaderMasks                 m_psShaderMasks = FixedFunctionMask;
 
     bool                            m_isSWVP;
+    bool                            m_isD3D3Compatible;
+    bool                            m_isD3D5Compatible;
+    bool                            m_isD3D6Compatible;
+    bool                            m_isD3D7Compatible;
+
+    // D3D7 and earlier color key transparency state
+    bool                            m_colorKeyEnabled  = false;
+    // D3D6 and earlier legacy light model state
+    bool                            m_useLegacyLights  = false;
+    bool                            m_isD3DLight2      = false;
     bool                            m_isD3D8Compatible;
     bool                            m_amdATOC         = false;
     bool                            m_nvATOC          = false;

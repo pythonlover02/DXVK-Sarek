@@ -49,6 +49,10 @@ namespace dxvk {
     , m_d3d9Options        ( dxvkDevice, pParent->GetInstance()->config() )
     , m_multithread        ( BehaviorFlags & D3DCREATE_MULTITHREADED )
     , m_isSWVP             ( (BehaviorFlags & D3DCREATE_SOFTWARE_VERTEXPROCESSING) ? true : false )
+    , m_isD3D3Compatible   ( pParent->IsD3D3Compatible() )
+    , m_isD3D5Compatible   ( pParent->IsD3D5Compatible() )
+    , m_isD3D6Compatible   ( pParent->IsD3D6Compatible() )
+    , m_isD3D7Compatible   ( pParent->IsD3D7Compatible() )
     , m_isD3D8Compatible   ( pParent->IsD3D8Compatible() )
     , m_csThread           ( dxvkDevice, dxvkDevice->createContext() )
     , m_csChunk            ( AllocCsChunk() )
@@ -7429,7 +7433,7 @@ namespace dxvk {
     m_flags.set(D3D9DeviceFlag::DirtyFFVertexShader);
 
     // PS
-    rs[D3DRS_SPECULARENABLE] = FALSE;
+    rs[D3DRS_SPECULARENABLE] = m_isD3D5Compatible ? TRUE : FALSE;
 
     rs[D3DRS_AMBIENT]                = 0;
     m_flags.set(D3D9DeviceFlag::DirtyFFVertexData);
@@ -7437,8 +7441,8 @@ namespace dxvk {
     rs[D3DRS_FOGENABLE]                  = FALSE;
     rs[D3DRS_FOGCOLOR]                   = 0;
     rs[D3DRS_FOGTABLEMODE]               = D3DFOG_NONE;
-    rs[D3DRS_FOGSTART]                   = bit::cast<DWORD>(0.0f);
-    rs[D3DRS_FOGEND]                     = bit::cast<DWORD>(1.0f);
+    rs[D3DRS_FOGSTART]                   = m_isD3D6Compatible ? bit::cast<DWORD>(1.0f)   : bit::cast<DWORD>(0.0f);
+    rs[D3DRS_FOGEND]                     = m_isD3D6Compatible ? bit::cast<DWORD>(100.0f) : bit::cast<DWORD>(1.0f);
     rs[D3DRS_FOGDENSITY]                 = bit::cast<DWORD>(1.0f);
     rs[D3DRS_FOGVERTEXMODE]              = D3DFOG_NONE;
     m_flags.set(D3D9DeviceFlag::DirtyFogColor);
@@ -7485,7 +7489,7 @@ namespace dxvk {
     rs[D3DRS_WRAP6]                      = 0;
     rs[D3DRS_WRAP7]                      = 0;
     rs[D3DRS_CLIPPING]                   = TRUE;
-    rs[D3DRS_MULTISAMPLEANTIALIAS]       = TRUE;
+    rs[D3DRS_MULTISAMPLEANTIALIAS]       = m_isD3D7Compatible ? FALSE : TRUE;
     rs[D3DRS_PATCHEDGESTYLE]             = D3DPATCHEDGE_DISCRETE;
     rs[D3DRS_DEBUGMONITORTOKEN]          = D3DDMT_ENABLE;
     rs[D3DRS_POSITIONDEGREE]             = D3DDEGREE_CUBIC;

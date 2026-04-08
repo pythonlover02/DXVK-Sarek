@@ -150,8 +150,9 @@ namespace dxvk {
       return D3DERR_INVALIDCALL;
 
     // RENDERTARGET and DEPTHSTENCIL must be default pool
-    constexpr DWORD incompatibleUsages = D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL;
-    if (pDesc->Pool != D3DPOOL_DEFAULT && (pDesc->Usage & incompatibleUsages))
+    constexpr DWORD usageRTOrDS = D3DUSAGE_RENDERTARGET | D3DUSAGE_DEPTHSTENCIL;
+
+    if (pDesc->Pool != D3DPOOL_DEFAULT && (pDesc->Usage & usageRTOrDS))
       return D3DERR_INVALIDCALL;
 
     // Use the maximum possible mip level count if the supplied

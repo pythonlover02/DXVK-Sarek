@@ -87,6 +87,10 @@ namespace dxvk {
       return m_d3d9Formats.GetUnsupportedFormatInfo(Format);
     }
 
+    void RefreshFormatsTable(bool isD3D8Compatible) const {
+        m_d3d9Formats.RefreshFormatSupport(isD3D8Compatible);
+      }
+
   private:
 
     HRESULT CheckDeviceVkFormat(
@@ -105,7 +109,7 @@ namespace dxvk {
     std::vector<D3DDISPLAYMODEEX> m_modes;
     D3D9Format                    m_modeCacheFormat;
 
-    const D3D9VkFormatTable       m_d3d9Formats;
+    mutable D3D9VkFormatTable     m_d3d9Formats;
 
   };
 

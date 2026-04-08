@@ -3,17 +3,17 @@
 namespace dxvk {
 
   typedef HRESULT (STDMETHODCALLTYPE *D3DXDisassembleShader) (
-    const void*      pShader, 
-          BOOL       EnableColorCode, 
-          char*      pComments, 
+    const void*      pShader,
+          BOOL       EnableColorCode,
+          char*      pComments,
           ID3DBlob** ppDisassembly); // ppDisassembly is actually a D3DXBUFFER, but it has the exact same vtable as a ID3DBlob at the start.
 
   D3DXDisassembleShader g_pfnDisassembleShader = nullptr;
 
   HRESULT DisassembleShader(
-    const void*      pShader, 
-          BOOL       EnableColorCode, 
-          char*      pComments, 
+    const void*      pShader,
+          BOOL       EnableColorCode,
+          char*      pComments,
           ID3DBlob** ppDisassembly) {
     if (g_pfnDisassembleShader == nullptr) {
       HMODULE d3d9x = LoadLibraryA("d3dx9.dll");
@@ -21,7 +21,7 @@ namespace dxvk {
       if (d3d9x == nullptr)
         d3d9x = LoadLibraryA("d3dx9_43.dll");
 
-      g_pfnDisassembleShader = 
+      g_pfnDisassembleShader =
         reinterpret_cast<D3DXDisassembleShader>(GetProcAddress(d3d9x, "D3DXDisassembleShader"));
     }
 
@@ -402,20 +402,6 @@ namespace dxvk {
   }
 
 
-  bool IsDepthFormat(D3D9Format Format) {
-    return Format == D3D9Format::D16_LOCKABLE
-        || Format == D3D9Format::D32
-        || Format == D3D9Format::D15S1
-        || Format == D3D9Format::D24S8
-        || Format == D3D9Format::D24X8
-        || Format == D3D9Format::D24X4S4
-        || Format == D3D9Format::D16
-        || Format == D3D9Format::D32F_LOCKABLE
-        || Format == D3D9Format::D24FS8
-        || Format == D3D9Format::D32_LOCKABLE
-        || Format == D3D9Format::DF16
-        || Format == D3D9Format::DF24
-        || Format == D3D9Format::INTZ;
-  }
+  // IsDepthFormat moved inline to d3d9_util.h
 
 }

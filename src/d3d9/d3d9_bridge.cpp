@@ -29,6 +29,28 @@ namespace dxvk {
     return m_device->QueryInterface(riid, ppvObject);
   }
 
+  uint32_t DxvkD3D8Bridge::DetermineInitialTextureMemory() {
+    const int64_t initialTextureMemory = m_device->DetermineInitialTextureMemory();
+    return initialTextureMemory > 0 ? static_cast<uint32_t>(initialTextureMemory) : 0;
+  }
+
+  HRESULT DxvkD3D8Bridge::ResetSwapChain(D3DPRESENT_PARAMETERS* Params) {
+    return m_device->ResetSwapChain(Params, nullptr);
+  }
+
+  HRESULT DxvkD3D8Bridge::SetColorKeyState(bool colorKeyState) {
+    return m_device->SetColorKeyState(colorKeyState);
+  }
+
+  HRESULT DxvkD3D8Bridge::SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh) {
+    return m_device->SetColorKey(colorKeyLow, colorKeyHigh);
+  }
+
+  HRESULT DxvkD3D8Bridge::SetLegacyLightsState(bool legacyLightsState, bool isD3DLight2) {
+    m_device->SetRenderState(D3DRS_NORMALIZENORMALS, legacyLightsState);
+    return m_device->SetLegacyLightsState(legacyLightsState, isD3DLight2);
+  }
+
   HRESULT DxvkD3D8Bridge::UpdateTextureFromBuffer(
         IDirect3DSurface9*  pDestSurface,
         IDirect3DSurface9*  pSrcSurface,
@@ -113,6 +135,22 @@ namespace dxvk {
           REFIID  riid,
           void** ppvObject) {
     return m_interface->QueryInterface(riid, ppvObject);
+  }
+
+  void DxvkD3D8InterfaceBridge::EnableD3D3CompatibilityMode() {
+    m_interface->EnableD3D3CompatibilityMode();
+  }
+
+  void DxvkD3D8InterfaceBridge::EnableD3D5CompatibilityMode() {
+    m_interface->EnableD3D5CompatibilityMode();
+  }
+
+  void DxvkD3D8InterfaceBridge::EnableD3D6CompatibilityMode() {
+    m_interface->EnableD3D6CompatibilityMode();
+  }
+
+  void DxvkD3D8InterfaceBridge::EnableD3D7CompatibilityMode() {
+    m_interface->EnableD3D7CompatibilityMode();
   }
 
   void DxvkD3D8InterfaceBridge::EnableD3D8CompatibilityMode() {

@@ -212,6 +212,8 @@ namespace dxvk {
     const DxvkFormatInfo* GetUnsupportedFormatInfo(
       D3D9Format            Format) const;
 
+    void RefreshFormatSupport(bool isD3D8Compatible);
+
   private:
 
     bool CheckImageFormatSupport(
@@ -225,6 +227,7 @@ namespace dxvk {
 
     bool m_dfSupport;
     bool m_x4r4g4b4Support;
+    bool m_w11v11u10Support;
     bool m_d32supportFinal;
   };
 

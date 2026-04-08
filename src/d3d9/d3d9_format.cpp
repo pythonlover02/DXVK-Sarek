@@ -504,7 +504,7 @@ namespace dxvk {
 
     if (Format == D3D9Format::D32 && !m_d32supportFinal)
       return D3D9_VK_FORMAT_MAPPING();
-    
+
     if (!m_d24s8Support && mapping.FormatColor == VK_FORMAT_D24_UNORM_S8_UINT)
       mapping.FormatColor = VK_FORMAT_D32_SFLOAT_S8_UINT;
 
@@ -577,14 +577,19 @@ namespace dxvk {
         return &unknown;
     }
   }
-  
+
+
+  void D3D9VkFormatTable::RefreshFormatSupport(bool isD3D8Compatible) {
+    m_w11v11u10Support = isD3D8Compatible;
+  }
+
 
   bool D3D9VkFormatTable::CheckImageFormatSupport(
     const Rc<DxvkAdapter>&      Adapter,
           VkFormat              Format,
           VkFormatFeatureFlags  Features) const {
     VkFormatProperties supported = Adapter->formatProperties(Format);
-    
+
     return (supported.linearTilingFeatures  & Features) == Features
         || (supported.optimalTilingFeatures & Features) == Features;
   }
