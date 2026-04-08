@@ -1339,6 +1339,7 @@ namespace dxvk {
      * due to queue syncs on certain race tracks  */
     { R"(\\Smash up Derby\\cars\.exe$)", {{
       { "d3d9.allowDirectBufferMapping",   "False" },
+    }} },
 
     /**********************************************/
     /* D3D7 GAMES                                 */
