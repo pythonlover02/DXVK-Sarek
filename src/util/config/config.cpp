@@ -1952,7 +1952,7 @@ namespace dxvk {
       { "ddraw.forceProxiedPresent",        "True" },
     }} },
 
-  };
+  }};
 
 
   static bool isWhitespace(char ch) {
