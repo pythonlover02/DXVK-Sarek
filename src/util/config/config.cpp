@@ -18,7 +18,7 @@ namespace dxvk {
     /* D3D11 GAMES                                */
     /**********************************************/
 
-    /* Batman Arkham Knight - doesn't like intel vendor id 
+    /* Batman Arkham Knight - doesn't like intel vendor id
       (refuses to boot if vendor isn't 0x10de or 0x1002)  */
     { R"(\\BatmanAK\.exe$)", {{
       { "dxgi.hideIntelGpu",                "True" },
@@ -36,13 +36,13 @@ namespace dxvk {
     { R"(\\EliteDangerous64\.exe$)", {{
       { "dxgi.customVendorId",              "10de" },
     }} },
-     /* EVE Online: Needs this to expose D3D12     *
+    /* EVE Online: Needs this to expose D3D12     *
      * otherwise D3D12 option on launcher is      *
      * greyed out                                 */
     { R"(\\evelauncher\.exe$)", {{
       { "d3d11.maxFeatureLevel",            "12_1" },
     }} },
-    /* The Evil Within: Submits command lists     * 
+    /* The Evil Within: Submits command lists     *
      * multiple times                             */
     { R"(\\EvilWithin(Demo)?\.exe$)", {{
       { "d3d11.dcSingleUseMode",            "False" },
@@ -62,6 +62,11 @@ namespace dxvk {
       { "dxgi.hideNvidiaGpu",              "False" },
       { "dxgi.hideIntelGpu",                "True" },
     }} },
+    /* Far Cry 5 and New Dawn                      *
+     * Invisible terrain on Intel                  */
+    { R"(\\FarCry(5|NewDawn)\.exe$)", {{
+      { "d3d11.zeroInitWorkgroupMemory",    "True" },
+    }} },
     /* Frostpunk: Renders one frame with D3D9     *
      * after creating the DXGI swap chain         */
     { R"(\\Frostpunk\.exe$)", {{
@@ -72,7 +77,7 @@ namespace dxvk {
     { R"(\\nioh\.exe$)", {{
       { "d3d9.deferSurfaceCreation",        "True" },
     }} },
-    /* Quantum Break: Mever initializes shared    *
+    /* Quantum Break: Never initializes shared    *
      * memory in one of its compute shaders.      *
      * Also loves using MAP_WRITE on the same     *
      * set of resources multiple times per frame. */
@@ -90,7 +95,7 @@ namespace dxvk {
     }} },
     /* Fifa '19+: Binds typed buffer SRV to shader *
      * that expects raw/structured buffer SRV     */
-    { R"(\\FIFA(19|[2-9][0-9])(_demo)?\.exe$)", {{
+    { R"(\\FIFA(19|20|21|22)(_demo)?\.exe$)", {{
       { "dxvk.useRawSsbo",                  "True" },
     }} },
     /* Resident Evil 2/3: Ignore WaW hazards      */
@@ -154,6 +159,16 @@ namespace dxvk {
     { R"(\\h2m-mod\.exe$)", {{
       { "dxgi.customVendorId",              "10de" },
     }} },
+    /* HMW-Mod - Modern Warfare Remastered        *
+     * AMD AGS crash                              */
+    { R"(\\hmw-mod\.exe$)", {{
+      { "dxgi.customVendorId",              "10de" },
+    }} },
+    /* Infinite Warfare                           *
+     * AMD AGS crash                              */
+    { R"(\\iw7(_ship|-mod)\.exe$)", {{
+      { "dxgi.customVendorId",              "10de" },
+    }} },
     /* Modern Warfare 2 Campaign Remastered       *
      * AMD AGS crash same as above                */
     { R"(\\MW2CR\.exe$)", {{
@@ -172,10 +187,11 @@ namespace dxvk {
       { "d3d11.constantBufferRangeCheck",   "True" },
     }} },
     /* Crysis 3 - slower if it notices AMD card     *
-     * Apitrace mode helps massively in cpu bound   *
-     * game parts                                   */
+     * but apparently no longer works when spoofing *
+     * vendor IDs. Cached dynamic buffers help      *
+     * massively in CPU bound game parts            */
     { R"(\\Crysis3\.exe$)", {{
-      { "dxgi.customVendorId",              "10de" },
+      { "dxgi.hideNvidiaGpu",              "False" },
       { "d3d11.cachedDynamicResources",     "a"    },
     }} },
     /* Crysis 3 Remastered                          *
@@ -269,14 +285,16 @@ namespace dxvk {
     /* Crazy Machines 3 - crashes on long device  *
      * descriptions                               */
     { R"(\\cm3\.exe$)", {{
-      { "dxgi.customDeviceDesc",            "DXVK Adapter" },
+      { "dxgi.customDeviceDesc",            "DXVK Device" },
     }} },
-    /* World of Final Fantasy: Broken and useless *
-     * use of 4x MSAA throughout the renderer     */
+    /* World of Final Fantasy: Broken and useless use     *
+     * of 4x MSAA throughout the renderer. Water doesn't  *
+     * render if the GPU name contains "Radeon".          */
     { R"(\\WOFF\.exe$)", {{
       { "d3d11.disableMsaa",                "True" },
+      { "dxgi.customDeviceDesc",            "DXVK Device" },
     }} },
-     /* Mary Skelter 2 - Broken MSAA              */
+    /* Mary Skelter 2 - Broken MSAA              */
     { R"(\\MarySkelter2\.exe$)", {{
       { "d3d11.disableMsaa",                "True" },
     }} },
@@ -293,7 +311,6 @@ namespace dxvk {
     /* God of War - relies on NVAPI/AMDAGS for    *
      * barrier stuff, needs nvapi for DLSS        */
     { R"(\\GoW\.exe$)", {{
-      { "d3d11.ignoreGraphicsBarriers",     "True" },
       { "d3d11.relaxedBarriers",            "True" },
       { "dxgi.hideNvidiaGpu",              "False" },
       { "dxgi.maxFrameLatency",             "1"    },
@@ -351,6 +368,11 @@ namespace dxvk {
      * Games speed up above 60 fps                */
     { R"(\\MSFC\.exe$)", {{
       { "dxgi.maxFrameRate",                 "60" },
+    }} },
+    /* The Evil Within 2                          *
+     * Game speeds up above 120 fps               */
+    { R"(\\TEW2\.exe$)", {{
+      { "dxgi.maxFrameRate",                "120" },
     }} },
     /* Cardfight!! Vanguard Dear Days:            *
      * Submits command lists multiple times       */
@@ -443,10 +465,15 @@ namespace dxvk {
       { "d3d9.maxFrameRate",              "-1"      },
       { "dxgi.maxFrameRate",              "-1"      },
     }} },
-    /* Kena: Bridge of Spirits: intel water       * 
+    /* Kena: Bridge of Spirits: intel water       *
      * flickering issues                          */
     { R"(\\Kena-Win64-Shipping\.exe$)", {{
       { "dxgi.hideIntelGpu",                 "True" },
+    }} },
+    /* Earth Defense Force 5 */
+    { R"(\\EDF5\.exe$)", {{
+      { "dxgi.tearFree",                    "False" },
+      { "dxgi.syncInterval",                "1"     },
     }} },
     /* The Hurricane of the Varstray               *
      * Too fast above 60fps                        */
@@ -458,11 +485,6 @@ namespace dxvk {
     { R"(\\Styx2-Win64-Shipping\.exe$)", {{
       { "d3d11.constantBufferRangeCheck",    "True" },
     }} },
-    /* Far Cry 5 and New Dawn                      *
-     * Invisible terrain on Intel                  */
-    { R"(\\FarCry(5|NewDawn)\.exe$)", {{
-      { "d3d11.zeroInitWorkgroupMemory",    "True" },
-    }} },
     /* Romancing Saga 3                            *
      * Render issues on D3D11                      *
      * Lets try with just constantBufferRangeCheck */
@@ -473,6 +495,14 @@ namespace dxvk {
      * ramp when nvapi is available for some reason */
     { R"(\\Wargame European Escalation\\WarGame\.exe$)", {{
       { "dxgi.hideNvidiaGpu",               "True" },
+    }} },
+    /* Guilty Gear - Speeds up above 60 fps         */
+    { R"(\\GuiltyGear\.exe$)", {{
+      { "dxgi.maxFrameRate",                "60" },
+    }} },
+    /* Everybody's Gone to the Rapture - CPU perf   */
+    { R"(\\Rapture_Release\.exe$)", {{
+      { "d3d11.cachedDynamicResources",     "a"    },
     }} },
     /* VLADiK BRUTAL                                *
      * totally broken with NVAPI                    */
@@ -541,7 +571,7 @@ namespace dxvk {
       { "d3d9.cachedDynamicBuffers",        "True" },
     }} },
     /* Dead Space uses the a NULL render target instead
-       of a 1x1 one if DF24 is NOT supported     
+       of a 1x1 one if DF24 is NOT supported
        Mouse and physics issues above 60 FPS
        Built-in Vsync Locks the game to 30 FPS    */
     { R"(\\Dead Space\.exe$)", {{
@@ -600,7 +630,7 @@ namespace dxvk {
     { R"(\\TESV\.exe$)", {{
       { "d3d9.customVendorId",              "1002" },
     }} },
-    /* RTHDRIBL Demo                              
+    /* RTHDRIBL Demo
        Uses DONOTWAIT after GetRenderTargetData
        then goes into an infinite loop if it gets
        D3DERR_WASSTILLDRAWING.
@@ -668,7 +698,8 @@ namespace dxvk {
       { "d3d9.customVendorId",              "10de" },
       { "d3d9.customDeviceId",              "0402" },
     }} },
-    /* Warhammer: Online                         */
+    /* Warhammer: Online                         *
+     * Overly bright ground textures on Nvidia   */
     { R"(\\(WAR(-64)?|WARTEST(-64)?)\.exe$)", {{
       { "d3d9.customVendorId",              "1002" },
     }} },
@@ -696,14 +727,9 @@ namespace dxvk {
     { R"(\\Demonstone\.exe$)", {{
       { "d3d9.maxFrameRate",                "60" },
     }} },
-    /* Far Cry 1 has worse water rendering when it detects AMD GPUs */
+    /* Far Cry 1 has worse water rendering on AMD GPUs */
     { R"(\\FarCry\.exe$)", {{
       { "d3d9.customVendorId",              "10de" },
-    }} },
-    /* Earth Defense Force 5 */
-    { R"(\\EDF5\.exe$)", {{
-      { "dxgi.tearFree",                    "False" },
-      { "dxgi.syncInterval",                "1"     },
     }} },
     /* Sine Mora EX */
     { R"(\\SineMoraEX\.exe$)", {{
@@ -784,12 +810,13 @@ namespace dxvk {
       { "d3d9.memoryTrackTest",             "True" },
       { "d3d9.maxAvailableMemory",          "2048" },
     }} },
-    /* Myst V End of Ages                             
+    /* Myst V End of Ages
        Game has white textures on amd radv.
        Expects Nvidia, Intel or ATI VendorId.
        "Radeon" in gpu description also works   */
     { R"(\\eoa\.exe$)", {{
       { "d3d9.customVendorId",              "10de" },
+      { "d3d9.cachedDynamicBuffers",        "True" },
     }} },
     /* Beyond Good And Evil                     *
      * Fixes missing sun and light shafts       *
@@ -806,7 +833,7 @@ namespace dxvk {
     { R"(\\swtor\.exe$)", {{
       { "d3d9.forceSamplerTypeSpecConstants", "True" },
     }} },
-    /* Bionic Commando                          
+    /* Bionic Commando
        Physics break at high fps               */
     { R"(\\bionic_commando\.exe$)", {{
       { "d3d9.maxFrameRate",                "60" },
@@ -831,6 +858,13 @@ namespace dxvk {
     { R"(\\yso_win\.exe$)", {{
       { "d3d9.maxFrameLatency",              "1" },
     }} },
+    /* The Witcher (2007) - Very long loading   *
+     * times and inventory hair explosion at    *
+     * very high fps                            */
+    { R"(\\witcher\.exe$)", {{
+      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.maxFrameRate",                "300" },
+    }} },
     /* Heroes of Annihilated Empires            *
      * Has issues with texture rendering and    *
      * video memory detection otherwise.        */
@@ -845,10 +879,6 @@ namespace dxvk {
     /* SiN Episodes Emergence                   */
     { R"(\\SinEpisodes\.exe$)", {{
       { "d3d9.memoryTrackTest",             "True" },
-    }} },
-    /* Witcher 1: Very long loading times       */
-    { R"(\\witcher\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
     }} },
     /* Hammer World Editor                      */
     { R"(\\(hammer(plusplus)?|mallet|wc)\.exe$)", {{
@@ -977,18 +1007,21 @@ namespace dxvk {
       { "d3d9.cachedDynamicBuffers",        "True" },
     }} },
     /* Prototype                                 *
-     * Incorrect shadows on AMD & Intel          */
-    { R"(\\prototypef\.exe$)", {{ 
-      { "d3d9.supportDFFormats",            "False" },
+     * Incorrect shadows on AMD & Intel.         *
+     * AA 4x can not be selected above 2GB vram  */
+    { R"(\\prototypef\.exe$)", {{
+      { "d3d9.customVendorId",              "10de" },
+      { "dxgi.maxDeviceMemory",             "2047" },
     }} },
     /* Fallout New Vegas - Various visual issues *
      * with mods such as New Vegas Reloaded      */
-    { R"(\\FalloutNV\.exe$)", {{ 
+    { R"(\\FalloutNV(Launcher)?\.exe$)", {{
       { "d3d9.floatEmulation",              "Strict" },
+      { "d3d9.customVendorId",              "1002" },
     }} },
     /* Dungeons and Dragons: Dragonshard         *
      * Massive FPS decreases in some scenes      */
-    { R"(\\Dragonshard\.exe$)", {{ 
+    { R"(\\Dragonshard\.exe$)", {{
       { "d3d9.cachedDynamicBuffers",        "True" },
     }} },
     /* Battle for Middle-earth 2 and expansion   *
@@ -1032,12 +1065,10 @@ namespace dxvk {
     { R"(\\SecretWorldLegends\.exe$)", {{
       { "d3d9.memoryTrackTest",              "True" },
     }} },
-    /* Far Cry 2: Set vendor ID to Nvidia to       *
-     * avoid vegetation artifacts on Intel, and    *
-     * set apitrace mode to True to improve perf   *
-     * on all hardware.                            */
+    /* Far Cry 2:                                  *
+     * Set cached dynamic buffers to True to       *
+     * improve perf on all hardware.               */
     { R"(\\(FarCry2|farcry2game)\.exe$)", {{
-      { "d3d9.customVendorId",              "10de" },
       { "d3d9.cachedDynamicBuffers",        "True" },
     }} },
     /* Alpha Protocol - Rids unwanted reflections  */
@@ -1055,11 +1086,9 @@ namespace dxvk {
       { "d3d9.floatEmulation",              "Strict" },
     }} },
     /* Star Wars Empire at War & expansion         *
-     * On Intel the Water & Shader Detail option   *
-     * can't be modified. In base game the AA      *
-     * option dissapears at 2075MB vram and above  */
+     * In base game the AA option dissapears at    *
+     * 2075MB vram and above                       */
     { R"(\\(StarWarsG|sweaw|swfoc)\.exe$)", {{
-      { "d3d9.customVendorId",              "1002" },
       { "d3d9.maxAvailableMemory",          "2048" },
       { "d3d9.memoryTrackTest",             "True" },
     }} },
@@ -1082,7 +1111,7 @@ namespace dxvk {
     { R"(\\THUMPER_dx9\.exe$)", {{
       { "d3d9.floatEmulation",              "Strict" },
     }} },
-    /* Pirate Huner - Prevents crash              */
+    /* Pirate Hunter - Prevents crash             */
     { R"(\\PH\.exe$)", {{
       { "d3d9.memoryTrackTest",             "True" },
       { "d3d9.maxAvailableMemory",          "2048" },
@@ -1177,9 +1206,10 @@ namespace dxvk {
     { R"(\\NFSHP2\.exe$)", {{
       { "d3d9.cachedDynamicBuffers",        "True" },
     }} },
-    /* Project I.G.I. 2: Covert Strike            */
+    /* Project I.G.I. 2: Covert Strike            *
+     * Very stuttery frametime with own framecap  */
     { R"(\\igi2\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.maxFrameRate",                "60" },
     }} },
     /* Treasure Planet: Battle at Procyon        *
      * Declares v5 as color but shader uses v6   */
@@ -1317,7 +1347,7 @@ namespace dxvk {
     return ch == ' ' || ch == '\x9' || ch == '\r';
   }
 
-  
+
   static bool isValidKeyChar(char ch) {
     return (ch >= '0' && ch <= '9')
         || (ch >= 'A' && ch <= 'Z')
@@ -1354,12 +1384,12 @@ namespace dxvk {
 
       while (n < e)
         key << line[n++];
-      
+
       ctx.active = key.str() == env::getExeName();
     } else {
       while (n < line.size() && isValidKeyChar(line[n]))
         key << line[n++];
-      
+
       // Check whether the next char is a '='
       n = skipWhitespace(line, n);
       if (n >= line.size() || line[n] != '=')
@@ -1379,7 +1409,7 @@ namespace dxvk {
         } else
           value << line[n++];
       }
-      
+
       if (ctx.active)
         config.setOption(key.str(), value.str());
     }
@@ -1439,7 +1469,7 @@ namespace dxvk {
           int32_t&      result) {
     if (value.size() == 0)
       return false;
-    
+
     // Parse sign, don't allow '+'
     int32_t sign = 1;
     size_t start = 0;
@@ -1455,7 +1485,7 @@ namespace dxvk {
     for (size_t i = start; i < value.size(); i++) {
       if (value[i] < '0' || value[i] > '9')
         return false;
-      
+
       intval *= 10;
       intval += value[i] - '0';
     }
@@ -1464,8 +1494,8 @@ namespace dxvk {
     result = sign * intval;
     return true;
   }
-  
-  
+
+
   bool Config::parseOptionValue(
     const std::string&  value,
           Tristate&     result) {
@@ -1505,7 +1535,7 @@ namespace dxvk {
         std::regex expr(pair.first, std::regex::extended | std::regex::icase);
         return std::regex_search(appName, expr);
       });
-    
+
     if (appConfig != g_appDefaults.end()) {
       // Inform the user that we loaded a default config
       Logger::info(str::format("Found built-in config:"));
@@ -1529,7 +1559,7 @@ namespace dxvk {
 
     if (filePath == "")
       filePath = "dxvk.conf";
-    
+
     // Open the file if it exists
     std::ifstream stream(str::tows(filePath.c_str()).c_str());
 
@@ -1562,7 +1592,7 @@ namespace dxvk {
       for(auto l : str::split(confLine, ";"))
         parseUserConfigLine(config, ctx, std::string(l.data(), l.size()));
     }
-    
+
     return config;
   }
 
