@@ -1,9 +1,10 @@
 #include <cstring>
+#include <algorithm>
 
 #include "dxvk_hud.h"
 
 namespace dxvk::hud {
-  
+
   Hud::Hud(
     const Rc<DxvkDevice>& device)
   : m_device        (device),
@@ -52,18 +53,18 @@ namespace dxvk::hud {
     addItem<HudGpuLoadItem>("gpuload", -1, device);
     addItem<HudCompilerActivityItem>("compiler", -1, device);
   }
-  
-  
+
+
   Hud::~Hud() {
-    
+
   }
-  
-  
+
+
   void Hud::update() {
     m_hudItems.update();
   }
-  
-  
+
+
   void Hud::render(
     const Rc<DxvkContext>&  ctx,
           VkSurfaceFormatKHR surfaceFormat,
@@ -72,8 +73,8 @@ namespace dxvk::hud {
     this->renderHudElements(ctx);
     this->resetRendererState(ctx);
   }
-  
-  
+
+
   Rc<Hud> Hud::createHud(const Rc<DxvkDevice>& device) {
     return new Hud(device);
   }
@@ -114,5 +115,5 @@ namespace dxvk::hud {
   void Hud::renderHudElements(const Rc<DxvkContext>& ctx) {
     m_hudItems.render(m_renderer);
   }
-  
+
 }

@@ -9,12 +9,12 @@ using PFN___wineopenxr_GetVulkanInstanceExtensions = int (WINAPI *)(uint32_t, ui
 using PFN___wineopenxr_GetVulkanDeviceExtensions = int (WINAPI *)(uint32_t, uint32_t *, char *);
 
 namespace dxvk {
-  
+
   struct WineXrFunctions {
     PFN___wineopenxr_GetVulkanInstanceExtensions __wineopenxr_GetVulkanInstanceExtensions = nullptr;
     PFN___wineopenxr_GetVulkanDeviceExtensions __wineopenxr_GetVulkanDeviceExtensions = nullptr;
   };
-  
+
   WineXrFunctions g_winexrFunctions;
   DxvkXrProvider DxvkXrProvider::s_instance;
 
@@ -26,8 +26,8 @@ namespace dxvk {
   std::string_view DxvkXrProvider::getName() {
     return "OpenXR";
   }
-  
-  
+
+
   DxvkNameSet DxvkXrProvider::getInstanceExtensions() {
     std::lock_guard<dxvk::mutex> lock(m_mutex);
     return m_insExtensions;
@@ -74,7 +74,7 @@ namespace dxvk {
 
     if (!m_wineOxr || m_initializedDevExt)
       return;
-    
+
     m_devExtensions = this->queryDeviceExtensions();
     m_initializedDevExt = true;
 
@@ -101,8 +101,8 @@ namespace dxvk {
 
     return parseExtensionList(std::string(extensionList.data(), len));
   }
-  
-  
+
+
   DxvkNameSet DxvkXrProvider::queryDeviceExtensions() const {
     int res;
 
@@ -122,36 +122,34 @@ namespace dxvk {
 
     return parseExtensionList(std::string(extensionList.data(), len));
   }
-  
-  
+
+
   DxvkNameSet DxvkXrProvider::parseExtensionList(const std::string& str) const {
     DxvkNameSet result;
-    
+
     std::stringstream strstream(str);
     std::string       section;
-    
+
     while (std::getline(strstream, section, ' '))
       result.add(section.c_str());
-    
+
     return result;
   }
-  
-  
+
+
   void DxvkXrProvider::shutdown() {
     if (m_loadedOxrApi)
       this->freeLibrary();
-    
+
     m_loadedOxrApi      = false;
     m_wineOxr = nullptr;
   }
 
 
   HMODULE DxvkXrProvider::loadLibrary() {
-    HMODULE handle = nullptr;
-    if (!(handle = ::GetModuleHandle("wineopenxr.dll"))) {
-      handle = ::LoadLibrary("wineopenxr.dll");
-      m_loadedOxrApi = handle != nullptr;
-    }
+    HMODULE handle = ::LoadLibrary("wineopenxr.dll");
+
+    m_loadedOxrApi = handle != nullptr;
     return handle;
   }
 
@@ -160,7 +158,7 @@ namespace dxvk {
     ::FreeLibrary(m_wineOxr);
   }
 
-  
+
   void* DxvkXrProvider::getSym(const char* sym) {
     return reinterpret_cast<void*>(
       ::GetProcAddress(m_wineOxr, sym));
