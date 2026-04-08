@@ -99,7 +99,7 @@ namespace dxvk::hud {
 
 
   HudClientApiItem::HudClientApiItem(std::string api)
-  : m_api(api) {
+  : m_api(std::move(api)) {
 
   }
 

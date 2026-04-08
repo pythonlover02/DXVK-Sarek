@@ -2303,7 +2303,7 @@ namespace dxvk {
         case VK_COMPARE_OP_EQUAL:            return m_module.opFOrdEqual(boolType, alphaId, alphaRefId);
         case VK_COMPARE_OP_LESS_OR_EQUAL:    return m_module.opFOrdLessThanEqual(boolType, alphaId, alphaRefId);
         case VK_COMPARE_OP_GREATER:          return m_module.opFOrdGreaterThan(boolType, alphaId, alphaRefId);
-        case VK_COMPARE_OP_NOT_EQUAL:        return m_module.opFOrdNotEqual(boolType, alphaId, alphaRefId);
+        case VK_COMPARE_OP_NOT_EQUAL:        return m_module.opFUnordNotEqual(boolType, alphaId, alphaRefId);
         case VK_COMPARE_OP_GREATER_OR_EQUAL: return m_module.opFOrdGreaterThanEqual(boolType, alphaId, alphaRefId);
         default:
         case VK_COMPARE_OP_ALWAYS:           return m_module.constBool(true);

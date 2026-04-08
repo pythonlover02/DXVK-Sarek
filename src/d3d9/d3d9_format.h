@@ -89,6 +89,7 @@ namespace dxvk {
     GET4 = MAKEFOURCC('G', 'E', 'T', '4'),
     GET1 = MAKEFOURCC('G', 'E', 'T', '1'),
     NVDB = MAKEFOURCC('N', 'V', 'D', 'B'),
+    NVCS = MAKEFOURCC('N', 'V', 'C', 'S'),
     A2M1 = MAKEFOURCC('A', '2', 'M', '1'),
     A2M0 = MAKEFOURCC('A', '2', 'M', '0'),
     ATOC = MAKEFOURCC('A', 'T', 'O', 'C'),
@@ -155,7 +156,7 @@ namespace dxvk {
 
   /**
    * \brief Format mapping
-   * 
+   *
    * Maps a D3D9 format to a set of Vulkan formats.
    */
   struct D3D9_VK_FORMAT_MAPPING {

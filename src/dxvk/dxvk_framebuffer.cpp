@@ -1,7 +1,7 @@
 #include "dxvk_framebuffer.h"
 
 namespace dxvk {
-  
+
   DxvkFramebufferInfo::DxvkFramebufferInfo() {
 
   }
@@ -65,7 +65,12 @@ namespace dxvk {
 
 
   bool DxvkFramebufferInfo::isWritable(uint32_t attachmentIndex, VkImageAspectFlags aspects) const {
-    VkImageAspectFlags writableAspects = vk::getWritableAspectsForLayout(getAttachment(attachmentIndex).layout);
+    const auto& attachment = getAttachment(attachmentIndex);
+
+    if (!attachment.view)
+      return false;
+
+    VkImageAspectFlags writableAspects = vk::getWritableAspectsForLayout(attachment.layout);
     return (writableAspects & aspects) == aspects;
   }
 
@@ -149,15 +154,15 @@ namespace dxvk {
   : m_vkd(vkd), m_key(info.key()) {
     std::array<VkImageView, MaxNumRenderTargets + 1> views;
     uint32_t attachmentCount = 0;
-    
+
     for (uint32_t i = 0; i < MaxNumRenderTargets; i++) {
       if (info.getColorTarget(i).view != nullptr)
         views[attachmentCount++] = info.getColorTarget(i).view->handle();
     }
-    
+
     if (info.getDepthTarget().view != nullptr)
       views[attachmentCount++] = info.getDepthTarget().view->handle();
-    
+
     VkFramebufferCreateInfo fbInfo;
     fbInfo.sType                = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
     fbInfo.pNext                = nullptr;
@@ -168,12 +173,12 @@ namespace dxvk {
     fbInfo.width                = info.size().width;
     fbInfo.height               = info.size().height;
     fbInfo.layers               = info.size().layers;
-    
+
     if (m_vkd->vkCreateFramebuffer(m_vkd->device(), &fbInfo, nullptr, &m_handle) != VK_SUCCESS)
       Logger::err("DxvkFramebuffer: Failed to create framebuffer object");
   }
-  
-  
+
+
   DxvkFramebuffer::~DxvkFramebuffer() {
     m_vkd->vkDestroyFramebuffer(m_vkd->device(), m_handle, nullptr);
   }

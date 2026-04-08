@@ -1,6 +1,9 @@
 #include "util_shared_res.h"
+#include "log/log.h"
 
-#include "winioctl.h"
+#ifdef _WIN32
+#include <winioctl.h>
+#endif
 
 namespace dxvk {
 

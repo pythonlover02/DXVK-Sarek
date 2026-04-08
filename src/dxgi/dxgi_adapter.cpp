@@ -23,20 +23,20 @@ namespace dxvk {
   ULONG STDMETHODCALLTYPE DxgiVkAdapter::AddRef() {
     return m_adapter->AddRef();
   }
-  
+
 
   ULONG STDMETHODCALLTYPE DxgiVkAdapter::Release() {
     return m_adapter->Release();
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE DxgiVkAdapter::QueryInterface(
           REFIID                    riid,
           void**                    ppvObject) {
     return m_adapter->QueryInterface(riid, ppvObject);
   }
 
-  
+
   void STDMETHODCALLTYPE DxgiVkAdapter::GetVulkanHandles(
           VkInstance*               pInstance,
           VkPhysicalDevice*         pPhysDev) {
@@ -45,7 +45,7 @@ namespace dxvk {
 
     if (pInstance)
       *pInstance = instance->handle();
-    
+
     if (pPhysDev)
       *pPhysDev = adapter->handle();
   }
@@ -61,10 +61,10 @@ namespace dxvk {
     m_adapter (adapter),
     m_interop (this),
     m_index   (index) {
-    
+
   }
-  
-  
+
+
   DxgiAdapter::~DxgiAdapter() {
     if (m_eventThread.joinable()) {
       std::unique_lock<dxvk::mutex> lock(m_mutex);
@@ -75,14 +75,14 @@ namespace dxvk {
       m_eventThread.join();
     }
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiAdapter::QueryInterface(REFIID riid, void** ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
 
     *ppvObject = nullptr;
-    
+
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(IDXGIObject)
      || riid == __uuidof(IDXGIAdapter)
@@ -99,18 +99,18 @@ namespace dxvk {
       *ppvObject = ref(&m_interop);
       return S_OK;
     }
-    
+
     Logger::warn("DxgiAdapter::QueryInterface: Unknown interface query");
     Logger::warn(str::format(riid));
     return E_NOINTERFACE;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiAdapter::GetParent(REFIID riid, void** ppParent) {
     return m_factory->QueryInterface(riid, ppParent);
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiAdapter::CheckInterfaceSupport(
           REFGUID                   InterfaceName,
           LARGE_INTEGER*            pUMDVersion) {
@@ -136,42 +136,42 @@ namespace dxvk {
 
     return hr;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiAdapter::EnumOutputs(
           UINT                      Output,
           IDXGIOutput**             ppOutput) {
     InitReturnPtr(ppOutput);
-    
+
     if (ppOutput == nullptr)
       return E_INVALIDARG;
-    
+
     MonitorEnumInfo info;
     info.iMonitorId = Output;
     info.oMonitor   = nullptr;
-    
+
     ::EnumDisplayMonitors(
       nullptr, nullptr, &MonitorEnumProc,
       reinterpret_cast<LPARAM>(&info));
-    
+
     if (info.oMonitor == nullptr)
       return DXGI_ERROR_NOT_FOUND;
-    
+
     *ppOutput = ref(new DxgiOutput(m_factory, this, info.oMonitor));
     return S_OK;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiAdapter::GetDesc(DXGI_ADAPTER_DESC* pDesc) {
     if (pDesc == nullptr)
       return E_INVALIDARG;
 
     DXGI_ADAPTER_DESC3 desc;
     HRESULT hr = GetDesc3(&desc);
-    
+
     if (SUCCEEDED(hr)) {
       std::memcpy(pDesc->Description, desc.Description, sizeof(pDesc->Description));
-      
+
       pDesc->VendorId               = desc.VendorId;
       pDesc->DeviceId               = desc.DeviceId;
       pDesc->SubSysId               = desc.SubSysId;
@@ -181,21 +181,21 @@ namespace dxvk {
       pDesc->SharedSystemMemory     = desc.SharedSystemMemory;
       pDesc->AdapterLuid            = desc.AdapterLuid;
     }
-    
+
     return hr;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiAdapter::GetDesc1(DXGI_ADAPTER_DESC1* pDesc) {
     if (pDesc == nullptr)
       return E_INVALIDARG;
 
     DXGI_ADAPTER_DESC3 desc;
     HRESULT hr = GetDesc3(&desc);
-    
+
     if (SUCCEEDED(hr)) {
       std::memcpy(pDesc->Description, desc.Description, sizeof(pDesc->Description));
-      
+
       pDesc->VendorId               = desc.VendorId;
       pDesc->DeviceId               = desc.DeviceId;
       pDesc->SubSysId               = desc.SubSysId;
@@ -206,21 +206,21 @@ namespace dxvk {
       pDesc->AdapterLuid            = desc.AdapterLuid;
       pDesc->Flags                  = desc.Flags;
     }
-    
+
     return hr;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiAdapter::GetDesc2(DXGI_ADAPTER_DESC2* pDesc) {
     if (pDesc == nullptr)
       return E_INVALIDARG;
 
     DXGI_ADAPTER_DESC3 desc;
     HRESULT hr = GetDesc3(&desc);
-    
+
     if (SUCCEEDED(hr)) {
       std::memcpy(pDesc->Description, desc.Description, sizeof(pDesc->Description));
-      
+
       pDesc->VendorId               = desc.VendorId;
       pDesc->DeviceId               = desc.DeviceId;
       pDesc->SubSysId               = desc.SubSysId;
@@ -233,34 +233,34 @@ namespace dxvk {
       pDesc->GraphicsPreemptionGranularity = desc.GraphicsPreemptionGranularity;
       pDesc->ComputePreemptionGranularity  = desc.ComputePreemptionGranularity;
     }
-    
+
     return hr;
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE DxgiAdapter::GetDesc3(
           DXGI_ADAPTER_DESC3*       pDesc) {
     if (pDesc == nullptr)
       return E_INVALIDARG;
-    
+
     const DxgiOptions* options = m_factory->GetOptions();
-    
+
     auto deviceProp = m_adapter->deviceProperties();
     auto memoryProp = m_adapter->memoryProperties();
     auto deviceId   = m_adapter->devicePropertiesExt().coreDeviceId;
-    
+
     // Custom Vendor / Device ID
     if (options->customVendorId >= 0)
       deviceProp.vendorID = options->customVendorId;
-    
+
     if (options->customDeviceId >= 0)
       deviceProp.deviceID = options->customDeviceId;
-    
+
     const char* description = deviceProp.deviceName;
     // Custom device description
     if (!options->customDeviceDesc.empty())
       description = options->customDeviceDesc.c_str();
-    
+
     if (options->customVendorId < 0) {
       uint16_t fallbackVendor = 0xdead;
       uint16_t fallbackDevice = 0xbeef;
@@ -280,50 +280,70 @@ namespace dxvk {
                   || (deviceProp.vendorID == uint16_t(DxvkGpuVendor::Intel) && options->hideIntelGpu);
       if (hideGpu) {
         deviceProp.vendorID = fallbackVendor;
-        
+
         if (options->customDeviceId < 0)
           deviceProp.deviceID = fallbackDevice;
 
         Logger::info(str::format("DXGI: Hiding actual GPU, reporting vendor ID 0x", std::hex, deviceProp.vendorID, ", device ID ", deviceProp.deviceID));
       }
     }
-    
+
     // Convert device name
     std::memset(pDesc->Description, 0, sizeof(pDesc->Description));
     str::tows(description, pDesc->Description);
-    
+
     // Get amount of video memory
     // based on the Vulkan heaps
     VkDeviceSize deviceMemory = 0;
     VkDeviceSize sharedMemory = 0;
-    
+
     for (uint32_t i = 0; i < memoryProp.memoryHeapCount; i++) {
       VkMemoryHeap heap = memoryProp.memoryHeaps[i];
-      
-      if (heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
-        deviceMemory += heap.size;
-      else
+
+      if (heap.flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT) {
+        // In general we'll have one large device-local heap, and an additional
+        // smaller heap on dGPUs in case ReBAR is not supported. Assume that
+        // the largest available heap is the total amount of available VRAM.
+        deviceMemory = std::max(heap.size, deviceMemory);
+      } else {
+        // This is typically plain sysmem, don't care too much about limits here
         sharedMemory += heap.size;
+      }
     }
+
+    // This can happen on integrated GPUs with one memory heap, over-report
+    // here since some games may be allergic to reporting no shared memory.
+    if (!sharedMemory)
+      sharedMemory = deviceMemory;
 
     // Some games think we are on Intel given a lack of
     // NVAPI or AGS/atiadlxx support.
     // Report our device memory as shared memory,
     // and some small amount for the carveout.
     if (options->emulateUMA && !m_adapter->isUnifiedMemoryArchitecture()) {
-      sharedMemory = deviceMemory;
-      deviceMemory = 128 * (1 << 20);
+      sharedMemory = std::max(sharedMemory, deviceMemory);
+      deviceMemory = 512ull << 20;
     }
-    
+
+    // Make sure to never return exact powers of two outside the 32-bit range
+    // because some games don't understand the concept of actually having VRAM
+    constexpr VkDeviceSize adjustment = 32ull << 20;
+
+    if (deviceMemory && !(deviceMemory & 0xffffffffull))
+      deviceMemory -= adjustment;
+
+    if (sharedMemory && !(sharedMemory & 0xffffffffull))
+      sharedMemory -= adjustment;
+
     // Some games are silly and need their memory limited
     if (options->maxDeviceMemory > 0
      && options->maxDeviceMemory < deviceMemory)
       deviceMemory = options->maxDeviceMemory;
-    
+
     if (options->maxSharedMemory > 0
      && options->maxSharedMemory < sharedMemory)
       sharedMemory = options->maxSharedMemory;
-    
+
     if (env::is32BitHostPlatform()) {
       // The value returned by DXGI is a 32-bit value
       // on 32-bit platforms, so we need to clamp it
@@ -331,7 +351,7 @@ namespace dxvk {
       deviceMemory = std::min(deviceMemory, maxMemory);
       sharedMemory = std::min(sharedMemory, maxMemory);
     }
-    
+
     pDesc->VendorId                       = deviceProp.vendorID;
     pDesc->DeviceId                       = deviceProp.deviceID;
     pDesc->SubSysId                       = 0;
@@ -359,11 +379,11 @@ namespace dxvk {
           DXGI_QUERY_VIDEO_MEMORY_INFO* pVideoMemoryInfo) {
     if (NodeIndex > 0 || !pVideoMemoryInfo)
       return E_INVALIDARG;
-    
+
     if (MemorySegmentGroup != DXGI_MEMORY_SEGMENT_GROUP_LOCAL
      && MemorySegmentGroup != DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL)
       return E_INVALIDARG;
-    
+
     DxvkAdapterMemoryInfo memInfo = m_adapter->getMemoryHeapInfo();
 
     VkMemoryHeapFlags heapFlagMask = VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
@@ -371,14 +391,14 @@ namespace dxvk {
 
     if (MemorySegmentGroup == DXGI_MEMORY_SEGMENT_GROUP_LOCAL)
       heapFlags |= VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
-    
+
     pVideoMemoryInfo->Budget       = 0;
     pVideoMemoryInfo->CurrentUsage = 0;
 
     for (uint32_t i = 0; i < memInfo.heapCount; i++) {
       if ((memInfo.heaps[i].heapFlags & heapFlagMask) != heapFlags)
         continue;
-      
+
       pVideoMemoryInfo->Budget       += memInfo.heaps[i].memoryBudget;
       pVideoMemoryInfo->CurrentUsage += memInfo.heaps[i].memoryAllocated;
     }
@@ -401,19 +421,19 @@ namespace dxvk {
 
     HRESULT hr = QueryVideoMemoryInfo(
       NodeIndex, MemorySegmentGroup, &info);
-    
+
     if (FAILED(hr))
       return hr;
-    
+
     if (Reservation > info.AvailableForReservation)
       return DXGI_ERROR_INVALID_CALL;
-    
+
     uint32_t segmentId = uint32_t(MemorySegmentGroup);
     m_memReservation[segmentId] = Reservation;
     return S_OK;
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE DxgiAdapter::RegisterHardwareContentProtectionTeardownStatusEvent(
           HANDLE                        hEvent,
           DWORD*                        pdwCookie) {
@@ -443,7 +463,7 @@ namespace dxvk {
     *pdwCookie = cookie;
     return S_OK;
   }
-  
+
 
   void STDMETHODCALLTYPE DxgiAdapter::UnregisterHardwareContentProtectionTeardownStatus(
           DWORD                         dwCookie) {
@@ -497,20 +517,20 @@ namespace dxvk {
       }
     }
   }
-  
-  
+
+
   BOOL CALLBACK DxgiAdapter::MonitorEnumProc(
           HMONITOR                  hmon,
           HDC                       hdc,
           LPRECT                    rect,
           LPARAM                    lp) {
     auto data = reinterpret_cast<MonitorEnumInfo*>(lp);
-    
+
     if (data->iMonitorId--)
       return TRUE; /* continue */
-    
+
     data->oMonitor = hmon;
     return FALSE; /* stop */
   }
-  
+
 }

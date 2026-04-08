@@ -53,23 +53,23 @@ namespace dxvk {
     return m_container->AddRef();
   }
 
-  
+
   ULONG STDMETHODCALLTYPE D3D11UserDefinedAnnotation::Release() {
     return m_container->Release();
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11UserDefinedAnnotation::QueryInterface(
           REFIID                  riid,
           void**                  ppvObject) {
     return m_container->QueryInterface(riid, ppvObject);
   }
-  
+
 
   INT STDMETHODCALLTYPE D3D11UserDefinedAnnotation::BeginEvent(
           D3DCOLOR                Color,
           LPCWSTR                 Name) {
-    if (!m_container->IsAnnotationEnabled())
+    if (!m_container->IsAnnotationEnabled() || !Name)
       return -1;
 
     D3D10DeviceLock lock = m_container->LockContext();
@@ -94,18 +94,21 @@ namespace dxvk {
 
     D3D10DeviceLock lock = m_container->LockContext();
 
-    m_container->EmitCs([](DxvkContext *ctx) {
+    if (!m_eventDepth)
+      return 0;
+
+    m_container->EmitCs([] (DxvkContext* ctx) {
       ctx->endDebugLabel();
     });
 
-    return m_eventDepth--;
+    return --m_eventDepth;
   }
 
 
   void STDMETHODCALLTYPE D3D11UserDefinedAnnotation::SetMarker(
           D3DCOLOR                Color,
           LPCWSTR                 Name) {
-    if (!m_container->IsAnnotationEnabled())
+    if (!m_container->IsAnnotationEnabled() || !Name)
       return;
 
     D3D10DeviceLock lock = m_container->LockContext();

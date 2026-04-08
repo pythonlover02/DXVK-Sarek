@@ -39,6 +39,11 @@ namespace dxvk {
 
     BOOL ShowCursor(BOOL bShow);
 
+    ~D3D9Cursor() {
+      if (m_hCursor != nullptr)
+        ::DestroyCursor(m_hCursor);
+    }
+
     HRESULT SetHardwareCursor(UINT XHotSpot, UINT YHotSpot, const CursorBitmap& bitmap);
 
     HRESULT SetSoftwareCursor(UINT XHotSpot, UINT YHotSpot, Com<IDirect3DTexture9> pCursorBitmap);

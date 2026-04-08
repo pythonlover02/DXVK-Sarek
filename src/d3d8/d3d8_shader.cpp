@@ -92,7 +92,7 @@ namespace dxvk {
     token    |= 0b1111 << 16;                 // bits 16:19  DxsoRegMask
     // UINT resultModifier : 3;               // bits 20:23
     // UINT resultShift : 3;                  // bits 24:27
-    token    |= 1 << 31;                      // bit  31     always 1
+    token |= 1u << 31;                     // bit  31     always 1
     return token;
   }
 
@@ -105,7 +105,7 @@ namespace dxvk {
     DWORD token = 0;
     token |= VSD_ENCODE(usage, D3DSP_DCL_USAGE);       // bits 0:4   DxsoUsage (TODO: missing MSB)
     token |= VSD_ENCODE(index, D3DSP_DCL_USAGEINDEX);  // bits 16:19 usageIndex
-    token |= 1 << 31;                                  // bit 31     always 1
+    token |= 1u << 31;                                 // bit 31     always 1
     return token;
   }
 

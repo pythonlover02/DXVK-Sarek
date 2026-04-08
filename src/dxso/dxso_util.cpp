@@ -13,7 +13,7 @@ namespace dxvk {
     // to make multiple shaders at a time.
     std::lock_guard<dxvk::mutex> lock(g_linkerSlotMutex);
 
-    // Need to chose a slot that maps nicely and similarly
+    // Need to choose a slot that maps nicely and similarly
     // between vertex and pixel shaders
 
     // Find or map a slot.

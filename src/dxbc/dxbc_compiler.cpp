@@ -34,20 +34,6 @@ namespace dxvk {
       m_module.addDebugString(fileName.c_str()),
       nullptr);
 
-    if (Logger::logLevel() <= LogLevel::Debug) {
-      if (m_isgn != nullptr) {
-        Logger::debug(str::format("Input Signature for - ", fileName.c_str(), "\n"));
-        m_isgn->printEntries();
-      }
-      if (m_osgn != nullptr) {
-        Logger::debug(str::format("Output Signature for - ", fileName.c_str(), "\n"));
-        m_osgn->printEntries();
-      }
-      if (m_psgn != nullptr) {
-        Logger::debug(str::format("Patch Constant Signature for - ", fileName.c_str(), "\n"));
-        m_psgn->printEntries();
-      }
-    }
 
     // Set the memory model. This is the same for all shaders.
     m_module.setMemoryModel(
@@ -235,6 +221,7 @@ namespace dxvk {
       case DxbcProgramType::GeometryShader: this->emitGsFinalize(); break;
       case DxbcProgramType::PixelShader:    this->emitPsFinalize(); break;
       case DxbcProgramType::ComputeShader:  this->emitCsFinalize(); break;
+      default: break;
     }
 
     // Emit float control mode if the extension is supported
@@ -5964,6 +5951,7 @@ namespace dxvk {
         case DxbcProgramType::DomainShader:   emitDsSystemValueStore(sv, mask, value); break;
         case DxbcProgramType::PixelShader:    emitPsSystemValueStore(sv, mask, value); break;
         case DxbcProgramType::ComputeShader:  break;
+        default: break;
       }
     }
   }
@@ -6693,6 +6681,7 @@ namespace dxvk {
       case DxbcProgramType::GeometryShader: emitGsInit(); break;
       case DxbcProgramType::PixelShader:    emitPsInit(); break;
       case DxbcProgramType::ComputeShader:  emitCsInit(); break;
+      default: break;
     }
   }
 

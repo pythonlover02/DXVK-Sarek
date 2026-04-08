@@ -59,7 +59,7 @@ namespace dxvk {
       D3DDISPLAYMODE* pMode);
 
     HRESULT STDMETHODCALLTYPE GetAdapterDisplayMode(UINT Adapter, D3DDISPLAYMODE* pMode) {
-      return m_d3d9->GetAdapterDisplayMode(Adapter, (d3d9::D3DDISPLAYMODE*)pMode);
+      return m_d3d9->GetAdapterDisplayMode(Adapter, reinterpret_cast<d3d9::D3DDISPLAYMODE*>(pMode));
     }
 
     HRESULT STDMETHODCALLTYPE CheckDeviceType(
@@ -173,11 +173,11 @@ namespace dxvk {
     HRESULT ValidatePresentationParameters(
         const D3DPRESENT_PARAMETERS* pPresentationParameters);
 
-    const D3D8Options& GetOptions() { return m_d3d8Options; }
+    const D3D8Options& GetOptions() const { return m_d3d8Options; }
 
   private:
 
-    UINT                                            m_adapterCount;
+    UINT                                            m_adapterCount = 0;
     std::vector<UINT>                               m_adapterModeCounts;
     std::vector<std::vector<d3d9::D3DDISPLAYMODE>>  m_adapterModes;
 

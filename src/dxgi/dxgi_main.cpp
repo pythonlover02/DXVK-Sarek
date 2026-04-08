@@ -2,9 +2,9 @@
 #include "dxgi_include.h"
 
 namespace dxvk {
-  
+
   Logger Logger::s_instance("dxgi.log");
-  
+
   HRESULT createDxgiFactory(UINT Flags, REFIID riid, void **ppFactory) {
     try {
       Com<DxgiFactory> factory = new DxgiFactory(Flags);
@@ -12,7 +12,7 @@ namespace dxvk {
 
       if (FAILED(hr))
         return hr;
-      
+
       return S_OK;
     } catch (const DxvkError& e) {
       Logger::err(e.message());
@@ -30,7 +30,7 @@ extern "C" {
   DLLEXPORT HRESULT __stdcall CreateDXGIFactory1(REFIID riid, void **ppFactory) {
     return dxvk::createDxgiFactory(0, riid, ppFactory);
   }
-  
+
   DLLEXPORT HRESULT __stdcall CreateDXGIFactory(REFIID riid, void **ppFactory) {
     return dxvk::createDxgiFactory(0, riid, ppFactory);
   }
@@ -39,7 +39,7 @@ extern "C" {
     static bool enabled = false;
 
     if (std::exchange(enabled, true))
-      return 0x887a0036; // DXGI_ERROR_ALREADY_EXISTS;
+      return DXGI_ERROR_ALREADY_EXISTS;
 
     dxvk::Logger::warn("DXGIDeclareAdapterRemovalSupport: Stub");
     return S_OK;

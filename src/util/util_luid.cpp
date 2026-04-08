@@ -1,4 +1,13 @@
 #include "util_luid.h"
+#include <atomic>
+
+#ifndef _WIN32
+  static BOOL AllocateLocallyUniqueId(LUID* luid) {
+    static std::atomic<uint32_t> counter = { 0u };
+    *luid = LUID{ ++counter, 0 };
+    return TRUE;
+  }
+#endif
 #include "util_string.h"
 
 #include "./log/log.h"
@@ -18,7 +27,7 @@ namespace dxvk {
     while (s_luids.size() < newLuidCount) {
       LUID luid = { 0, 0 };
 
-      if (!::AllocateLocallyUniqueId(&luid))
+      if (!AllocateLocallyUniqueId(&luid))
         Logger::err("Failed to allocate LUID");
       
         

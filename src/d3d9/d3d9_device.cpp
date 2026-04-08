@@ -2576,6 +2576,9 @@ namespace dxvk {
           UINT             VertexStreamZeroStride) {
     D3D9DeviceLock lock = LockDevice();
 
+    if (unlikely(!VertexStreamZeroStride))
+      return D3DERR_INVALIDCALL;
+
     if (unlikely(m_state.vertexDecl == nullptr))
       return D3DERR_INVALIDCALL;
 
@@ -2640,6 +2643,9 @@ namespace dxvk {
 
     const uint32_t vertexDataSize = GetUPDataSize(MinVertexIndex + NumVertices, VertexStreamZeroStride);
     const uint32_t vertexBufferSize = GetUPBufferSize(MinVertexIndex + NumVertices, VertexStreamZeroStride);
+
+    if (unlikely(!VertexStreamZeroStride))
+      return D3DERR_INVALIDCALL;
 
     const uint32_t indexSize = IndexDataFormat == D3DFMT_INDEX16 ? 2 : 4;
     const uint32_t indicesSize = drawInfo.vertexCount * indexSize;
@@ -3527,19 +3533,28 @@ namespace dxvk {
           D3DCOMPOSERECTSOP       Operation,
           int                     Xoffset,
           int                     Yoffset) {
-    Logger::warn("D3D9DeviceEx::ComposeRects: Stub");
+    static bool s_errorShown = false;
+
+    if (!std::exchange(s_errorShown, true))
+      Logger::warn("D3D9DeviceEx::ComposeRects: Stub");
     return D3D_OK;
   }
 
 
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::GetGPUThreadPriority(INT* pPriority) {
-    Logger::warn("D3D9DeviceEx::GetGPUThreadPriority: Stub");
+    static bool s_errorShown = false;
+
+    if (!std::exchange(s_errorShown, true))
+      Logger::warn("D3D9DeviceEx::GetGPUThreadPriority: Stub");
     return D3D_OK;
   }
 
 
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::SetGPUThreadPriority(INT Priority) {
-    Logger::warn("D3D9DeviceEx::SetGPUThreadPriority: Stub");
+    static bool s_errorShown = false;
+
+    if (!std::exchange(s_errorShown, true))
+      Logger::warn("D3D9DeviceEx::SetGPUThreadPriority: Stub");
     return D3D_OK;
   }
 
@@ -3553,13 +3568,19 @@ namespace dxvk {
 
 
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::CheckResourceResidency(IDirect3DResource9** pResourceArray, UINT32 NumResources) {
-    Logger::warn("D3D9DeviceEx::CheckResourceResidency: Stub");
+    static bool s_errorShown = false;
+
+    if (!std::exchange(s_errorShown, true))
+      Logger::warn("D3D9DeviceEx::CheckResourceResidency: Stub");
     return D3D_OK;
   }
 
 
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::SetMaximumFrameLatency(UINT MaxLatency) {
     D3D9DeviceLock lock = LockDevice();
+
+    if (unlikely(MaxLatency > 30))
+      return D3DERR_INVALIDCALL;
 
     if (MaxLatency == 0)
       MaxLatency = DefaultFrameLatency;

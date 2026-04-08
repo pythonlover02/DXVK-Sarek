@@ -38,7 +38,7 @@ namespace dxvk {
       D3DLOCKED_RECT* pLockedRect,
       CONST RECT*     pRect,
       DWORD           Flags) {
-    return GetD3D9()->LockRect((d3d9::D3DLOCKED_RECT*)pLockedRect, pRect, Flags);
+    return GetD3D9()->LockRect(reinterpret_cast<d3d9::D3DLOCKED_RECT*>(pLockedRect), pRect, Flags);
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Surface::UnlockRect() {

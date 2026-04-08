@@ -6,7 +6,7 @@
 #include "dxvk_instance.h"
 
 namespace dxvk {
-  
+
   DxvkAdapter::DxvkAdapter(
     const Rc<vk::InstanceFn>& vki,
           VkPhysicalDevice    handle)
@@ -20,13 +20,13 @@ namespace dxvk {
 
     m_hasMemoryBudget = m_deviceExtensions.supports(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
   }
-  
-  
+
+
   DxvkAdapter::~DxvkAdapter() {
-    
+
   }
-  
-  
+
+
   DxvkAdapterMemoryInfo DxvkAdapter::getMemoryHeapInfo() const {
     VkPhysicalDeviceMemoryBudgetPropertiesEXT memBudget = { };
     memBudget.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT;
@@ -37,7 +37,7 @@ namespace dxvk {
     memProps.pNext = m_hasMemoryBudget ? &memBudget : nullptr;
 
     m_vki->vkGetPhysicalDeviceMemoryProperties2(m_handle, &memProps);
-    
+
     DxvkAdapterMemoryInfo info = { };
     info.heapCount = memProps.memoryProperties.memoryHeapCount;
 
@@ -62,15 +62,15 @@ namespace dxvk {
     m_vki->vkGetPhysicalDeviceMemoryProperties(m_handle, &memoryProperties);
     return memoryProperties;
   }
-  
-  
+
+
   VkFormatProperties DxvkAdapter::formatProperties(VkFormat format) const {
     VkFormatProperties formatProperties;
     m_vki->vkGetPhysicalDeviceFormatProperties(m_handle, format, &formatProperties);
     return formatProperties;
   }
-  
-    
+
+
   VkResult DxvkAdapter::imageFormatProperties(
     VkFormat                  format,
     VkImageType               type,
@@ -81,27 +81,27 @@ namespace dxvk {
     return m_vki->vkGetPhysicalDeviceImageFormatProperties(
       m_handle, format, type, tiling, usage, flags, &properties);
   }
-  
-    
+
+
   DxvkAdapterQueueIndices DxvkAdapter::findQueueFamilies() const {
     uint32_t graphicsQueue = findQueueFamily(
       VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT,
       VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT);
-    
+
     uint32_t computeQueue = findQueueFamily(
       VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT,
       VK_QUEUE_COMPUTE_BIT);
-    
+
     if (computeQueue == VK_QUEUE_FAMILY_IGNORED)
       computeQueue = graphicsQueue;
 
     uint32_t transferQueue = findQueueFamily(
       VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT,
       VK_QUEUE_TRANSFER_BIT);
-    
+
     if (transferQueue == VK_QUEUE_FAMILY_IGNORED)
       transferQueue = computeQueue;
-    
+
     DxvkAdapterQueueIndices queues;
     queues.graphics = graphicsQueue;
     queues.transfer = transferQueue;
@@ -255,8 +255,8 @@ namespace dxvk {
         && (m_deviceFeatures.khrTimelineSemaphore.timelineSemaphore
                 || !required.khrTimelineSemaphore.timelineSemaphore);
   }
-  
-  
+
+
   void DxvkAdapter::enableExtensions(const DxvkNameSet& extensions) {
     m_extraExtensions.merge(extensions);
   }
@@ -325,7 +325,7 @@ namespace dxvk {
           devExtensionList.data(),
           extensionsEnabled))
       throw DxvkError("DxvkAdapter: Failed to create device");
-    
+
     // Enable additional extensions if necessary
     extensionsEnabled.merge(m_extraExtensions);
     DxvkNameList extensionNameList = extensionsEnabled.toNameList();
@@ -335,7 +335,7 @@ namespace dxvk {
 
     enabledFeatures.ext4444Formats.formatA4B4G4R4 = m_deviceFeatures.ext4444Formats.formatA4B4G4R4;
     enabledFeatures.ext4444Formats.formatA4R4G4B4 = m_deviceFeatures.ext4444Formats.formatA4R4G4B4;
-    
+
     Logger::info(str::format("Device properties:"
       "\n  Device name:     : ", m_deviceInfo.core.properties.deviceName,
       "\n  Driver version   : ",
@@ -424,7 +424,7 @@ namespace dxvk {
     overallocInfo.sType = VK_STRUCTURE_TYPE_DEVICE_MEMORY_OVERALLOCATION_CREATE_INFO_AMD;
     overallocInfo.pNext = nullptr;
     overallocInfo.overallocationBehavior = VK_MEMORY_OVERALLOCATION_BEHAVIOR_ALLOWED_AMD;
-    
+
     // Create the requested queues
     float queuePriority = 1.0f;
     std::vector<VkDeviceQueueCreateInfo> queueInfos;
@@ -435,7 +435,7 @@ namespace dxvk {
     queueFamiliySet.insert(queueFamilies.graphics);
     queueFamiliySet.insert(queueFamilies.transfer);
     this->logQueueFamilies(queueFamilies);
-    
+
     for (uint32_t family : queueFamiliySet) {
       VkDeviceQueueCreateInfo graphicsQueue;
       graphicsQueue.sType             = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO;
@@ -461,7 +461,7 @@ namespace dxvk {
 
     if (devExtensions.amdMemoryOverallocationBehaviour)
       overallocInfo.pNext = std::exchange(info.pNext, &overallocInfo);
-    
+
     VkDevice device = VK_NULL_HANDLE;
     VkResult vr = m_vki->vkCreateDevice(m_handle, &info, nullptr, &device);
 
@@ -489,15 +489,15 @@ namespace dxvk {
 
     if (vr != VK_SUCCESS)
       throw DxvkError("DxvkAdapter: Failed to create device");
-    
+
     Rc<DxvkDevice> result = new DxvkDevice(instance, this,
       new vk::DeviceFn(m_vki, true, device),
       devExtensions, enabledFeatures);
     result->initResources();
     return result;
   }
-  
-  
+
+
   void DxvkAdapter::notifyHeapMemoryAlloc(
           uint32_t            heap,
           VkDeviceSize        bytes) {
@@ -505,7 +505,7 @@ namespace dxvk {
       m_heapAlloc[heap] += bytes;
   }
 
-  
+
   void DxvkAdapter::notifyHeapMemoryFree(
           uint32_t            heap,
           VkDeviceSize        bytes) {
@@ -528,12 +528,12 @@ namespace dxvk {
 
     return driverMatches;
   }
-  
-  
+
+
   void DxvkAdapter::logAdapterInfo() const {
     VkPhysicalDeviceProperties deviceInfo = this->deviceProperties();
     VkPhysicalDeviceMemoryProperties memoryInfo = this->memoryProperties();
-    
+
     Logger::info(str::format(deviceInfo.deviceName, ":"));
     Logger::info(str::format("  Driver: ",
       VK_VERSION_MAJOR(deviceInfo.driverVersion), ".",
@@ -546,11 +546,11 @@ namespace dxvk {
 
     for (uint32_t i = 0; i < memoryInfo.memoryHeapCount; i++) {
       constexpr VkDeviceSize mib = 1024 * 1024;
-      
+
       Logger::info(str::format("  Memory Heap[", i, "]: "));
       Logger::info(str::format("    Size: ", memoryInfo.memoryHeaps[i].size / mib, " MiB"));
       Logger::info(str::format("    Flags: ", "0x", std::hex, memoryInfo.memoryHeaps[i].flags));
-      
+
       for (uint32_t j = 0; j < memoryInfo.memoryTypeCount; j++) {
         if (memoryInfo.memoryTypes[j].heapIndex == i) {
           Logger::info(str::format(
@@ -560,19 +560,19 @@ namespace dxvk {
       }
     }
   }
-  
-  
+
+
   bool DxvkAdapter::isUnifiedMemoryArchitecture() const {
     auto memory = this->memoryProperties();
     bool result = true;
 
     for (uint32_t i = 0; i < memory.memoryHeapCount; i++)
-      result &= memory.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT;
+      result = result && (memory.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT);
 
     return result;
   }
-  
-  
+
+
   void DxvkAdapter::initHeapAllocInfo() {
     for (uint32_t i = 0; i < m_heapAlloc.size(); i++)
       m_heapAlloc[i] = 0;
@@ -645,7 +645,7 @@ namespace dxvk {
 
     // Query full device properties for all enabled extensions
     m_vki->vkGetPhysicalDeviceProperties2(m_handle, &m_deviceInfo.core);
-    
+
     // Some drivers reports the driver version in a slightly different format
     switch (m_deviceInfo.khrDeviceDriverProperties.driverID) {
       case VK_DRIVER_ID_NVIDIA_PROPRIETARY:
@@ -747,7 +747,7 @@ namespace dxvk {
     uint32_t numQueueFamilies = 0;
     m_vki->vkGetPhysicalDeviceQueueFamilyProperties(
       m_handle, &numQueueFamilies, nullptr);
-    
+
     m_queueFamilies.resize(numQueueFamilies);
     m_vki->vkGetPhysicalDeviceQueueFamilyProperties(
       m_handle, &numQueueFamilies, m_queueFamilies.data());
@@ -764,8 +764,8 @@ namespace dxvk {
 
     return VK_QUEUE_FAMILY_IGNORED;
   }
-  
-  
+
+
   void DxvkAdapter::logNameList(const DxvkNameList& names) {
     for (uint32_t i = 0; i < names.count(); i++)
       Logger::info(str::format("  ", names.name(i)));
@@ -845,5 +845,5 @@ namespace dxvk {
       "\n  Graphics : ", queues.graphics,
       "\n  Transfer : ", queues.transfer));
   }
-  
+
 }

@@ -3,18 +3,18 @@
 #include "spirv_module.h"
 
 namespace dxvk {
-  
+
   SpirvModule::SpirvModule(uint32_t version)
   : m_version(version) {
     this->instImportGlsl450();
   }
-  
-  
+
+
   SpirvModule::~SpirvModule() {
-    
+
   }
-  
-  
+
+
   SpirvCodeBuffer SpirvModule::compile() const {
     SpirvCodeBuffer result;
     result.putHeader(m_version, m_id);
@@ -31,13 +31,13 @@ namespace dxvk {
     result.append(m_code);
     return result;
   }
-  
-  
+
+
   uint32_t SpirvModule::allocateId() {
     return m_id++;
   }
-  
-  
+
+
   bool SpirvModule::hasCapability(
           spv::Capability         capability) {
     for (auto ins : m_capabilities) {
@@ -57,15 +57,15 @@ namespace dxvk {
       m_capabilities.putWord(capability);
     }
   }
-  
-  
+
+
   void SpirvModule::enableExtension(
     const char*                   extensionName) {
     m_extensions.putIns (spv::OpExtension, 1 + m_extensions.strLen(extensionName));
     m_extensions.putStr (extensionName);
   }
-  
-  
+
+
   void SpirvModule::addEntryPoint(
           uint32_t                entryPointId,
           spv::ExecutionModel     executionModel,
@@ -76,12 +76,12 @@ namespace dxvk {
     m_entryPoints.putWord (executionModel);
     m_entryPoints.putWord (entryPointId);
     m_entryPoints.putStr  (name);
-    
+
     for (uint32_t i = 0; i < interfaceCount; i++)
       m_entryPoints.putWord(interfaceIds[i]);
   }
-  
-  
+
+
   void SpirvModule::setMemoryModel(
           spv::AddressingModel    addressModel,
           spv::MemoryModel        memoryModel) {
@@ -89,8 +89,8 @@ namespace dxvk {
     m_memoryModel.putWord (addressModel);
     m_memoryModel.putWord (memoryModel);
   }
-  
-    
+
+
   void SpirvModule::setExecutionMode(
           uint32_t                entryPointId,
           spv::ExecutionMode      executionMode) {
@@ -98,8 +98,8 @@ namespace dxvk {
     m_execModeInfo.putWord(entryPointId);
     m_execModeInfo.putWord(executionMode);
   }
-  
-  
+
+
   void SpirvModule::setExecutionMode(
           uint32_t                entryPointId,
           spv::ExecutionMode      executionMode,
@@ -122,8 +122,8 @@ namespace dxvk {
     m_execModeInfo.putWord (spv::ExecutionModeInvocations);
     m_execModeInfo.putInt32(invocations);
   }
-  
-  
+
+
   void SpirvModule::setLocalSize(
           uint32_t                entryPointId,
           uint32_t                x,
@@ -136,8 +136,8 @@ namespace dxvk {
     m_execModeInfo.putInt32(y);
     m_execModeInfo.putInt32(z);
   }
-  
-  
+
+
   void SpirvModule::setOutputVertices(
           uint32_t                entryPointId,
           uint32_t                vertexCount) {
@@ -146,20 +146,20 @@ namespace dxvk {
     m_execModeInfo.putWord(spv::ExecutionModeOutputVertices);
     m_execModeInfo.putWord(vertexCount);
   }
-  
-  
+
+
   uint32_t SpirvModule::addDebugString(
     const char*                   string) {
     uint32_t resultId = this->allocateId();
-    
+
     m_debugNames.putIns (spv::OpString,
       2 + m_debugNames.strLen(string));
     m_debugNames.putWord(resultId);
     m_debugNames.putStr (string);
     return resultId;
   }
-  
-  
+
+
   void SpirvModule::setDebugSource(
           spv::SourceLanguage     language,
           uint32_t                version,
@@ -167,16 +167,16 @@ namespace dxvk {
     const char*                   source) {
     uint32_t strLen = source != nullptr
       ? m_debugNames.strLen(source) : 0;
-    
+
     m_debugNames.putIns (spv::OpSource, 4 + strLen);
     m_debugNames.putWord(language);
     m_debugNames.putWord(version);
     m_debugNames.putWord(file);
-    
+
     if (source != nullptr)
       m_debugNames.putStr(source);
   }
-  
+
   void SpirvModule::setDebugName(
           uint32_t                expressionId,
     const char*                   debugName) {
@@ -184,8 +184,8 @@ namespace dxvk {
     m_debugNames.putWord(expressionId);
     m_debugNames.putStr (debugName);
   }
-  
-  
+
+
   void SpirvModule::setDebugMemberName(
           uint32_t                structId,
           uint32_t                memberId,
@@ -195,8 +195,8 @@ namespace dxvk {
     m_debugNames.putWord(memberId);
     m_debugNames.putStr (debugName);
   }
-  
-  
+
+
   uint32_t SpirvModule::constBool(
           bool                    v) {
     return this->defConst(v
@@ -205,86 +205,86 @@ namespace dxvk {
       this->defBoolType(),
       0, nullptr);
   }
-  
-  
+
+
   uint32_t SpirvModule::consti32(
           int32_t                 v) {
     std::array<uint32_t, 1> data;
     std::memcpy(data.data(), &v, sizeof(v));
-    
+
     return this->defConst(
       spv::OpConstant,
       this->defIntType(32, 1),
       data.size(),
       data.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::consti64(
           int64_t                 v) {
     std::array<uint32_t, 2> data;
     std::memcpy(data.data(), &v, sizeof(v));
-    
+
     return this->defConst(
       spv::OpConstant,
       this->defIntType(64, 1),
       data.size(),
       data.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::constu32(
           uint32_t                v) {
     std::array<uint32_t, 1> data;
     std::memcpy(data.data(), &v, sizeof(v));
-    
+
     return this->defConst(
       spv::OpConstant,
       this->defIntType(32, 0),
       data.size(),
       data.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::constu64(
           uint64_t                v) {
     std::array<uint32_t, 2> data;
     std::memcpy(data.data(), &v, sizeof(v));
-    
+
     return this->defConst(
       spv::OpConstant,
       this->defIntType(64, 0),
       data.size(),
       data.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::constf32(
           float                   v) {
     std::array<uint32_t, 1> data;
     std::memcpy(data.data(), &v, sizeof(v));
-    
+
     return this->defConst(
       spv::OpConstant,
       this->defFloatType(32),
       data.size(),
       data.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::constf64(
           double                  v) {
     std::array<uint32_t, 2> data;
     std::memcpy(data.data(), &v, sizeof(v));
-    
+
     return this->defConst(
       spv::OpConstant,
       this->defFloatType(64),
       data.size(),
       data.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::constvec4i32(
           int32_t                 x,
           int32_t                 y,
@@ -294,10 +294,10 @@ namespace dxvk {
       this->consti32(x), this->consti32(y),
       this->consti32(z), this->consti32(w),
     }};
-    
+
     uint32_t scalarTypeId = this->defIntType(32, 1);
     uint32_t vectorTypeId = this->defVectorType(scalarTypeId, 4);
-    
+
     return this->constComposite(vectorTypeId, args.size(), args.data());
   }
 
@@ -311,14 +311,14 @@ namespace dxvk {
       this->constBool(x), this->constBool(y),
       this->constBool(z), this->constBool(w),
     }};
-    
+
     uint32_t scalarTypeId = this->defBoolType();
     uint32_t vectorTypeId = this->defVectorType(scalarTypeId, 4);
-    
+
     return this->constComposite(vectorTypeId, args.size(), args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::constvec4u32(
           uint32_t                x,
           uint32_t                y,
@@ -328,13 +328,13 @@ namespace dxvk {
       this->constu32(x), this->constu32(y),
       this->constu32(z), this->constu32(w),
     }};
-    
+
     uint32_t scalarTypeId = this->defIntType(32, 0);
     uint32_t vectorTypeId = this->defVectorType(scalarTypeId, 4);
-    
+
     return this->constComposite(vectorTypeId, args.size(), args.data());
   }
-  
+
 
   uint32_t SpirvModule::constvec2f32(
           float                   x,
@@ -342,13 +342,13 @@ namespace dxvk {
     std::array<uint32_t, 2> args = {{
       this->constf32(x), this->constf32(y),
     }};
-    
+
     uint32_t scalarTypeId = this->defFloatType(32);
     uint32_t vectorTypeId = this->defVectorType(scalarTypeId, 2);
-    
+
     return this->constComposite(vectorTypeId, args.size(), args.data());
   }
-  
+
 
   uint32_t SpirvModule::constvec3f32(
           float                   x,
@@ -358,14 +358,14 @@ namespace dxvk {
       this->constf32(x), this->constf32(y),
       this->constf32(z),
     }};
-    
+
     uint32_t scalarTypeId = this->defFloatType(32);
     uint32_t vectorTypeId = this->defVectorType(scalarTypeId, 3);
-    
+
     return this->constComposite(vectorTypeId, args.size(), args.data());
   }
 
-  
+
   uint32_t SpirvModule::constvec4f32(
           float                   x,
           float                   y,
@@ -375,10 +375,10 @@ namespace dxvk {
       this->constf32(x), this->constf32(y),
       this->constf32(z), this->constf32(w),
     }};
-    
+
     uint32_t scalarTypeId = this->defFloatType(32);
     uint32_t vectorTypeId = this->defVectorType(scalarTypeId, 4);
-    
+
     return this->constComposite(vectorTypeId, args.size(), args.data());
   }
 
@@ -393,10 +393,10 @@ namespace dxvk {
     // Can't make a scalar composite.
     if (count == 1)
       return args[0];
-    
+
     uint32_t scalarTypeId = this->defFloatType(32);
     uint32_t vectorTypeId = this->defVectorType(scalarTypeId, count);
-    
+
     return this->constComposite(vectorTypeId, count, args.data());
   }
 
@@ -411,10 +411,10 @@ namespace dxvk {
     // Can't make a scalar composite.
     if (count == 1)
       return args[0];
-    
+
     uint32_t scalarTypeId = this->defBoolType();
     uint32_t vectorTypeId = this->defVectorType(scalarTypeId, count);
-    
+
     return this->constComposite(vectorTypeId, count, args.data());
   }
 
@@ -429,10 +429,10 @@ namespace dxvk {
     // Can't make a scalar composite.
     if (count == 1)
       return args[0];
-    
+
     uint32_t scalarTypeId = this->defIntType(32, 1);
     uint32_t vectorTypeId = this->defVectorType(scalarTypeId, count);
-    
+
     return this->constComposite(vectorTypeId, count, args.data());
   }
 
@@ -447,14 +447,14 @@ namespace dxvk {
     // Can't make a scalar composite.
     if (count == 1)
       return args[0];
-    
+
     uint32_t scalarTypeId = this->defIntType(32, 0);
     uint32_t vectorTypeId = this->defVectorType(scalarTypeId, count);
-    
+
     return this->constComposite(vectorTypeId, count, args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::constComposite(
           uint32_t                typeId,
           uint32_t                constCount,
@@ -463,8 +463,8 @@ namespace dxvk {
       spv::OpConstantComposite,
       typeId, constCount, constIds);
   }
-  
-  
+
+
   uint32_t SpirvModule::constUndef(
           uint32_t                typeId) {
     return this->defConst(spv::OpUndef,
@@ -492,7 +492,7 @@ namespace dxvk {
       if (ins.opCode() != spv::OpConstant
        && ins.opCode() != spv::OpConstantComposite)
         continue;
-      
+
       if (ins.arg(2) != constId)
         continue;
 
@@ -508,31 +508,31 @@ namespace dxvk {
           bool                    v) {
     uint32_t typeId   = this->defBoolType();
     uint32_t resultId = this->allocateId();
-    
+
     const spv::Op op = v
       ? spv::OpSpecConstantTrue
       : spv::OpSpecConstantFalse;
-    
+
     m_typeConstDefs.putIns  (op, 3);
     m_typeConstDefs.putWord (typeId);
     m_typeConstDefs.putWord (resultId);
     return resultId;
   }
-    
-  
+
+
   uint32_t SpirvModule::specConst32(
           uint32_t                typeId,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_typeConstDefs.putIns  (spv::OpSpecConstant, 4);
     m_typeConstDefs.putWord (typeId);
     m_typeConstDefs.putWord (resultId);
     m_typeConstDefs.putWord (value);
     return resultId;
   }
-  
-  
+
+
   void SpirvModule::decorate(
           uint32_t                object,
           spv::Decoration         decoration) {
@@ -540,8 +540,8 @@ namespace dxvk {
     m_annotations.putWord (object);
     m_annotations.putWord (decoration);
   }
-  
-  
+
+
   void SpirvModule::decorateArrayStride(
           uint32_t                object,
           uint32_t                stride) {
@@ -550,8 +550,8 @@ namespace dxvk {
     m_annotations.putWord (spv::DecorationArrayStride);
     m_annotations.putInt32(stride);
   }
-  
-  
+
+
   void SpirvModule::decorateBinding(
           uint32_t                object,
           uint32_t                binding) {
@@ -560,15 +560,15 @@ namespace dxvk {
     m_annotations.putWord (spv::DecorationBinding);
     m_annotations.putInt32(binding);
   }
-  
-  
+
+
   void SpirvModule::decorateBlock(uint32_t object) {
     m_annotations.putIns  (spv::OpDecorate, 3);
     m_annotations.putWord (object);
     m_annotations.putWord (spv::DecorationBlock);
   }
-  
-  
+
+
   void SpirvModule::decorateBuiltIn(
           uint32_t                object,
           spv::BuiltIn            builtIn) {
@@ -577,8 +577,8 @@ namespace dxvk {
     m_annotations.putWord (spv::DecorationBuiltIn);
     m_annotations.putWord (builtIn);
   }
-  
-  
+
+
   void SpirvModule::decorateComponent(
           uint32_t                object,
           uint32_t                location) {
@@ -587,8 +587,8 @@ namespace dxvk {
     m_annotations.putWord (spv::DecorationComponent);
     m_annotations.putInt32(location);
   }
-  
-  
+
+
   void SpirvModule::decorateDescriptorSet(
           uint32_t                object,
           uint32_t                set) {
@@ -597,8 +597,8 @@ namespace dxvk {
     m_annotations.putWord (spv::DecorationDescriptorSet);
     m_annotations.putInt32(set);
   }
-  
-  
+
+
   void SpirvModule::decorateIndex(
           uint32_t                object,
           uint32_t                index) {
@@ -617,8 +617,8 @@ namespace dxvk {
     m_annotations.putWord (spv::DecorationLocation);
     m_annotations.putInt32(location);
   }
-  
-  
+
+
   void SpirvModule::decorateSpecId(
           uint32_t                object,
           uint32_t                specId) {
@@ -627,7 +627,7 @@ namespace dxvk {
     m_annotations.putWord (spv::DecorationSpecId);
     m_annotations.putInt32(specId);
   }
-  
+
 
   void SpirvModule::decorateXfb(
           uint32_t                object,
@@ -655,8 +655,8 @@ namespace dxvk {
     m_annotations.putWord (spv::DecorationOffset);
     m_annotations.putInt32(offset);
   }
-  
-  
+
+
   void SpirvModule::memberDecorateBuiltIn(
           uint32_t                structId,
           uint32_t                memberId,
@@ -690,8 +690,8 @@ namespace dxvk {
     m_annotations.putWord (spv::DecorationMatrixStride);
     m_annotations.putWord (stride);
   }
-  
-  
+
+
   void SpirvModule::memberDecorateOffset(
           uint32_t                structId,
           uint32_t                memberId,
@@ -702,18 +702,18 @@ namespace dxvk {
     m_annotations.putWord (spv::DecorationOffset);
     m_annotations.putWord (offset);
   }
-  
-  
+
+
   uint32_t SpirvModule::defVoidType() {
     return this->defType(spv::OpTypeVoid, 0, nullptr);
   }
-  
-  
+
+
   uint32_t SpirvModule::defBoolType() {
     return this->defType(spv::OpTypeBool, 0, nullptr);
   }
-  
-  
+
+
   uint32_t SpirvModule::defIntType(
           uint32_t                width,
           uint32_t                isSigned) {
@@ -721,118 +721,118 @@ namespace dxvk {
     return this->defType(spv::OpTypeInt,
       args.size(), args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::defFloatType(
           uint32_t                width) {
     std::array<uint32_t, 1> args = {{ width }};
     return this->defType(spv::OpTypeFloat,
       args.size(), args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::defVectorType(
           uint32_t                elementType,
           uint32_t                elementCount) {
     std::array<uint32_t, 2> args =
       {{ elementType, elementCount }};
-    
+
     return this->defType(spv::OpTypeVector,
       args.size(), args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::defMatrixType(
           uint32_t                columnType,
           uint32_t                columnCount) {
     std::array<uint32_t, 2> args =
       {{ columnType, columnCount }};
-    
+
     return this->defType(spv::OpTypeMatrix,
       args.size(), args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::defArrayType(
           uint32_t                typeId,
           uint32_t                length) {
     std::array<uint32_t, 2> args = {{ typeId, length }};
-    
+
     return this->defType(spv::OpTypeArray,
       args.size(), args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::defArrayTypeUnique(
           uint32_t                typeId,
           uint32_t                length) {
     uint32_t resultId = this->allocateId();
-    
+
     m_typeConstDefs.putIns (spv::OpTypeArray, 4);
     m_typeConstDefs.putWord(resultId);
     m_typeConstDefs.putWord(typeId);
     m_typeConstDefs.putWord(length);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::defRuntimeArrayType(
           uint32_t                typeId) {
     std::array<uint32_t, 1> args = { typeId };
-    
+
     return this->defType(spv::OpTypeRuntimeArray,
       args.size(), args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::defRuntimeArrayTypeUnique(
           uint32_t                typeId) {
     uint32_t resultId = this->allocateId();
-    
+
     m_typeConstDefs.putIns (spv::OpTypeRuntimeArray, 3);
     m_typeConstDefs.putWord(resultId);
     m_typeConstDefs.putWord(typeId);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::defFunctionType(
           uint32_t                returnType,
           uint32_t                argCount,
     const uint32_t*               argTypes) {
     std::vector<uint32_t> args;
     args.push_back(returnType);
-    
+
     for (uint32_t i = 0; i < argCount; i++)
       args.push_back(argTypes[i]);
-    
+
     return this->defType(spv::OpTypeFunction,
       args.size(), args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::defStructType(
           uint32_t                memberCount,
     const uint32_t*               memberTypes) {
     return this->defType(spv::OpTypeStruct,
       memberCount, memberTypes);
   }
-  
-  
+
+
   uint32_t SpirvModule::defStructTypeUnique(
           uint32_t                memberCount,
     const uint32_t*               memberTypes) {
     uint32_t resultId = this->allocateId();
-    
+
     m_typeConstDefs.putIns (spv::OpTypeStruct, 2 + memberCount);
     m_typeConstDefs.putWord(resultId);
-    
+
     for (uint32_t i = 0; i < memberCount; i++)
       m_typeConstDefs.putWord(memberTypes[i]);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::defPointerType(
           uint32_t                variableType,
           spv::StorageClass       storageClass) {
@@ -840,17 +840,17 @@ namespace dxvk {
       static_cast<uint32_t>(storageClass),
       variableType,
     }};
-    
+
     return this->defType(spv::OpTypePointer,
       args.size(), args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::defSamplerType() {
     return this->defType(spv::OpTypeSampler, 0, nullptr);
   }
-  
-  
+
+
   uint32_t SpirvModule::defImageType(
           uint32_t                sampledType,
           spv::Dim                dimensionality,
@@ -867,43 +867,43 @@ namespace dxvk {
       sampled,
     static_cast<uint32_t>(format)
     }};
-    
+
     return this->defType(spv::OpTypeImage,
       args.size(), args.data());
   }
-  
-  
+
+
   uint32_t SpirvModule::defSampledImageType(
           uint32_t                imageType) {
     return this->defType(spv::OpTypeSampledImage, 1, &imageType);
   }
-  
-  
+
+
   uint32_t SpirvModule::newVar(
           uint32_t                pointerType,
           spv::StorageClass       storageClass) {
     uint32_t resultId = this->allocateId();
-    
+
     auto& code = storageClass != spv::StorageClassFunction
       ? m_variables : m_code;
-    
+
     code.putIns  (spv::OpVariable, 4);
     code.putWord (pointerType);
     code.putWord (resultId);
     code.putWord (storageClass);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::newVarInit(
           uint32_t                pointerType,
           spv::StorageClass       storageClass,
           uint32_t                initialValue) {
     uint32_t resultId = this->allocateId();
-    
+
     auto& code = storageClass != spv::StorageClassFunction
       ? m_variables : m_code;
-    
+
     code.putIns  (spv::OpVariable, 5);
     code.putWord (pointerType);
     code.putWord (resultId);
@@ -911,8 +911,8 @@ namespace dxvk {
     code.putWord (initialValue);
     return resultId;
   }
-  
-  
+
+
   void SpirvModule::functionBegin(
           uint32_t                returnType,
           uint32_t                functionId,
@@ -924,19 +924,19 @@ namespace dxvk {
     m_code.putWord(functionControl);
     m_code.putWord(functionType);
   }
-  
-  
+
+
   uint32_t SpirvModule::functionParameter(
           uint32_t                parameterType) {
     uint32_t parameterId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFunctionParameter, 3);
     m_code.putWord(parameterType);
     m_code.putWord(parameterId);
     return parameterId;
   }
-  
-  
+
+
   void SpirvModule::functionEnd() {
     m_code.putIns (spv::OpFunctionEnd, 1);
   }
@@ -948,12 +948,12 @@ namespace dxvk {
           uint32_t                indexCount,
     const uint32_t*               indexArray) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAccessChain, 4 + indexCount);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(composite);
-    
+
     for (uint32_t i = 0; i < indexCount; i++)
       m_code.putInt32(indexArray[i]);
     return resultId;
@@ -965,7 +965,7 @@ namespace dxvk {
           uint32_t                structure,
           uint32_t                memberId) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpArrayLength, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -973,41 +973,41 @@ namespace dxvk {
     m_code.putWord(memberId);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAny(
           uint32_t                resultType,
           uint32_t                vector) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAny, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(vector);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAll(
           uint32_t                resultType,
           uint32_t                vector) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAll, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(vector);
     return resultId;
   }
-  
-    
+
+
   uint32_t SpirvModule::opAtomicLoad(
           uint32_t                resultType,
           uint32_t                pointer,
           uint32_t                scope,
           uint32_t                semantics) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicLoad, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1016,8 +1016,8 @@ namespace dxvk {
     m_code.putWord(semantics);
     return resultId;
   }
-  
-  
+
+
   void SpirvModule::opAtomicStore(
           uint32_t                pointer,
           uint32_t                scope,
@@ -1029,8 +1029,8 @@ namespace dxvk {
     m_code.putWord(semantics);
     m_code.putWord(value);
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicExchange(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1038,7 +1038,7 @@ namespace dxvk {
           uint32_t                semantics,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicExchange, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1048,8 +1048,8 @@ namespace dxvk {
     m_code.putWord(value);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicCompareExchange(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1059,7 +1059,7 @@ namespace dxvk {
           uint32_t                value,
           uint32_t                comparator) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicCompareExchange, 9);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1071,15 +1071,15 @@ namespace dxvk {
     m_code.putWord(comparator);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicIIncrement(
           uint32_t                resultType,
           uint32_t                pointer,
           uint32_t                scope,
           uint32_t                semantics) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicIIncrement, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1088,15 +1088,15 @@ namespace dxvk {
     m_code.putWord(semantics);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicIDecrement(
           uint32_t                resultType,
           uint32_t                pointer,
           uint32_t                scope,
           uint32_t                semantics) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicIDecrement, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1105,8 +1105,8 @@ namespace dxvk {
     m_code.putWord(semantics);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicIAdd(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1114,7 +1114,7 @@ namespace dxvk {
           uint32_t                semantics,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicIAdd, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1124,8 +1124,8 @@ namespace dxvk {
     m_code.putWord(value);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicISub(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1133,7 +1133,7 @@ namespace dxvk {
           uint32_t                semantics,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicISub, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1143,8 +1143,8 @@ namespace dxvk {
     m_code.putWord(value);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicSMin(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1152,7 +1152,7 @@ namespace dxvk {
           uint32_t                semantics,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicSMin, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1162,8 +1162,8 @@ namespace dxvk {
     m_code.putWord(value);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicSMax(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1171,7 +1171,7 @@ namespace dxvk {
           uint32_t                semantics,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicSMax, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1181,8 +1181,8 @@ namespace dxvk {
     m_code.putWord(value);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicUMin(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1190,7 +1190,7 @@ namespace dxvk {
           uint32_t                semantics,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicUMin, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1200,8 +1200,8 @@ namespace dxvk {
     m_code.putWord(value);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicUMax(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1209,7 +1209,7 @@ namespace dxvk {
           uint32_t                semantics,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicUMax, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1219,8 +1219,8 @@ namespace dxvk {
     m_code.putWord(value);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicAnd(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1228,7 +1228,7 @@ namespace dxvk {
           uint32_t                semantics,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicAnd, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1238,8 +1238,8 @@ namespace dxvk {
     m_code.putWord(value);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicOr(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1247,7 +1247,7 @@ namespace dxvk {
           uint32_t                semantics,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicOr, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1257,8 +1257,8 @@ namespace dxvk {
     m_code.putWord(value);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opAtomicXor(
           uint32_t                resultType,
           uint32_t                pointer,
@@ -1266,7 +1266,7 @@ namespace dxvk {
           uint32_t                semantics,
           uint32_t                value) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpAtomicXor, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1276,52 +1276,52 @@ namespace dxvk {
     m_code.putWord(value);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opBitcast(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpBitcast, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opBitCount(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpBitCount, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opBitReverse(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpBitReverse, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFindILsb(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1330,13 +1330,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFindUMsb(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1345,13 +1345,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFindSMsb(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1360,8 +1360,8 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-            
+
+
   uint32_t SpirvModule::opBitFieldInsert(
           uint32_t                resultType,
           uint32_t                base,
@@ -1369,7 +1369,7 @@ namespace dxvk {
           uint32_t                offset,
           uint32_t                count) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpBitFieldInsert, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1379,15 +1379,15 @@ namespace dxvk {
     m_code.putWord(count);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opBitFieldSExtract(
           uint32_t                resultType,
           uint32_t                base,
           uint32_t                offset,
           uint32_t                count) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpBitFieldSExtract, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1396,15 +1396,15 @@ namespace dxvk {
     m_code.putWord(count);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opBitFieldUExtract(
           uint32_t                resultType,
           uint32_t                base,
           uint32_t                offset,
           uint32_t                count) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpBitFieldUExtract, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1413,14 +1413,14 @@ namespace dxvk {
     m_code.putWord(count);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opBitwiseAnd(
           uint32_t                resultType,
           uint32_t                operand1,
           uint32_t                operand2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpBitwiseAnd, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1428,14 +1428,14 @@ namespace dxvk {
     m_code.putWord(operand2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opBitwiseOr(
           uint32_t                resultType,
           uint32_t                operand1,
           uint32_t                operand2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpBitwiseOr, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1443,14 +1443,14 @@ namespace dxvk {
     m_code.putWord(operand2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opBitwiseXor(
           uint32_t                resultType,
           uint32_t                operand1,
           uint32_t                operand2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpBitwiseXor, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1458,27 +1458,27 @@ namespace dxvk {
     m_code.putWord(operand2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opNot(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpNot, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opShiftLeftLogical(
           uint32_t                resultType,
           uint32_t                base,
           uint32_t                shift) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpShiftLeftLogical, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1486,14 +1486,14 @@ namespace dxvk {
     m_code.putWord(shift);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opShiftRightArithmetic(
           uint32_t                resultType,
           uint32_t                base,
           uint32_t                shift) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpShiftRightArithmetic, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1501,14 +1501,14 @@ namespace dxvk {
     m_code.putWord(shift);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opShiftRightLogical(
           uint32_t                resultType,
           uint32_t                base,
           uint32_t                shift) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpShiftRightLogical, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1516,94 +1516,94 @@ namespace dxvk {
     m_code.putWord(shift);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opConvertFtoS(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpConvertFToS, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opConvertFtoU(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpConvertFToU, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opConvertStoF(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpConvertSToF, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opConvertUtoF(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpConvertUToF, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opCompositeConstruct(
           uint32_t                resultType,
           uint32_t                valueCount,
     const uint32_t*               valueArray) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpCompositeConstruct, 3 + valueCount);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
-    
+
     for (uint32_t i = 0; i < valueCount; i++)
       m_code.putWord(valueArray[i]);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opCompositeExtract(
           uint32_t                resultType,
           uint32_t                composite,
           uint32_t                indexCount,
     const uint32_t*               indexArray) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpCompositeExtract, 4 + indexCount);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(composite);
-    
+
     for (uint32_t i = 0; i < indexCount; i++)
       m_code.putInt32(indexArray[i]);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opCompositeInsert(
           uint32_t                resultType,
           uint32_t                object,
@@ -1611,103 +1611,103 @@ namespace dxvk {
           uint32_t                indexCount,
     const uint32_t*               indexArray) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpCompositeInsert, 5 + indexCount);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(object);
     m_code.putWord(composite);
-    
+
     for (uint32_t i = 0; i < indexCount; i++)
       m_code.putInt32(indexArray[i]);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opDpdx(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpDPdx, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opDpdy(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpDPdy, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opDpdxCoarse(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpDPdxCoarse, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opDpdyCoarse(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpDPdyCoarse, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opDpdxFine(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpDPdxFine, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opDpdyFine(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpDPdyFine, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opVectorExtractDynamic(
           uint32_t                resultType,
           uint32_t                vector,
           uint32_t                index) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpVectorExtractDynamic, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1724,50 +1724,50 @@ namespace dxvk {
           uint32_t                indexCount,
     const uint32_t*               indexArray) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpVectorShuffle, 5 + indexCount);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(vectorLeft);
     m_code.putWord(vectorRight);
-    
+
     for (uint32_t i = 0; i < indexCount; i++)
       m_code.putInt32(indexArray[i]);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSNegate(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpSNegate, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFNegate(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFNegate, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSAbs(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1776,13 +1776,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFAbs(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1814,7 +1814,7 @@ namespace dxvk {
           uint32_t                y,
           uint32_t                a) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 8);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1832,7 +1832,7 @@ namespace dxvk {
           uint32_t                x,
           uint32_t                y) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1842,14 +1842,14 @@ namespace dxvk {
     m_code.putWord(y);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opIAdd(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpIAdd, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1857,14 +1857,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opISub(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpISub, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1872,14 +1872,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFAdd(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFAdd, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1887,14 +1887,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFSub(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFSub, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1902,14 +1902,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSDiv(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpSDiv, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1917,14 +1917,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opUDiv(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpUDiv, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1932,14 +1932,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSRem(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpSRem, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1947,14 +1947,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opUMod(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpUMod, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1962,14 +1962,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFDiv(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFDiv, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1977,14 +1977,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opIMul(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpIMul, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -1992,14 +1992,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-    
+
+
   uint32_t SpirvModule::opFMul(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFMul, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2103,7 +2103,7 @@ namespace dxvk {
           uint32_t                b,
           uint32_t                c) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 8);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2114,14 +2114,14 @@ namespace dxvk {
     m_code.putWord(c);
     return resultId;
   }
-    
-  
+
+
   uint32_t SpirvModule::opFMax(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2131,14 +2131,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFMin(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2148,14 +2148,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-    
-  
+
+
   uint32_t SpirvModule::opNMax(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2165,14 +2165,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opNMin(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2182,14 +2182,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSMax(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2199,14 +2199,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSMin(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2216,14 +2216,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opUMax(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2233,14 +2233,14 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opUMin(
           uint32_t                resultType,
           uint32_t                a,
           uint32_t                b) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2250,15 +2250,15 @@ namespace dxvk {
     m_code.putWord(b);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFClamp(
           uint32_t                resultType,
           uint32_t                x,
           uint32_t                minVal,
           uint32_t                maxVal) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 8);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2269,15 +2269,15 @@ namespace dxvk {
     m_code.putWord(maxVal);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opNClamp(
           uint32_t                resultType,
           uint32_t                x,
           uint32_t                minVal,
           uint32_t                maxVal) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 8);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2288,14 +2288,14 @@ namespace dxvk {
     m_code.putWord(maxVal);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opIEqual(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpIEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2303,14 +2303,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opINotEqual(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpINotEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2318,14 +2318,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSLessThan(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpSLessThan, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2333,14 +2333,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSLessThanEqual(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpSLessThanEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2348,14 +2348,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSGreaterThan(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpSGreaterThan, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2363,14 +2363,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSGreaterThanEqual(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpSGreaterThanEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2378,14 +2378,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opULessThan(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpULessThan, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2393,14 +2393,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opULessThanEqual(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpULessThanEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2408,14 +2408,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opUGreaterThan(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpUGreaterThan, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2423,14 +2423,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opUGreaterThanEqual(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpUGreaterThanEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2438,14 +2438,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFOrdEqual(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFOrdEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2453,29 +2453,29 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
-  uint32_t SpirvModule::opFOrdNotEqual(
+
+
+  uint32_t SpirvModule::opFUnordNotEqual(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
-    m_code.putIns (spv::OpFOrdNotEqual, 5);
+
+    m_code.putIns (spv::OpFUnordNotEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(vector1);
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFOrdLessThan(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFOrdLessThan, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2483,14 +2483,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFOrdLessThanEqual(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFOrdLessThanEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2498,14 +2498,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFOrdGreaterThan(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFOrdGreaterThan, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2513,14 +2513,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFOrdGreaterThanEqual(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFOrdGreaterThanEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2528,14 +2528,14 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opLogicalEqual(
           uint32_t                resultType,
           uint32_t                operand1,
           uint32_t                operand2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpLogicalEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2543,14 +2543,14 @@ namespace dxvk {
     m_code.putWord(operand2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opLogicalNotEqual(
           uint32_t                resultType,
           uint32_t                operand1,
           uint32_t                operand2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpLogicalNotEqual, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2558,14 +2558,14 @@ namespace dxvk {
     m_code.putWord(operand2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opLogicalAnd(
           uint32_t                resultType,
           uint32_t                operand1,
           uint32_t                operand2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpLogicalAnd, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2573,14 +2573,14 @@ namespace dxvk {
     m_code.putWord(operand2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opLogicalOr(
           uint32_t                resultType,
           uint32_t                operand1,
           uint32_t                operand2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpLogicalOr, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2588,27 +2588,27 @@ namespace dxvk {
     m_code.putWord(operand2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opLogicalNot(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpLogicalNot, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opDot(
           uint32_t                resultType,
           uint32_t                vector1,
           uint32_t                vector2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpDot, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2616,13 +2616,13 @@ namespace dxvk {
     m_code.putWord(vector2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSin(
           uint32_t                resultType,
           uint32_t                vector) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2631,13 +2631,13 @@ namespace dxvk {
     m_code.putWord(vector);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opCos(
           uint32_t                resultType,
           uint32_t                vector) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2646,13 +2646,13 @@ namespace dxvk {
     m_code.putWord(vector);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSqrt(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2661,13 +2661,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opInverseSqrt(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2682,7 +2682,7 @@ namespace dxvk {
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2698,7 +2698,7 @@ namespace dxvk {
           uint32_t                incident,
           uint32_t                normal) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2714,7 +2714,7 @@ namespace dxvk {
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2723,13 +2723,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opExp2(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2744,7 +2744,7 @@ namespace dxvk {
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2753,13 +2753,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opLog2(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2784,12 +2784,12 @@ namespace dxvk {
     m_code.putWord(exponent);
     return resultId;
   }
-  
+
   uint32_t SpirvModule::opFract(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2798,13 +2798,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opCeil(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2813,13 +2813,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFloor(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2828,13 +2828,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opRound(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2843,13 +2843,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opRoundEven(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2858,13 +2858,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opTrunc(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2873,8 +2873,8 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opFConvert(
           uint32_t                resultType,
           uint32_t                operand) {
@@ -2886,13 +2886,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opPackHalf2x16(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2901,13 +2901,13 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opUnpackHalf2x16(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2916,15 +2916,15 @@ namespace dxvk {
     m_code.putWord(operand);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opSelect(
           uint32_t                resultType,
           uint32_t                condition,
           uint32_t                operand1,
           uint32_t                operand2) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpSelect, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2933,13 +2933,13 @@ namespace dxvk {
     m_code.putWord(operand2);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opIsNan(
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpIsNan, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2952,7 +2952,7 @@ namespace dxvk {
           uint32_t                resultType,
           uint32_t                operand) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpIsInf, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -2967,37 +2967,37 @@ namespace dxvk {
           uint32_t                argCount,
     const uint32_t*               argIds) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpFunctionCall, 4 + argCount);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(functionId);
-    
+
     for (uint32_t i = 0; i < argCount; i++)
       m_code.putWord(argIds[i]);
     return resultId;
   }
-  
-  
+
+
   void SpirvModule::opLabel(uint32_t labelId) {
     m_code.putIns (spv::OpLabel, 2);
     m_code.putWord(labelId);
   }
-  
-  
+
+
   uint32_t SpirvModule::opLoad(
           uint32_t                typeId,
           uint32_t                pointerId) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpLoad, 4);
     m_code.putWord(typeId);
     m_code.putWord(resultId);
     m_code.putWord(pointerId);
     return resultId;
   }
-  
-  
+
+
   void SpirvModule::opStore(
           uint32_t                pointerId,
           uint32_t                valueId) {
@@ -3005,13 +3005,13 @@ namespace dxvk {
     m_code.putWord(pointerId);
     m_code.putWord(valueId);
   }
-  
-  
+
+
   uint32_t SpirvModule::opInterpolateAtCentroid(
           uint32_t                resultType,
           uint32_t                interpolant) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -3020,14 +3020,14 @@ namespace dxvk {
     m_code.putWord(interpolant);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opInterpolateAtSample(
           uint32_t                resultType,
           uint32_t                interpolant,
           uint32_t                sample) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -3037,14 +3037,14 @@ namespace dxvk {
     m_code.putWord(sample);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opInterpolateAtOffset(
           uint32_t                resultType,
           uint32_t                interpolant,
           uint32_t                offset) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpExtInst, 7);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -3067,27 +3067,27 @@ namespace dxvk {
     m_code.putWord(sampledImage);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageRead(
           uint32_t                resultType,
           uint32_t                image,
           uint32_t                coordinates,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpImageRead,
       5 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(image);
     m_code.putWord(coordinates);
-    
+
     putImageOperands(operands);
     return resultId;
   }
-  
-  
+
+
   void SpirvModule::opImageWrite(
           uint32_t                image,
           uint32_t                coordinates,
@@ -3098,17 +3098,17 @@ namespace dxvk {
     m_code.putWord(image);
     m_code.putWord(coordinates);
     m_code.putWord(texel);
-    
+
     putImageOperands(operands);
   }
-  
-  
+
+
   uint32_t SpirvModule::opSampledImage(
           uint32_t                resultType,
           uint32_t                image,
           uint32_t                sampler) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpSampledImage, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -3116,15 +3116,15 @@ namespace dxvk {
     m_code.putWord(sampler);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageTexelPointer(
           uint32_t                resultType,
           uint32_t                image,
           uint32_t                coordinates,
           uint32_t                sample) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpImageTexelPointer, 6);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -3133,14 +3133,14 @@ namespace dxvk {
     m_code.putWord(sample);
     return resultId;
   }
-  
-    
+
+
   uint32_t SpirvModule::opImageQuerySizeLod(
           uint32_t                resultType,
           uint32_t                image,
           uint32_t                lod) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpImageQuerySizeLod, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -3148,40 +3148,40 @@ namespace dxvk {
     m_code.putWord(lod);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageQuerySize(
           uint32_t                resultType,
           uint32_t                image) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpImageQuerySize, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(image);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageQueryLevels(
           uint32_t                resultType,
           uint32_t                image) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpImageQueryLevels, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(image);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageQueryLod(
           uint32_t                resultType,
           uint32_t                sampledImage,
           uint32_t                coordinates) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpImageQueryLod, 5);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
@@ -3189,40 +3189,40 @@ namespace dxvk {
     m_code.putWord(coordinates);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageQuerySamples(
           uint32_t                resultType,
           uint32_t                image) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpImageQuerySamples, 4);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(image);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageFetch(
           uint32_t                resultType,
           uint32_t                image,
           uint32_t                coordinates,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageFetch,
       5 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(image);
     m_code.putWord(coordinates);
-    
+
     putImageOperands(operands);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageGather(
           uint32_t                resultType,
           uint32_t                sampledImage,
@@ -3230,7 +3230,7 @@ namespace dxvk {
           uint32_t                component,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageGather,
       6 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
@@ -3238,12 +3238,12 @@ namespace dxvk {
     m_code.putWord(sampledImage);
     m_code.putWord(coordinates);
     m_code.putWord(component);
-    
+
     putImageOperands(operands);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageDrefGather(
           uint32_t                resultType,
           uint32_t                sampledImage,
@@ -3251,7 +3251,7 @@ namespace dxvk {
           uint32_t                reference,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageDrefGather,
       6 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
@@ -3259,45 +3259,45 @@ namespace dxvk {
     m_code.putWord(sampledImage);
     m_code.putWord(coordinates);
     m_code.putWord(reference);
-    
+
     putImageOperands(operands);
     return resultId;
   }
-  
-    
+
+
   uint32_t SpirvModule::opImageSampleImplicitLod(
           uint32_t                resultType,
           uint32_t                sampledImage,
           uint32_t                coordinates,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageSampleImplicitLod,
       5 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(sampledImage);
     m_code.putWord(coordinates);
-    
+
     putImageOperands(operands);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageSampleExplicitLod(
           uint32_t                resultType,
           uint32_t                sampledImage,
           uint32_t                coordinates,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageSampleExplicitLod,
       5 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(sampledImage);
     m_code.putWord(coordinates);
-    
+
     putImageOperands(operands);
     return resultId;
   }
@@ -3309,38 +3309,38 @@ namespace dxvk {
           uint32_t                coordinates,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageSampleProjImplicitLod,
       5 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(sampledImage);
     m_code.putWord(coordinates);
-    
+
     putImageOperands(operands);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageSampleProjExplicitLod(
           uint32_t                resultType,
           uint32_t                sampledImage,
           uint32_t                coordinates,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageSampleProjExplicitLod,
       5 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
     m_code.putWord(resultId);
     m_code.putWord(sampledImage);
     m_code.putWord(coordinates);
-    
+
     putImageOperands(operands);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageSampleDrefImplicitLod(
           uint32_t                resultType,
           uint32_t                sampledImage,
@@ -3348,7 +3348,7 @@ namespace dxvk {
           uint32_t                reference,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageSampleDrefImplicitLod,
       6 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
@@ -3356,12 +3356,12 @@ namespace dxvk {
     m_code.putWord(sampledImage);
     m_code.putWord(coordinates);
     m_code.putWord(reference);
-    
+
     putImageOperands(operands);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::opImageSampleDrefExplicitLod(
           uint32_t                resultType,
           uint32_t                sampledImage,
@@ -3369,7 +3369,7 @@ namespace dxvk {
           uint32_t                reference,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageSampleDrefExplicitLod,
       6 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
@@ -3377,11 +3377,11 @@ namespace dxvk {
     m_code.putWord(sampledImage);
     m_code.putWord(coordinates);
     m_code.putWord(reference);
-    
+
     putImageOperands(operands);
     return resultId;
   }
-  
+
 
   uint32_t SpirvModule::opImageSampleProjDrefImplicitLod(
           uint32_t                resultType,
@@ -3390,7 +3390,7 @@ namespace dxvk {
           uint32_t                reference,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageSampleProjDrefImplicitLod,
       6 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
@@ -3398,7 +3398,7 @@ namespace dxvk {
     m_code.putWord(sampledImage);
     m_code.putWord(coordinates);
     m_code.putWord(reference);
-    
+
     putImageOperands(operands);
     return resultId;
   }
@@ -3411,7 +3411,7 @@ namespace dxvk {
           uint32_t                reference,
     const SpirvImageOperands&     operands) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns(spv::OpImageSampleProjDrefExplicitLod,
       6 + getImageOperandWordCount(operands));
     m_code.putWord(resultType);
@@ -3419,12 +3419,12 @@ namespace dxvk {
     m_code.putWord(sampledImage);
     m_code.putWord(coordinates);
     m_code.putWord(reference);
-    
+
     putImageOperands(operands);
     return resultId;
   }
 
-  
+
   uint32_t SpirvModule::opGroupNonUniformBallot(
           uint32_t                resultType,
           uint32_t                execution,
@@ -3439,7 +3439,7 @@ namespace dxvk {
     return resultId;
   }
 
-  
+
   uint32_t SpirvModule::opGroupNonUniformBallotBitCount(
           uint32_t                resultType,
           uint32_t                execution,
@@ -3469,7 +3469,7 @@ namespace dxvk {
     return resultId;
   }
 
-  
+
   uint32_t SpirvModule::opGroupNonUniformBroadcastFirst(
           uint32_t                resultType,
           uint32_t                execution,
@@ -3494,8 +3494,8 @@ namespace dxvk {
     m_code.putWord(memory);
     m_code.putWord(semantics);
   }
-  
-  
+
+
   void SpirvModule::opMemoryBarrier(
           uint32_t                memory,
           uint32_t                semantics) {
@@ -3503,8 +3503,8 @@ namespace dxvk {
     m_code.putWord(memory);
     m_code.putWord(semantics);
   }
-  
-  
+
+
   void SpirvModule::opLoopMerge(
           uint32_t                mergeBlock,
           uint32_t                continueTarget,
@@ -3514,8 +3514,8 @@ namespace dxvk {
     m_code.putWord(continueTarget);
     m_code.putWord(loopControl);
   }
-  
-  
+
+
   void SpirvModule::opSelectionMerge(
           uint32_t                mergeBlock,
           uint32_t                selectionControl) {
@@ -3523,15 +3523,15 @@ namespace dxvk {
     m_code.putWord(mergeBlock);
     m_code.putWord(selectionControl);
   }
-  
-  
+
+
   void SpirvModule::opBranch(
           uint32_t                label) {
     m_code.putIns (spv::OpBranch, 2);
     m_code.putWord(label);
   }
-  
-  
+
+
   void SpirvModule::opBranchConditional(
           uint32_t                condition,
           uint32_t                trueLabel,
@@ -3541,8 +3541,8 @@ namespace dxvk {
     m_code.putWord(trueLabel);
     m_code.putWord(falseLabel);
   }
-  
-  
+
+
   void SpirvModule::opSwitch(
           uint32_t                selector,
           uint32_t                jumpDefault,
@@ -3551,48 +3551,48 @@ namespace dxvk {
     m_code.putIns (spv::OpSwitch, 3 + 2 * caseCount);
     m_code.putWord(selector);
     m_code.putWord(jumpDefault);
-    
+
     for (uint32_t i = 0; i < caseCount; i++) {
       m_code.putWord(caseLabels[i].literal);
       m_code.putWord(caseLabels[i].labelId);
     }
   }
-  
-  
+
+
   uint32_t SpirvModule::opPhi(
           uint32_t                resultType,
           uint32_t                sourceCount,
     const SpirvPhiLabel*          sourceLabels) {
     uint32_t resultId = this->allocateId();
-    
+
     m_code.putIns (spv::OpPhi, 3 + 2 * sourceCount);
     m_code.putWord(resultType);
     m_code.putWord(resultId);
-    
+
     for (uint32_t i = 0; i < sourceCount; i++) {
       m_code.putWord(sourceLabels[i].varId);
       m_code.putWord(sourceLabels[i].labelId);
     }
-    
+
     return resultId;
   }
-  
-    
+
+
   void SpirvModule::opReturn() {
     m_code.putIns (spv::OpReturn, 1);
   }
-  
-  
+
+
   void SpirvModule::opKill() {
     m_code.putIns (spv::OpKill, 1);
   }
-  
-  
+
+
   void SpirvModule::opDemoteToHelperInvocation() {
     m_code.putIns (spv::OpDemoteToHelperInvocationEXT, 1);
   }
-  
-  
+
+
   void SpirvModule::opEmitVertex(
           uint32_t                streamId) {
     if (streamId == 0) {
@@ -3602,8 +3602,8 @@ namespace dxvk {
       m_code.putWord(streamId);
     }
   }
-  
-  
+
+
   void SpirvModule::opEndPrimitive(
           uint32_t                streamId) {
     if (streamId == 0) {
@@ -3613,10 +3613,10 @@ namespace dxvk {
       m_code.putWord(streamId);
     }
   }
-  
-  
+
+
   uint32_t SpirvModule::defType(
-          spv::Op                 op, 
+          spv::Op                 op,
           uint32_t                argCount,
     const uint32_t*               argIds) {
     // Since the type info is stored in the code buffer,
@@ -3625,25 +3625,25 @@ namespace dxvk {
     for (auto ins : m_typeConstDefs) {
       bool match = ins.opCode() == op
                 && ins.length() == 2 + argCount;
-      
+
       for (uint32_t i = 0; i < argCount && match; i++)
         match &= ins.arg(2 + i) == argIds[i];
-      
+
       if (match)
         return ins.arg(1);
     }
-    
+
     // Type not yet declared, create a new one.
     uint32_t resultId = this->allocateId();
     m_typeConstDefs.putIns (op, 2 + argCount);
     m_typeConstDefs.putWord(resultId);
-    
+
     for (uint32_t i = 0; i < argCount; i++)
       m_typeConstDefs.putWord(argIds[i]);
     return resultId;
   }
-  
-  
+
+
   uint32_t SpirvModule::defConst(
           spv::Op                 op,
           uint32_t                typeId,
@@ -3654,41 +3654,41 @@ namespace dxvk {
       bool match = ins.opCode() == op
                 && ins.length() == 3 + argCount
                 && ins.arg(1)   == typeId;
-      
+
       for (uint32_t i = 0; i < argCount && match; i++)
         match &= ins.arg(3 + i) == argIds[i];
-      
+
       if (!match)
         continue;
-      
+
       uint32_t id = ins.arg(2);
 
       if (m_lateConsts.find(id) == m_lateConsts.end())
         return id;
     }
-    
+
     // Constant not yet declared, make a new one
     uint32_t resultId = this->allocateId();
     m_typeConstDefs.putIns (op, 3 + argCount);
     m_typeConstDefs.putWord(typeId);
     m_typeConstDefs.putWord(resultId);
-    
+
     for (uint32_t i = 0; i < argCount; i++)
       m_typeConstDefs.putWord(argIds[i]);
     return resultId;
   }
-  
-  
+
+
   void SpirvModule::instImportGlsl450() {
     m_instExtGlsl450 = this->allocateId();
     const char* name = "GLSL.std.450";
-    
+
     m_instExt.putIns (spv::OpExtInstImport, 2 + m_instExt.strLen(name));
     m_instExt.putWord(m_instExtGlsl450);
     m_instExt.putStr (name);
   }
-  
-  
+
+
   uint32_t SpirvModule::getImageOperandWordCount(const SpirvImageOperands& op) const {
     // Each flag may add one or more operands
     const uint32_t result
@@ -3700,19 +3700,19 @@ namespace dxvk {
       + ((op.flags & spv::ImageOperandsConstOffsetsMask)? 1 : 0)
       + ((op.flags & spv::ImageOperandsSampleMask)      ? 1 : 0)
       + ((op.flags & spv::ImageOperandsMinLodMask)      ? 1 : 0);
-    
+
     // Add a DWORD for the operand mask if it is non-zero
     return result != 0 ? result + 1 : 0;
   }
-  
-  
+
+
   void SpirvModule::putImageOperands(const SpirvImageOperands& op) {
     if (op.flags != 0) {
       m_code.putWord(op.flags);
-      
+
       if (op.flags & spv::ImageOperandsBiasMask)
         m_code.putWord(op.sLodBias);
-      
+
       if (op.flags & spv::ImageOperandsLodMask)
         m_code.putWord(op.sLod);
 
@@ -3720,22 +3720,22 @@ namespace dxvk {
         m_code.putWord(op.sGradX);
         m_code.putWord(op.sGradY);
       }
-      
+
       if (op.flags & spv::ImageOperandsConstOffsetMask)
         m_code.putWord(op.sConstOffset);
-            
+
       if (op.flags & spv::ImageOperandsOffsetMask)
         m_code.putWord(op.gOffset);
-      
+
       if (op.flags & spv::ImageOperandsConstOffsetsMask)
         m_code.putWord(op.gConstOffsets);
-      
+
       if (op.flags & spv::ImageOperandsSampleMask)
         m_code.putWord(op.sSampleId);
-      
+
       if (op.flags & spv::ImageOperandsMinLodMask)
         m_code.putWord(op.sMinLod);
     }
   }
-  
+
 }

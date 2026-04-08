@@ -9,7 +9,8 @@ namespace dxvk::vk {
   }
 
   LibraryLoader::~LibraryLoader() {
-    FreeLibrary(m_library);
+    if (m_library)
+      FreeLibrary(m_library);
   }
 
   PFN_vkVoidFunction LibraryLoader::sym(VkInstance instance, const char* name) const {

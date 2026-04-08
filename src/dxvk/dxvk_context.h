@@ -609,7 +609,7 @@ namespace dxvk {
             uint32_t          stride);
 
     /**
-     * \brief Transform feddback draw call
+     * \brief Transform feedback draw call
 
      * \param [in] counterBuffer Xfb counter buffer
      * \param [in] counterDivisor Vertex stride
