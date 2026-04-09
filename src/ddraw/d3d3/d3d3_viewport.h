@@ -1,0 +1,72 @@
+#pragma once
+
+#include "../ddraw_include.h"
+#include "../ddraw_wrapped_object.h"
+
+#include "../d3d_common_viewport.h"
+
+#include "d3d3_interface.h"
+
+namespace dxvk {
+
+  class D3DLight;
+
+  class D3D3Viewport final : public DDrawWrappedObject<D3D3Interface, IDirect3DViewport, IUnknown> {
+
+  public:
+
+    D3D3Viewport(
+          D3DCommonViewport* commonViewport,
+          Com<IDirect3DViewport>&& proxyViewport,
+          D3D3Interface* pParent);
+
+    ~D3D3Viewport();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject);
+
+    HRESULT STDMETHODCALLTYPE Initialize(LPDIRECT3D lpDirect3D);
+
+    HRESULT STDMETHODCALLTYPE GetViewport(D3DVIEWPORT *data);
+
+    HRESULT STDMETHODCALLTYPE SetViewport(D3DVIEWPORT *data);
+
+    HRESULT STDMETHODCALLTYPE TransformVertices(DWORD vertex_count, D3DTRANSFORMDATA *data, DWORD flags, DWORD *offscreen);
+
+    HRESULT STDMETHODCALLTYPE LightElements(DWORD element_count, D3DLIGHTDATA *data);
+
+    HRESULT STDMETHODCALLTYPE SetBackground(D3DMATERIALHANDLE hMat);
+
+    HRESULT STDMETHODCALLTYPE GetBackground(D3DMATERIALHANDLE *material, BOOL *valid);
+
+    HRESULT STDMETHODCALLTYPE SetBackgroundDepth(IDirectDrawSurface *surface);
+
+    HRESULT STDMETHODCALLTYPE GetBackgroundDepth(IDirectDrawSurface **surface, BOOL *valid);
+
+    HRESULT STDMETHODCALLTYPE Clear(DWORD count, D3DRECT *rects, DWORD flags);
+
+    HRESULT STDMETHODCALLTYPE AddLight(IDirect3DLight *light);
+
+    HRESULT STDMETHODCALLTYPE DeleteLight(IDirect3DLight *light);
+
+    HRESULT STDMETHODCALLTYPE NextLight(IDirect3DLight *lpDirect3DLight, IDirect3DLight **lplpDirect3DLight, DWORD flags);
+
+    HRESULT ApplyViewport();
+
+    HRESULT ApplyAndActivateLights();
+
+    HRESULT ApplyAndActivateLight(DWORD index, D3DLight* light);
+
+    D3DCommonViewport* GetCommonViewport() const {
+      return m_commonViewport.ptr();
+    }
+
+  private:
+
+    static uint32_t        s_viewportCount;
+    uint32_t               m_viewportCount = 0;
+
+    Com<D3DCommonViewport> m_commonViewport;
+
+  };
+
+}

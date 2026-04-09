@@ -38,6 +38,13 @@ if get_option('enable_d3d8')
 endif
 
 # Nothing selected
-if not get_option('enable_d3d9') and not get_option('enable_d3d10') and not get_option('enable_d3d11')
+if get_option('enable_ddraw')
+  if not get_option('enable_d3d9')
+    error('D3D9 is required for DDRAW.')
+  endif
+  subdir('ddraw')
+endif
+
+if not get_option('enable_d3d8') and not get_option('enable_d3d9') and not get_option('enable_dxgi')
   warning('Nothing selected to be built.?')
 endif

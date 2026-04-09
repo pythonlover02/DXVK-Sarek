@@ -89,9 +89,9 @@ namespace dxvk {
   }
 
   HRESULT DisassembleShader(
-    const void*      pShader, 
-          BOOL       EnableColorCode, 
-          char*      pComments, 
+    const void*      pShader,
+          BOOL       EnableColorCode,
+          char*      pComments,
           ID3DBlob** ppDisassembly);
 
   HRESULT DecodeMultiSampleType(
@@ -202,7 +202,43 @@ namespace dxvk {
     return count;
   }
 
-  bool IsDepthFormat(D3D9Format Format);
+  inline bool IsDepthFormat(D3D9Format Format) {
+    return Format == D3D9Format::D16_LOCKABLE
+        || Format == D3D9Format::D32
+        || Format == D3D9Format::D15S1
+        || Format == D3D9Format::D24S8
+        || Format == D3D9Format::D24X8
+        || Format == D3D9Format::D24X4S4
+        || Format == D3D9Format::D16
+        || Format == D3D9Format::D32F_LOCKABLE
+        || Format == D3D9Format::D24FS8
+        || Format == D3D9Format::D32_LOCKABLE
+        || Format == D3D9Format::DF16
+        || Format == D3D9Format::DF24
+        || Format == D3D9Format::INTZ;
+  }
+
+  inline bool IsDepthStencilFormat(D3D9Format Format) {
+    return IsDepthFormat(Format) || Format == D3D9Format::S8_LOCKABLE;
+  }
+
+  inline bool IsFourCCFormat(D3D9Format format) {
+    return format > D3D9Format::BINARYBUFFER;
+  }
+
+  inline bool IsVendorFormat(D3D9Format format) {
+    return IsFourCCFormat(format)
+      && format != D3D9Format::MULTI2_ARGB8
+      && format != D3D9Format::UYVY
+      && format != D3D9Format::R8G8_B8G8
+      && format != D3D9Format::YUY2
+      && format != D3D9Format::G8R8_G8B8
+      && format != D3D9Format::DXT1
+      && format != D3D9Format::DXT2
+      && format != D3D9Format::DXT3
+      && format != D3D9Format::DXT4
+      && format != D3D9Format::DXT5;
+  }
 
   inline bool operator == (const D3DVIEWPORT9& a, const D3DVIEWPORT9& b) {
     return a.X      == b.X      &&

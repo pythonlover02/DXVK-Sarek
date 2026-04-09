@@ -1,0 +1,124 @@
+#include "d3d5_texture.h"
+
+#include "d3d5_device.h"
+
+#include "../ddraw/ddraw_surface.h"
+
+namespace dxvk {
+
+  uint32_t D3D5Texture::s_texCount = 0;
+
+  D3D5Texture::D3D5Texture(
+        Com<IDirect3DTexture2>&& proxyTexture,
+        DDrawSurface* pParent,
+        D3DTEXTUREHANDLE handle)
+    : DDrawWrappedObject<DDrawSurface, IDirect3DTexture2, IUnknown>(pParent, std::move(proxyTexture), nullptr) {
+    m_commonTex = new D3DCommonTexture(m_parent->GetCommonSurface(), handle);
+
+    m_texCount = ++s_texCount;
+
+    Logger::debug(str::format("D3D5Texture: Created a new texture nr. [[2-", m_texCount, "]]"));
+  }
+
+  D3D5Texture::~D3D5Texture() {
+    m_parent->GetCommonInterface()->ReleaseTextureHandle(m_commonTex->GetTextureHandle());
+
+    Logger::debug(str::format("D3D5Texture: Texture nr. [[2-", m_texCount, "]] bites the dust"));
+  }
+
+  // Interlocked refcount with the parent IDirectDrawSurface
+  ULONG STDMETHODCALLTYPE D3D5Texture::AddRef() {
+    return m_parent->AddRef();
+  }
+
+  // Interlocked refcount with the parent IDirectDrawSurface
+  ULONG STDMETHODCALLTYPE D3D5Texture::Release() {
+    return m_parent->Release();
+  }
+
+  HRESULT STDMETHODCALLTYPE D3D5Texture::QueryInterface(REFIID riid, void** ppvObject) {
+    Logger::debug(">>> D3D5Texture::QueryInterface");
+
+    if (unlikely(ppvObject == nullptr))
+      return E_POINTER;
+
+    InitReturnPtr(ppvObject);
+
+    if (unlikely(riid == __uuidof(IDirect3DTexture))) {
+      Logger::debug("D3D5Texture::QueryInterface: Query for IDirect3DTexture");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
+    if (unlikely(riid == __uuidof(IDirectDrawGammaControl))) {
+      Logger::debug("D3D5Texture::QueryInterface: Query for IDirectDrawGammaControl");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
+    if (unlikely(riid == __uuidof(IDirectDrawColorControl))) {
+      Logger::debug("D3D5Texture::QueryInterface: Query for IDirectDrawColorControl");
+      return E_NOINTERFACE;
+    }
+    if (unlikely(riid == __uuidof(IUnknown)
+              || riid == __uuidof(IDirectDrawSurface))) {
+      Logger::debug("D3D5Texture::QueryInterface: Query for IDirectDrawSurface");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
+    if (unlikely(riid == __uuidof(IDirectDrawSurface2))) {
+      Logger::debug("D3D5Texture::QueryInterface: Query for IDirectDrawSurface2");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
+    if (unlikely(riid == __uuidof(IDirectDrawSurface3))) {
+      Logger::debug("D3D5Texture::QueryInterface: Query for IDirectDrawSurface3");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
+
+    try {
+      *ppvObject = ref(this->GetInterface(riid));
+      return S_OK;
+    } catch (const DxvkError& e) {
+      Logger::warn(e.message());
+      Logger::warn(str::format(riid));
+      return E_NOINTERFACE;
+    }
+  }
+
+  HRESULT STDMETHODCALLTYPE D3D5Texture::GetHandle(LPDIRECT3DDEVICE2 lpDirect3DDevice2, LPD3DTEXTUREHANDLE lpHandle) {
+    Logger::debug(">>> D3D5Texture::GetHandle");
+
+    if(unlikely(lpDirect3DDevice2 == nullptr || lpHandle == nullptr))
+      return DDERR_INVALIDPARAMS;
+
+    *lpHandle = m_commonTex->GetTextureHandle();
+
+    return D3D_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE D3D5Texture::PaletteChanged(DWORD dwStart, DWORD dwCount) {
+    Logger::warn("<<< D3D5Texture::PaletteChanged: Proxy");
+    return m_proxy->PaletteChanged(dwStart, dwCount);
+  }
+
+  HRESULT STDMETHODCALLTYPE D3D5Texture::Load(LPDIRECT3DTEXTURE2 lpD3DTexture2) {
+    Logger::debug("<<< D3D5Texture::Load: Proxy");
+
+    Com<D3D5Texture> d3d5Texture = static_cast<D3D5Texture*>(lpD3DTexture2);
+
+    HRESULT hr = m_proxy->Load(d3d5Texture->GetProxied());
+    if (unlikely(FAILED(hr)))
+      return hr;
+
+    // Update the cached parent surface desc
+    DDSURFACEDESC desc;
+    desc.dwSize = sizeof(DDSURFACEDESC);
+    HRESULT hrDesc = m_parent->GetProxied()->GetSurfaceDesc(&desc);
+
+    if (unlikely(FAILED(hrDesc))) {
+      Logger::err("D3D5Texture::Load: Failed to retrieve updated surface desc");
+    } else {
+      m_parent->GetCommonSurface()->SetDesc(desc);
+    }
+
+    m_parent->GetCommonSurface()->DirtyMipMaps();
+
+    return hr;
+  }
+
+}
