@@ -17,6 +17,8 @@ namespace dxvk {
     : DDrawWrappedObject<D3D3Interface, IDirect3DMaterial, IUnknown>(pParent, std::move(proxyMaterial), nullptr) {
     m_commonMaterial = new D3DCommonMaterial(handle);
 
+    m_commonMaterial->SetD3D3Material(this);
+
     m_materialCount = ++s_materialCount;
 
     Logger::debug(str::format("D3D3Material: Created a new material nr. [[1-", m_materialCount, "]]"));
@@ -24,6 +26,8 @@ namespace dxvk {
 
   D3D3Material::~D3D3Material() {
     m_parent->GetCommonD3DInterface()->ReleaseMaterialHandle(m_commonMaterial->GetMaterialHandle());
+
+    m_commonMaterial->SetD3D3Material(nullptr);
 
     Logger::debug(str::format("D3D3Material: Material nr. [[1-", m_materialCount, "]] bites the dust"));
   }
@@ -40,6 +44,12 @@ namespace dxvk {
 
     if (unlikely(data == nullptr))
       return DDERR_INVALIDPARAMS;
+
+    // This call needs to be forwarded to the proxied material
+    // too, in order to have a proper color used during proxied clears
+    HRESULT hr = m_proxy->SetMaterial(data);
+    if (unlikely(FAILED(hr)))
+      Logger::warn("D3D3Material::SetMaterial: Failed to set the proxied material");
 
     d3d9::D3DMATERIAL9* material9 = m_commonMaterial->GetD3D9Material();
 
@@ -59,7 +69,7 @@ namespace dxvk {
     Logger::debug(str::format("   Power:    ", material9->Power));
 
     // Update the D3D9 material directly if it's actively being used
-    D3D3Device* device3 = m_parent->GetCommonInterface()->GetD3D3Device();
+    D3D3Device* device3 = m_parent->GetCommonInterface()->GetCommonD3DDevice()->GetD3D3Device();
     if (likely(device3 != nullptr)) {
       D3DMATERIALHANDLE currentHandle = device3->GetCurrentMaterialHandle();
       if (currentHandle == handle) {

@@ -1,5 +1,7 @@
 #include "ddraw_surface.h"
 
+#include "../d3d_common_device.h"
+
 #include "../ddraw_gamma.h"
 
 #include "../d3d3/d3d3_device.h"
@@ -10,7 +12,6 @@
 #include "../ddraw2/ddraw3_surface.h"
 #include "../ddraw4/ddraw4_surface.h"
 #include "../ddraw7/ddraw7_surface.h"
-#include <utility>
 
 namespace dxvk {
 
@@ -277,8 +278,14 @@ namespace dxvk {
 
     DDrawSurface* ddrawSurface = static_cast<DDrawSurface*>(lpDDSAttachedSurface);
 
-    if (unlikely(ddrawSurface->GetCommonSurface()->IsBackBufferOrFlippable()))
-      Logger::warn("DDrawSurface::AddAttachedSurface: Trying to attach a flippable surface");
+    if (unlikely(ddrawSurface->GetCommonSurface()->IsBackBufferOrFlippable())) {
+      if (unlikely(m_commonIntf->GetOptions()->forceBlitOnFlip)) {
+        Logger::debug("DDrawSurface::AddAttachedSurface: Caching surface as RT");
+        m_commonIntf->SetDDrawRenderTarget(ddrawSurface->GetCommonSurface());
+      } else {
+        Logger::warn("DDrawSurface::AddAttachedSurface: Trying to attach a flippable surface");
+      }
+    }
 
     HRESULT hr = m_proxy->AddAttachedSurface(ddrawSurface->GetProxied());
     if (unlikely(FAILED(hr)))
@@ -340,7 +347,7 @@ namespace dxvk {
       if (unlikely(lpDDSrcSurface == nullptr &&
                   (dwFlags & DDBLT_DEPTHFILL) &&
                   lpDDBltFx != nullptr &&
-                  m_commonIntf->IsCurrentD3D9DepthStencil(m_d3d9.ptr()))) {
+                  m_commonIntf->GetCommonD3DDevice()->IsCurrentD3D9DepthStencil(m_d3d9.ptr()))) {
         Logger::debug("DDrawSurface::Blt: Clearing d3d9 depth stencil");
 
         HRESULT hrClear;
@@ -358,7 +365,7 @@ namespace dxvk {
       if (unlikely(lpDDSrcSurface == nullptr &&
                   (dwFlags & DDBLT_COLORFILL) &&
                   lpDDBltFx != nullptr &&
-                  m_commonIntf->IsCurrentD3D9RenderTarget(m_d3d9.ptr()))) {
+                  m_commonIntf->GetCommonD3DDevice()->IsCurrentD3D9RenderTarget(m_d3d9.ptr()))) {
         Logger::debug("DDrawSurface::Blt: Clearing d3d9 render target");
 
         HRESULT hrClear;
@@ -392,7 +399,7 @@ namespace dxvk {
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSrcSurface))) {
       if (unlikely(lpDDSrcSurface != nullptr)) {
         Logger::warn("DDrawSurface::Blt: Received an unwrapped source surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
       hr = m_proxy->Blt(lpDestRect, lpDDSrcSurface, lpSrcRect, dwFlags, lpDDBltFx);
     } else {
@@ -479,7 +486,7 @@ namespace dxvk {
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSrcSurface))) {
       if (unlikely(lpDDSrcSurface != nullptr)) {
         Logger::warn("DDrawSurface::BltFast: Received an unwrapped source surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
       hr = m_proxy->BltFast(dwX, dwY, lpDDSrcSurface, lpSrcRect, dwTrans);
     } else {
@@ -507,7 +514,7 @@ namespace dxvk {
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSAttachedSurface))) {
       if (unlikely(lpDDSAttachedSurface != nullptr)) {
         Logger::warn("DDrawSurface::DeleteAttachedSurface: Received an unwrapped surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
 
       HRESULT hrProxy = m_proxy->DeleteAttachedSurface(dwFlags, lpDDSAttachedSurface);
@@ -614,6 +621,9 @@ namespace dxvk {
       }
     }
 
+    DDrawSurface* rt = m_commonIntf->GetDDrawRenderTarget() != nullptr ?
+                       m_commonIntf->GetDDrawRenderTarget()->GetDDSurface() : nullptr;
+
     RefreshD3D9Device();
     if (likely(m_d3d9Device != nullptr)) {
       Logger::debug("*** DDrawSurface::Flip: Presenting");
@@ -621,23 +631,40 @@ namespace dxvk {
       m_commonIntf->ResetDrawTracking();
 
       if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
+        D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+
         if (unlikely(!IsInitialized()))
-          InitializeD3D9(m_commonIntf->IsCurrentRenderTarget(this));
+          InitializeD3D9(commonDevice->IsCurrentRenderTarget(this));
 
         BlitToDDrawSurface<IDirectDrawSurface, DDSURFACEDESC>(m_proxy.ptr(), m_d3d9.ptr());
 
         if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSurfaceTargetOverride))) {
           if (unlikely(lpDDSurfaceTargetOverride != nullptr)) {
             Logger::warn("DDrawSurface::Flip: Received an unwrapped surface");
-            return DDERR_GENERIC;
+            return DDERR_UNSUPPORTED;
           }
-          if (likely(m_commonIntf->IsCurrentRenderTarget(this)))
+
+          if (likely(commonDevice->IsCurrentRenderTarget(this)))
             m_commonIntf->SetFlipRTSurfaceAndFlags(lpDDSurfaceTargetOverride, dwFlags);
-          return m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
+
+          if (unlikely(m_commonIntf->GetOptions()->forceBlitOnFlip &&
+                       rt != nullptr && m_commonSurf->IsPrimarySurface())) {
+            Logger::debug("DDrawSurface::Flip: Skipping flip");
+            return DD_OK;
+          } else {
+            return m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
+          }
         } else {
-          if (likely(m_commonIntf->IsCurrentRenderTarget(this)))
+          if (likely(commonDevice->IsCurrentRenderTarget(this)))
             m_commonIntf->SetFlipRTSurfaceAndFlags(lpDDSurfaceTargetOverride, dwFlags);
-          return m_proxy->Flip(surf->GetProxied(), dwFlags);
+
+          if (unlikely(m_commonIntf->GetOptions()->forceBlitOnFlip &&
+                       rt != nullptr && m_commonSurf->IsPrimarySurface())) {
+            Logger::debug("DDrawSurface::Flip: Skipping flip");
+            return DD_OK;
+          } else {
+            return m_proxy->Flip(surf->GetProxied(), dwFlags);
+          }
         }
       }
 
@@ -647,9 +674,15 @@ namespace dxvk {
     } else {
       Logger::debug("<<< DDrawSurface::Flip: Proxy");
       if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSurfaceTargetOverride))) {
-        m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
+        if (unlikely(m_commonIntf->GetOptions()->forceBlitOnFlip &&
+                     rt != nullptr && m_commonSurf->IsPrimarySurface())) {
+          Logger::debug("DDrawSurface::Flip: Blitting instead of flipping");
+          return m_proxy->Blt(nullptr, rt->GetProxied(), nullptr, DDBLT_WAIT, nullptr);
+        } else {
+          return m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
+        }
       } else {
-        m_proxy->Flip(surf->GetProxied(), dwFlags);
+        return m_proxy->Flip(surf->GetProxied(), dwFlags);
       }
     }
 
@@ -1041,9 +1074,12 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDrawSurface::UpdateOverlay(LPRECT lpSrcRect, LPDIRECTDRAWSURFACE lpDDDestSurface, LPRECT lpDestRect, DWORD dwFlags, LPDDOVERLAYFX lpDDOverlayFx) {
     Logger::debug("<<< DDrawSurface::UpdateOverlay: Proxy");
 
+    if (unlikely(lpDDDestSurface == nullptr))
+      return DDERR_INVALIDPARAMS;
+
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDDestSurface))) {
       Logger::warn("DDrawSurface::UpdateOverlay: Received an unwrapped surface");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     DDrawSurface* ddrawSurface = static_cast<DDrawSurface*>(lpDDDestSurface);
@@ -1061,7 +1097,7 @@ namespace dxvk {
 
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSReference))) {
       Logger::warn("DDrawSurface::UpdateOverlayZOrder: Received an unwrapped surface");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     DDrawSurface* ddrawSurface = static_cast<DDrawSurface*>(lpDDSReference);
@@ -1243,7 +1279,7 @@ namespace dxvk {
     Logger::debug(str::format("DDrawSurface::InitializeD3D9: Placing in: ", poolPlacement));
 
     // Use the MSAA type that was determined to be supported during device creation
-    const d3d9::D3DMULTISAMPLE_TYPE multiSampleType = m_commonIntf->GetMultiSampleType();
+    const d3d9::D3DMULTISAMPLE_TYPE multiSampleType = m_commonIntf->GetCommonD3DDevice()->GetMultiSampleType();
     const uint32_t index = m_commonSurf->GetBackBufferIndex();
 
     Com<d3d9::IDirect3DSurface9> surf;
@@ -1328,7 +1364,7 @@ namespace dxvk {
 
       // Sometimes we get passed offscreen plain surfaces which should be tied to the back buffer,
       // either as existing RTs or during SetRenderTarget() calls, which are tracked with initRT
-      if (unlikely(m_commonIntf->IsCurrentRenderTarget(this) || initRT)) {
+      if (unlikely(m_commonIntf->GetCommonD3DDevice()->IsCurrentRenderTarget(this) || initRT)) {
         Logger::debug("DDrawSurface::InitializeD3D9: Offscreen plain surface is the RT");
 
         m_d3d9Device->GetBackBuffer(0, index, d3d9::D3DBACKBUFFER_TYPE_MONO, &surf);
@@ -1503,20 +1539,34 @@ namespace dxvk {
       }
     }
 
+    Com<d3d9::IDirect3D9> d3d9Intf;
+    // D3D3 is "special", so we might not have a valid D3D3 interface to work with
+    // at this point. Create a temporary D3D9 interface should that ever happen.
     D3D3Interface* d3d3Intf = m_commonIntf->GetD3D3Interface();
     if (unlikely(d3d3Intf == nullptr)) {
-      Logger::err("DDrawSurface::CreateDeviceInternal: Device creation failed due to null D3D3 interface");
-      return DDERR_GENERIC;
+      Logger::debug("DDrawSurface::CreateDeviceInternal: Creating a temporary D3D9 interface");
+      d3d9Intf = d3d9::Direct3DCreate9(D3D_SDK_VERSION);
+
+      Com<IDxvkD3D8InterfaceBridge> d3d9Bridge;
+
+      if (unlikely(FAILED(d3d9Intf->QueryInterface(__uuidof(IDxvkD3D8InterfaceBridge), reinterpret_cast<void**>(&d3d9Bridge))))) {
+        Logger::err("DDrawSurface::CreateDeviceInternal: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
+        return DDERR_GENERIC;
+      }
+
+      d3d9Bridge->EnableD3D3CompatibilityMode();
+    } else {
+      d3d9Intf = d3d3Intf->GetD3D9();
     }
 
     // Determine the supported AA sample count by querying the D3D9 interface
     d3d9::D3DMULTISAMPLE_TYPE multiSampleType = d3d9::D3DMULTISAMPLE_NONE;
     if (likely(d3dOptions->emulateFSAA != FSAAEmulation::Disabled)) {
-      HRESULT hr4S = d3d3Intf->GetD3D9()->CheckDeviceMultiSampleType(0, d3d9::D3DDEVTYPE_HAL, m_commonSurf->GetD3D9Format(),
-                                                                      TRUE, d3d9::D3DMULTISAMPLE_4_SAMPLES, NULL);
+      HRESULT hr4S = d3d9Intf->CheckDeviceMultiSampleType(0, d3d9::D3DDEVTYPE_HAL, m_commonSurf->GetD3D9Format(),
+                                                          TRUE, d3d9::D3DMULTISAMPLE_4_SAMPLES, NULL);
       if (unlikely(FAILED(hr4S))) {
-        HRESULT hr2S = d3d3Intf->GetD3D9()->CheckDeviceMultiSampleType(0, d3d9::D3DDEVTYPE_HAL, m_commonSurf->GetD3D9Format(),
-                                                                        TRUE, d3d9::D3DMULTISAMPLE_2_SAMPLES, NULL);
+        HRESULT hr2S = d3d9Intf->CheckDeviceMultiSampleType(0, d3d9::D3DDEVTYPE_HAL, m_commonSurf->GetD3D9Format(),
+                                                            TRUE, d3d9::D3DMULTISAMPLE_2_SAMPLES, NULL);
         if (unlikely(FAILED(hr2S))) {
           Logger::warn("DDrawSurface::CreateDeviceInternal: No MSAA support has been detected");
         } else {
@@ -1579,7 +1629,7 @@ namespace dxvk {
     params.PresentationInterval       = D3DPRESENT_INTERVAL_DEFAULT; // A D3D3 device always uses VSync
 
     Com<d3d9::IDirect3DDevice9> device9;
-    hr = d3d3Intf->GetD3D9()->CreateDevice(
+    hr = d3d9Intf->CreateDevice(
       D3DADAPTER_DEFAULT,
       d3d9::D3DDEVTYPE_HAL,
       hWnd,
@@ -1593,17 +1643,33 @@ namespace dxvk {
       return hr;
     }
 
-    Com<D3D3Device> device3 = new D3D3Device(std::move(ppvProxyObject), this, GetD3D3Caps(d3dOptions),
-                                              rclsidOverride, params, std::move(device9), deviceCreationFlags9);
+    Com<D3D3Device> device3 = new D3D3Device(nullptr, std::move(ppvProxyObject), this,
+                                             GetD3D3Caps(d3dOptions), rclsidOverride, params,
+                                             std::move(device9), deviceCreationFlags9);
 
-    // Set the newly created D3D3 device on the common interface
-    m_commonIntf->SetD3D3Device(device3.ptr());
+    // Set the common device on the common interface
+    m_commonIntf->SetCommonD3DDevice(device3->GetCommonD3DDevice());
     // Now that we have a valid D3D9 device pointer, we can initialize the depth stencil (if any)
     device3->InitializeDS();
 
     *ppvObject = device3.ref();
 
     return DD_OK;
+  }
+
+  inline void DDrawSurface::RefreshD3D9Device() {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+
+    d3d9::IDirect3DDevice9* d3d9Device = commonDevice != nullptr ? commonDevice->GetD3D9Device() : nullptr;
+    if (unlikely(m_d3d9Device != d3d9Device)) {
+      // Check if the device has been recreated and reset all D3D9 resources
+      if (m_d3d9Device != nullptr) {
+        Logger::debug("DDrawSurface: Device context has changed, clearing all D3D9 resources");
+        m_d3d9 = nullptr;
+      }
+
+      m_d3d9Device = d3d9Device;
+    }
   }
 
 }

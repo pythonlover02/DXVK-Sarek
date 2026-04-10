@@ -76,6 +76,8 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Interface::QueryInterface(REFIID riid, void** ppvObject) {
+    Logger::debug(">>> D3D5Interface::QueryInterface");
+
     if (unlikely(ppvObject == nullptr))
       return E_POINTER;
 
@@ -236,8 +238,15 @@ namespace dxvk {
 
     InitReturnPtr(lplpDirect3DMaterial);
 
+    Com<IDirect3DMaterial2> ddrawMaterial2Proxied;
+    HRESULT hr = m_proxy->CreateMaterial(&ddrawMaterial2Proxied, pUnkOuter);
+    if (unlikely(FAILED(hr))) {
+      Logger::err("D3D5Interface::CreateMaterial: Failed to create proxied material");
+      return hr;
+    }
+
     D3DMATERIALHANDLE handle = m_commonD3DIntf->GetNextMaterialHandle();
-    Com<D3D5Material> d3d5Material = new D3D5Material(nullptr, this, handle);
+    Com<D3D5Material> d3d5Material = new D3D5Material(std::move(ddrawMaterial2Proxied), this, handle);
     m_commonD3DIntf->EmplaceMaterial(d3d5Material->GetCommonMaterial(), handle);
 
     *lplpDirect3DMaterial = d3d5Material.ref();
@@ -268,6 +277,9 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
 
     if (unlikely(lpD3DFDS->dwSize != sizeof(D3DFINDDEVICESEARCH)))
+      return DDERR_INVALIDPARAMS;
+
+    if (unlikely(!IsValidFindDeviceResultSize(lpD3DFDR->dwSize)))
       return DDERR_INVALIDPARAMS;
 
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
@@ -336,6 +348,24 @@ namespace dxvk {
         lpD3DFRD2.ddHwDesc = descRGB_HAL;
         lpD3DFRD2.ddSwDesc = descRGB_HEL;
       }
+
+      memcpy(lpD3DFDR, &lpD3DFRD2, sizeof(D3DFINDDEVICERESULT2));
+    } else if (lpD3DFDS->dwFlags & D3DFDS_COLORMODEL) {
+      Logger::debug("D3D5Interface::FindDevice: Matching by color model");
+
+      Logger::debug("D3D5Interface::FindDevice: Matched IID_IDirect3DHALDevice");
+      lpD3DFRD2.guid = IID_IDirect3DHALDevice;
+      lpD3DFRD2.ddHwDesc = descHAL_HAL;
+      lpD3DFRD2.ddSwDesc = descHAL_HEL;
+
+      memcpy(lpD3DFDR, &lpD3DFRD2, sizeof(D3DFINDDEVICERESULT2));
+    } else if (lpD3DFDS->dwFlags == 0) {
+      Logger::debug("D3D5Interface::FindDevice: No matching criteria specified");
+
+      Logger::debug("D3D5Interface::FindDevice: Matched IID_IDirect3DHALDevice");
+      lpD3DFRD2.guid = IID_IDirect3DHALDevice;
+      lpD3DFRD2.ddHwDesc = descHAL_HAL;
+      lpD3DFRD2.ddSwDesc = descHAL_HEL;
 
       memcpy(lpD3DFDR, &lpD3DFRD2, sizeof(D3DFINDDEVICERESULT2));
     } else {
@@ -411,7 +441,7 @@ namespace dxvk {
         }
       } else {
         Logger::err("D3D5Interface::CreateDevice: Unwrapped surface passed as RT");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
     } else {
       rt = static_cast<DDrawSurface*>(lpDDS);
@@ -538,12 +568,12 @@ namespace dxvk {
     D3DDEVICEDESC2 desc5 = GetD3D5Caps(rclsidOverride, d3dOptions);
 
     try{
-      Com<D3D5Device> device5 = new D3D5Device(std::move(d3d5DeviceProxy), this, desc5,
+      Com<D3D5Device> device5 = new D3D5Device(nullptr, std::move(d3d5DeviceProxy), this, desc5,
                                                rclsidOverride, params, std::move(device9),
                                                rt.ptr(), deviceCreationFlags9);
 
-      // Set the newly created D3D5 device on the common interface
-      m_commonIntf->SetD3D5Device(device5.ptr());
+      // Set the common device on the common interface
+      m_commonIntf->SetCommonD3DDevice(device5->GetCommonD3DDevice());
       // Now that we have a valid D3D9 device pointer, we can initialize the depth stencil (if any)
       device5->InitializeDS();
 

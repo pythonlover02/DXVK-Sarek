@@ -1,8 +1,9 @@
 #include "d3d7_device.h"
 
+#include "../ddraw_common_interface.h"
+
 #include "d3d7_buffer.h"
 #include "d3d7_state_block.h"
-#include <utility>
 
 #include "../ddraw7/ddraw7_surface.h"
 
@@ -11,6 +12,7 @@ namespace dxvk {
   uint32_t D3D7Device::s_deviceCount = 0;
 
   D3D7Device::D3D7Device(
+        D3DCommonDevice* commonD3DDevice,
         Com<IDirect3DDevice7>&& d3d7DeviceProxy,
         D3D7Interface* pParent,
         D3DDEVICEDESC7 Desc,
@@ -19,11 +21,19 @@ namespace dxvk {
         DDraw7Surface* pSurface,
         DWORD CreationFlags9)
     : DDrawWrappedObject<D3D7Interface, IDirect3DDevice7, d3d9::IDirect3DDevice9>(pParent, std::move(d3d7DeviceProxy), std::move(pDevice9))
-    , m_commonIntf ( pParent->GetCommonInterface() )
+    , m_commonD3DDevice ( commonD3DDevice )
     , m_multithread ( CreationFlags9 & D3DCREATE_MULTITHREADED )
     , m_params9 ( Params9 )
     , m_desc ( Desc )
     , m_rt ( pSurface ) {
+    if (m_parent != nullptr) {
+      m_commonIntf = m_parent->GetCommonInterface();
+    } else if (m_commonD3DDevice != nullptr) {
+      m_commonIntf = m_commonD3DDevice->GetCommonInterface();
+    } else {
+      throw DxvkError("D3D7Device: ERROR! Failed to retrieve the common interface!");
+    }
+
     // Get the bridge interface to D3D9
     if (unlikely(FAILED(m_d3d9->QueryInterface(__uuidof(IDxvkD3D8Bridge), reinterpret_cast<void**>(&m_bridge))))) {
       throw DxvkError("D3D7Device: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
@@ -34,16 +44,24 @@ namespace dxvk {
       throw DxvkError("D3D7Device: ERROR! Failed to initialize D3D9 index buffers.");
     }
 
-    m_totalMemory = m_bridge->DetermineInitialTextureMemory();
+    if (likely(m_commonD3DDevice == nullptr)) {
+      m_commonD3DDevice = new D3DCommonDevice(m_commonIntf, CreationFlags9,
+                                              m_bridge->DetermineInitialTextureMemory());
+
+      const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+
+      if (unlikely(d3dOptions->emulateFSAA == FSAAEmulation::Forced)) {
+        Logger::warn("D3D7Device: Force enabling AA");
+        m_d3d9->SetRenderState(d3d9::D3DRS_MULTISAMPLEANTIALIAS, TRUE);
+      }
+    }
+
+    if (m_commonD3DDevice->GetOrigin() == nullptr)
+      m_commonD3DDevice->SetOrigin(this);
+
+    m_commonD3DDevice->SetD3D7Device(this);
 
     m_textures.fill(nullptr);
-
-    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
-
-    if (unlikely(d3dOptions->emulateFSAA == FSAAEmulation::Forced)) {
-      Logger::warn("D3D7Device: Force enabling AA");
-      m_d3d9->SetRenderState(d3d9::D3DRS_MULTISAMPLEANTIALIAS, TRUE);
-    }
 
     m_deviceCount = ++s_deviceCount;
 
@@ -62,9 +80,11 @@ namespace dxvk {
       Logger::info(str::format("   XXL: ", m_ib9_uploads[6]));
     }
 
-    // Clear the common interface device pointer if it points to this device
-    if (m_commonIntf->GetD3D7Device() == this)
-      m_commonIntf->SetD3D7Device(nullptr);
+    if (m_commonD3DDevice->GetD3D7Device() == this)
+      m_commonD3DDevice->SetD3D7Device(nullptr);
+
+    if (m_commonD3DDevice->GetOrigin() == this)
+      m_commonD3DDevice->SetOrigin(nullptr);
 
     Logger::debug(str::format("D3D7Device: Device nr. ((7-", m_deviceCount, ")) bites the dust"));
   }
@@ -255,7 +275,7 @@ namespace dxvk {
 
     if (unlikely(!m_commonIntf->IsWrappedSurface(surface))) {
       Logger::err("D3D7Device::SetRenderTarget: Received an unwrapped RT");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     DDraw7Surface* rt7 = static_cast<DDraw7Surface*>(surface);
@@ -831,7 +851,7 @@ namespace dxvk {
 
     if (unlikely(!m_commonIntf->IsWrappedSurface(surface))) {
       Logger::err("D3D7Device::PreLoad: Received an unwrapped surface");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     DDraw7Surface* surface7 = static_cast<DDraw7Surface*>(surface);
@@ -1185,7 +1205,7 @@ namespace dxvk {
     // Binding texture stages
     if (unlikely(!m_commonIntf->IsWrappedSurface(surface))) {
       Logger::err("D3D7Device::SetTexture: Received an unwrapped texture");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     Logger::debug("D3D7Device::SetTexture: Binding D3D9 texture");
@@ -1334,14 +1354,14 @@ namespace dxvk {
       ddraw7SurfaceSrc = static_cast<DDraw7Surface*>(src_surface);
     } else {
       Logger::warn("D3D7Device::Load: Unwrapped surface source");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     if (likely(m_commonIntf->IsWrappedSurface(dst_surface))) {
       ddraw7SurfaceDst = static_cast<DDraw7Surface*>(dst_surface);
     } else {
       Logger::warn("D3D7Device::Load: Unwrapped surface destination");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     HRESULT hr = m_proxy->Load(ddraw7SurfaceDst->GetProxied(), dst_point,

@@ -113,6 +113,9 @@ namespace dxvk {
 
         uint32_t LightCount : 4;
 
+        uint32_t UseLegacyLights    : 1;
+        uint32_t IsD3DLight2        : 1;
+
         uint32_t TexcoordDeclMask : 24;
         uint32_t HasFog : 1;
 

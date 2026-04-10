@@ -45,12 +45,12 @@ namespace dxvk {
       m_format9 = ConvertFormat(m_desc2.ddpfPixelFormat);
       // determine and cache various frequently used flag combinations
       m_isTextureOrCubeMap      = IsTexture() || IsCubeMap();
-      m_isBackBufferOrFlippable = !IsFrontBuffer() && (IsBackBuffer() || IsFlippableSurface());
-      m_isRenderTarget          = IsFrontBuffer() || IsBackBuffer() || IsFlippableSurface() || Is3DSurface();
-      m_isForwardableSurface    = IsFrontBuffer()  || IsBackBuffer() || IsFlippableSurface()
+      m_isBackBufferOrFlippable = !IsFrontBuffer() && (IsBackBuffer() || IsFlippable());
+      m_isRenderTarget          = IsFrontBuffer() || IsBackBuffer() || IsFlippable() || Is3DSurface();
+      m_isForwardableSurface    = IsFrontBuffer()  || IsBackBuffer() || IsFlippable()
                                || IsDepthStencil() || IsOffScreenPlainSurface();
       m_isGuardableSurface      = IsPrimarySurface() || IsFrontBuffer()
-                               || IsBackBuffer() || IsFlippableSurface();
+                               || IsBackBuffer() || IsFlippable();
     }
 
     const DDSURFACEDESC2* GetDesc2() const {
@@ -66,12 +66,12 @@ namespace dxvk {
       m_isDescSet = true;
       m_format9 = ConvertFormat(m_desc.ddpfPixelFormat);
       // determine and cache various frequently used flag combinations
-      m_isBackBufferOrFlippable = !IsFrontBuffer() && (IsBackBuffer() || IsFlippableSurface());
-      m_isRenderTarget          = IsFrontBuffer() || IsBackBuffer() || IsFlippableSurface() || Is3DSurface();
-      m_isForwardableSurface    = IsFrontBuffer()  || IsBackBuffer() || IsFlippableSurface()
+      m_isBackBufferOrFlippable = !IsFrontBuffer() && (IsBackBuffer() || IsFlippable());
+      m_isRenderTarget          = IsFrontBuffer() || IsBackBuffer() || IsFlippable() || Is3DSurface();
+      m_isForwardableSurface    = IsFrontBuffer()  || IsBackBuffer() || IsFlippable()
                                || IsDepthStencil() || IsOffScreenPlainSurface();
       m_isGuardableSurface      = IsPrimarySurface() || IsFrontBuffer()
-                               || IsBackBuffer() || IsFlippableSurface();
+                               || IsBackBuffer() || IsFlippable();
     }
 
     const DDSURFACEDESC* GetDesc() const {
@@ -154,13 +154,15 @@ namespace dxvk {
     }
 
     void SetPalette(DDrawPalette* palette) {
-      if (palette == nullptr)
-        m_palette->SetCommonSurface(nullptr);
+      if (likely(m_palette != palette)) {
+        if (palette == nullptr)
+          m_palette->SetCommonSurface(nullptr);
 
-      m_palette = palette;
+        m_palette = palette;
 
-      if (m_palette != nullptr)
-        m_palette->SetCommonSurface(this);
+        if (m_palette != nullptr)
+          m_palette->SetCommonSurface(this);
+      }
     }
 
     DDrawPalette* GetPalette() const {
@@ -270,7 +272,7 @@ namespace dxvk {
       return m_desc2.ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP;
     }
 
-    bool IsFlippableSurface() const {
+    bool IsFlippable() const {
       return m_desc2.ddsCaps.dwCaps & DDSCAPS_FLIP
           || m_desc.ddsCaps.dwCaps  & DDSCAPS_FLIP;
     }

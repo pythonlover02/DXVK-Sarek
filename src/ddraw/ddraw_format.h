@@ -4,6 +4,7 @@
 
 #include <vector>
 #include <cmath>
+#include <utility>
 #include <type_traits>
 
 namespace dxvk {
@@ -881,8 +882,8 @@ namespace dxvk {
     float maxRange = cvalue + half;
 
     DDCOLORKEY colorKey = { };
-    colorKey.dwColorSpaceLowValue  = (DWORD)std::max(0.0f, std::floor(minRange - 0.5f));
-    colorKey.dwColorSpaceHighValue = (DWORD)std::min(255.0f, std::ceil(maxRange + 0.5f));
+    colorKey.dwColorSpaceLowValue  = std::floor(std::max(0.0f, floorf(minRange - 0.5)));
+    colorKey.dwColorSpaceHighValue = std::ceil(std::min(255.0f, floorf(maxRange + 0.5)));
 
     return colorKey;
   }

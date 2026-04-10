@@ -3,7 +3,6 @@
 #include "d3d3/d3d3_viewport.h"
 #include "d3d5/d3d5_viewport.h"
 #include "d3d6/d3d6_viewport.h"
-#include <utility>
 
 namespace dxvk {
 
