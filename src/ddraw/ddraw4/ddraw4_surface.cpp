@@ -1,5 +1,7 @@
 #include "ddraw4_surface.h"
 
+#include "../d3d_common_device.h"
+
 #include "ddraw4_interface.h"
 
 #include "../ddraw_gamma.h"
@@ -7,7 +9,6 @@
 #include "../ddraw2/ddraw2_surface.h"
 #include "../ddraw2/ddraw3_surface.h"
 #include "../ddraw7/ddraw7_surface.h"
-#include <utility>
 
 #include "../d3d3/d3d3_texture.h"
 #include "../d3d6/d3d6_texture.h"
@@ -244,8 +245,14 @@ namespace dxvk {
 
     DDraw4Surface* ddraw4Surface = static_cast<DDraw4Surface*>(lpDDSAttachedSurface);
 
-    if (unlikely(ddraw4Surface->GetCommonSurface()->IsBackBufferOrFlippable()))
-      Logger::warn("DDraw4Surface::AddAttachedSurface: Trying to attach a flippable surface");
+    if (unlikely(ddraw4Surface->GetCommonSurface()->IsBackBufferOrFlippable())) {
+      if (unlikely(m_commonIntf->GetOptions()->forceBlitOnFlip)) {
+        Logger::debug("DDraw4Surface::AddAttachedSurface: Caching surface as RT");
+        m_commonIntf->SetDDrawRenderTarget(ddraw4Surface->GetCommonSurface());
+      } else {
+        Logger::warn("DDraw4Surface::AddAttachedSurface: Trying to attach a flippable surface");
+      }
+    }
 
     HRESULT hr = m_proxy->AddAttachedSurface(ddraw4Surface->GetProxied());
     if (unlikely(FAILED(hr)))
@@ -306,7 +313,7 @@ namespace dxvk {
       if (unlikely(lpDDSrcSurface == nullptr &&
                   (dwFlags & DDBLT_DEPTHFILL) &&
                   lpDDBltFx != nullptr &&
-                  m_commonIntf->IsCurrentD3D9DepthStencil(m_d3d9.ptr()))) {
+                  m_commonIntf->GetCommonD3DDevice()->IsCurrentD3D9DepthStencil(m_d3d9.ptr()))) {
         Logger::debug("DDraw4Surface::Blt: Clearing d3d9 depth stencil");
 
         HRESULT hrClear;
@@ -324,7 +331,7 @@ namespace dxvk {
       if (unlikely(lpDDSrcSurface == nullptr &&
                   (dwFlags & DDBLT_COLORFILL) &&
                   lpDDBltFx != nullptr &&
-                  m_commonIntf->IsCurrentD3D9RenderTarget(m_d3d9.ptr()))) {
+                  m_commonIntf->GetCommonD3DDevice()->IsCurrentD3D9RenderTarget(m_d3d9.ptr()))) {
         Logger::debug("DDraw4Surface::Blt: Clearing d3d9 render target");
 
         HRESULT hrClear;
@@ -358,7 +365,7 @@ namespace dxvk {
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSrcSurface))) {
       if (unlikely(lpDDSrcSurface != nullptr)) {
         Logger::warn("DDraw4Surface::Blt: Received an unwrapped source surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
       hr = m_proxy->Blt(lpDestRect, lpDDSrcSurface, lpSrcRect, dwFlags, lpDDBltFx);
     } else {
@@ -445,7 +452,7 @@ namespace dxvk {
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSrcSurface))) {
       if (unlikely(lpDDSrcSurface != nullptr)) {
         Logger::warn("DDraw4Surface::BltFast: Received an unwrapped source surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
       hr = m_proxy->BltFast(dwX, dwY, lpDDSrcSurface, lpSrcRect, dwTrans);
     } else {
@@ -474,7 +481,7 @@ namespace dxvk {
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSAttachedSurface))) {
       if (unlikely(lpDDSAttachedSurface != nullptr)) {
         Logger::warn("DDraw4Surface::DeleteAttachedSurface: Received an unwrapped surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
 
       HRESULT hrProxy = m_proxy->DeleteAttachedSurface(dwFlags, lpDDSAttachedSurface);
@@ -588,28 +595,48 @@ namespace dxvk {
       }
     }
 
+    DDraw4Surface* rt = m_commonIntf->GetDDrawRenderTarget() != nullptr ?
+                        m_commonIntf->GetDDrawRenderTarget()->GetDD4Surface() : nullptr;
+
     RefreshD3D9Device();
     if (likely(m_d3d9Device != nullptr)) {
       m_commonIntf->ResetDrawTracking();
 
       if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
+        D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+
         if (unlikely(!IsInitialized()))
-          InitializeD3D9(m_commonIntf->IsCurrentRenderTarget(this));
+          InitializeD3D9(commonDevice->IsCurrentRenderTarget(this));
 
         BlitToDDrawSurface<IDirectDrawSurface4, DDSURFACEDESC2>(m_proxy.ptr(), m_d3d9.ptr());
 
         if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSurfaceTargetOverride))) {
           if (unlikely(lpDDSurfaceTargetOverride != nullptr)) {
             Logger::warn("DDraw4Surface::Flip: Received an unwrapped surface");
-            return DDERR_GENERIC;
+            return DDERR_UNSUPPORTED;
           }
-          if (likely(m_commonIntf->IsCurrentRenderTarget(this)))
+
+          if (likely(commonDevice->IsCurrentRenderTarget(this)))
             m_commonIntf->SetFlipRTSurfaceAndFlags(lpDDSurfaceTargetOverride, dwFlags);
-          return m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
+
+          if (unlikely(m_commonIntf->GetOptions()->forceBlitOnFlip &&
+                       rt != nullptr && m_commonSurf->IsPrimarySurface())) {
+            Logger::debug("DDraw4Surface::Flip: Skipping flip");
+            return DD_OK;
+          } else {
+            return m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
+          }
         } else {
-          if (likely(m_commonIntf->IsCurrentRenderTarget(this)))
+          if (likely(commonDevice->IsCurrentRenderTarget(this)))
             m_commonIntf->SetFlipRTSurfaceAndFlags(lpDDSurfaceTargetOverride, dwFlags);
-          return m_proxy->Flip(surf4->GetProxied(), dwFlags);
+
+          if (unlikely(m_commonIntf->GetOptions()->forceBlitOnFlip &&
+                       rt != nullptr && m_commonSurf->IsPrimarySurface())) {
+            Logger::debug("DDraw4Surface::Flip: Skipping flip");
+            return DD_OK;
+          } else {
+            return m_proxy->Flip(surf4->GetProxied(), dwFlags);
+          }
         }
       }
 
@@ -618,9 +645,11 @@ namespace dxvk {
       if (unlikely(m_commonIntf->GetWaitForVBlank() && (dwFlags & DDFLIP_NOVSYNC))) {
         Logger::info("DDraw4Surface::Flip: Switching to D3DPRESENT_INTERVAL_IMMEDIATE for presentation");
 
-        d3d9::D3DPRESENT_PARAMETERS resetParams = m_commonIntf->GetPresentParameters();
+        D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+
+        d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
         resetParams.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
-        HRESULT hrReset = m_commonIntf->ResetD3D9Swapchain(&resetParams);
+        HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
         if (unlikely(FAILED(hrReset))) {
           Logger::warn("DDraw4Surface::Flip: Failed D3D9 swapchain reset");
         } else {
@@ -631,9 +660,11 @@ namespace dxvk {
       } else if (unlikely(!m_commonIntf->GetWaitForVBlank() && IsVSyncFlipFlag(dwFlags))) {
         Logger::info("DDraw4Surface::Flip: Switching to D3DPRESENT_INTERVAL_DEFAULT for presentation");
 
-        d3d9::D3DPRESENT_PARAMETERS resetParams = m_commonIntf->GetPresentParameters();
+        D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+
+        d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
         resetParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
-        HRESULT hrReset = m_commonIntf->ResetD3D9Swapchain(&resetParams);
+        HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
         if (unlikely(FAILED(hrReset))) {
           Logger::warn("DDraw4Surface::Flip: Failed D3D9 swapchain reset");
         } else {
@@ -651,9 +682,15 @@ namespace dxvk {
       m_commonIntf->SetWaitForVBlank(IsVSyncFlipFlag(dwFlags));
 
       if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSurfaceTargetOverride))) {
-        m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
+        if (unlikely(m_commonIntf->GetOptions()->forceBlitOnFlip &&
+                     rt != nullptr && m_commonSurf->IsPrimarySurface())) {
+          Logger::debug("DDrawSurface::Flip: Blitting instead of flipping");
+          return m_proxy->Blt(nullptr, rt->GetProxied(), nullptr, DDBLT_WAIT, nullptr);
+        } else {
+          return m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
+        }
       } else {
-        m_proxy->Flip(surf4->GetProxied(), dwFlags);
+        return m_proxy->Flip(surf4->GetProxied(), dwFlags);
       }
     }
 
@@ -1046,9 +1083,12 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw4Surface::UpdateOverlay(LPRECT lpSrcRect, LPDIRECTDRAWSURFACE4 lpDDDestSurface, LPRECT lpDestRect, DWORD dwFlags, LPDDOVERLAYFX lpDDOverlayFx) {
     Logger::debug("<<< DDraw4Surface::UpdateOverlay: Proxy");
 
+    if (unlikely(lpDDDestSurface == nullptr))
+      return DDERR_INVALIDPARAMS;
+
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDDestSurface))) {
       Logger::warn("DDraw4Surface::UpdateOverlay: Received an unwrapped surface");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     DDraw4Surface* ddraw4Surface = static_cast<DDraw4Surface*>(lpDDDestSurface);
@@ -1066,7 +1106,7 @@ namespace dxvk {
 
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSReference))) {
       Logger::warn("DDraw4Surface::UpdateOverlayZOrder: Received an unwrapped surface");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     DDraw4Surface* ddraw4Surface = static_cast<DDraw4Surface*>(lpDDSReference);
@@ -1333,7 +1373,7 @@ namespace dxvk {
     Logger::debug(str::format("DDraw4Surface::InitializeD3D9: Placing in: ", poolPlacement));
 
     // Use the MSAA type that was determined to be supported during device creation
-    const d3d9::D3DMULTISAMPLE_TYPE multiSampleType = m_commonIntf->GetMultiSampleType();
+    const d3d9::D3DMULTISAMPLE_TYPE multiSampleType = m_commonIntf->GetCommonD3DDevice()->GetMultiSampleType();
     const uint32_t index = m_commonSurf->GetBackBufferIndex();
 
     Com<d3d9::IDirect3DSurface9> surf;
@@ -1418,7 +1458,7 @@ namespace dxvk {
 
       // Sometimes we get passed offscreen plain surfaces which should be tied to the back buffer,
       // either as existing RTs or during SetRenderTarget() calls, which are tracked with initRT
-      if (unlikely(m_commonIntf->IsCurrentRenderTarget(this) || initRT)) {
+      if (unlikely(m_commonIntf->GetCommonD3DDevice()->IsCurrentRenderTarget(this) || initRT)) {
         Logger::debug("DDraw4Surface::InitializeD3D9: Offscreen plain surface is the RT");
 
         m_d3d9Device->GetBackBuffer(0, index, d3d9::D3DBACKBUFFER_TYPE_MONO, &surf);
@@ -1532,6 +1572,22 @@ namespace dxvk {
     }
 
     return DD_OK;
+  }
+
+  inline void DDraw4Surface::RefreshD3D9Device() {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+
+    d3d9::IDirect3DDevice9* d3d9Device = commonDevice != nullptr ? commonDevice->GetD3D9Device() : nullptr;
+    if (unlikely(m_d3d9Device != d3d9Device)) {
+      // Check if the device has been recreated and reset all D3D9 resources
+      if (m_d3d9Device != nullptr) {
+        Logger::debug("DDraw4Surface: Device context has changed, clearing all D3D9 resources");
+        m_texture9 = nullptr;
+        m_d3d9 = nullptr;
+      }
+
+      m_d3d9Device = d3d9Device;
+    }
   }
 
 }

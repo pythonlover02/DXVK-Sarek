@@ -1,5 +1,7 @@
 #include "ddraw7_interface.h"
 
+#include "../d3d_common_device.h"
+
 #include "ddraw7_surface.h"
 
 #include "../ddraw_clipper.h"
@@ -11,7 +13,6 @@
 
 #include "../d3d7/d3d7_interface.h"
 #include "../d3d7/d3d7_device.h"
-#include <utility>
 
 namespace dxvk {
 
@@ -296,7 +297,7 @@ namespace dxvk {
     } else {
       if (unlikely(lpDDSurface != nullptr)) {
         Logger::warn("DDraw7Interface::DuplicateSurface: Received an unwrapped source surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
       return m_proxy->DuplicateSurface(lpDDSurface, lplpDupDDSurface);
     }
@@ -310,24 +311,26 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDraw7Interface::EnumSurfaces(DWORD dwFlags, LPDDSURFACEDESC2 lpDDSD, LPVOID lpContext, LPDDENUMSURFACESCALLBACK7 lpEnumSurfacesCallback) {
-    Logger::debug(">>> DDraw7Interface::EnumSurfaces: Proxy");
+    Logger::debug("<<< DDraw7Interface::EnumSurfaces: Proxy");
 
     if (unlikely(lpEnumSurfacesCallback == nullptr))
       return DDERR_INVALIDPARAMS;
 
     std::vector<AttachedSurface7> attachedSurfaces;
     // Enumerate all surfaces from the underlying DDraw implementation
-    m_proxy->EnumSurfaces(dwFlags, lpDDSD, reinterpret_cast<void*>(&attachedSurfaces), EnumAttachedSurfaces7Callback);
+    HRESULT hr = m_proxy->EnumSurfaces(dwFlags, lpDDSD, reinterpret_cast<void*>(&attachedSurfaces), EnumAttachedSurfaces7Callback);
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    HRESULT hr = DDENUMRET_OK;
+    HRESULT hrCB = DDENUMRET_OK;
 
     // Wrap surfaces as needed and perform the actual callback the application is requesting
     auto surfaceIt = attachedSurfaces.begin();
-    while (surfaceIt != attachedSurfaces.end() && hr == DDENUMRET_OK) {
+    while (surfaceIt != attachedSurfaces.end() && hrCB == DDENUMRET_OK) {
       Com<IDirectDrawSurface7> surface7 = surfaceIt->surface7;
 
       Com<DDraw7Surface> ddraw7Surface = new DDraw7Surface(nullptr, std::move(surface7), this, nullptr, false);
-      hr = lpEnumSurfacesCallback(ddraw7Surface.ref(), &surfaceIt->desc2, lpContext);
+      hrCB = lpEnumSurfacesCallback(ddraw7Surface.ref(), &surfaceIt->desc2, lpContext);
 
       ++surfaceIt;
     }
@@ -336,10 +339,21 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDraw7Interface::FlipToGDISurface() {
+    if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
+      Logger::debug("<<< DDraw7Interface::FlipToGDISurface: Proxy");
+      return m_proxy->FlipToGDISurface();
+    }
+
     Logger::debug("*** DDraw7Interface::FlipToGDISurface: Ignoring");
 
-    if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent))
-      return m_proxy->FlipToGDISurface();
+    DDrawCommonSurface* ps = m_commonIntf->GetPrimarySurface();
+
+    // A primary surface must exist for a GDI flip to be possible
+    if (unlikely(ps == nullptr))
+      return DDERR_NOTFOUND;
+
+    if (unlikely(!ps->IsFlippable()))
+      return DDERR_NOTFLIPPABLE;
 
     return DD_OK;
   }
@@ -360,11 +374,13 @@ namespace dxvk {
     DWORD total9 = 0;
     DWORD free9  = 0;
 
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonIntf->GetD3D9Device();
-    if (likely(d3d9Device != nullptr)) {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+    if (likely(commonDevice != nullptr)) {
+      d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();
+
       Logger::debug("DDraw7Interface::GetCaps: Getting memory stats from D3D9");
 
-      total9 = static_cast<DWORD>(m_commonIntf->GetTotalTextureMemory());
+      total9 = static_cast<DWORD>(commonDevice->GetTotalTextureMemory());
       free9  = static_cast<DWORD>(d3d9Device->GetAvailableTextureMem());
 
       if (likely(total9 >= MaxMemory)) {
@@ -578,13 +594,13 @@ namespace dxvk {
 
     // Switch to a default presentation interval when an application
     // tries to wait for vertical blank, if we're not already doing so
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonIntf->GetD3D9Device();
-    if (unlikely(d3d9Device != nullptr && !m_commonIntf->GetWaitForVBlank())) {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+    if (unlikely(commonDevice != nullptr && !m_commonIntf->GetWaitForVBlank())) {
       Logger::info("DDraw7Interface::WaitForVerticalBlank: Switching to D3DPRESENT_INTERVAL_DEFAULT for presentation");
 
-      d3d9::D3DPRESENT_PARAMETERS resetParams = m_commonIntf->GetPresentParameters();
+      d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
       resetParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
-      HRESULT hrReset = m_commonIntf->ResetD3D9Swapchain(&resetParams);
+      HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
       if (likely(SUCCEEDED(hrReset)))
         m_commonIntf->SetWaitForVBlank(true);
     }
@@ -602,11 +618,13 @@ namespace dxvk {
     static constexpr DWORD MaxMemory = ddrawCaps::MaxTextureMemory * Megabytes;
     static constexpr DWORD ReservedMemory = ddrawCaps::ReservedTextureMemory * Megabytes;
 
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonIntf->GetD3D9Device();
-    if (likely(d3d9Device != nullptr)) {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+    if (likely(commonDevice != nullptr)) {
+      d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();
+
       Logger::debug("DDraw7Interface::GetAvailableVidMem: Getting memory stats from D3D9");
 
-      DWORD total9 = static_cast<DWORD>(m_commonIntf->GetTotalTextureMemory());
+      DWORD total9 = static_cast<DWORD>(commonDevice->GetTotalTextureMemory());
       DWORD free9  = static_cast<DWORD>(d3d9Device->GetAvailableTextureMem());
 
       if (likely(total9 >= MaxMemory)) {
@@ -698,14 +716,16 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDraw7Interface::TestCooperativeLevel() {
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonIntf->GetD3D9Device();
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
 
-    if (unlikely(d3d9Device == nullptr)) {
+    if (unlikely(commonDevice == nullptr)) {
       Logger::debug("<<< DDraw7Interface::TestCooperativeLevel: Proxy");
       return m_proxy->TestCooperativeLevel();
     }
 
     Logger::debug(">>> DDraw7Interface::TestCooperativeLevel");
+
+    d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();
 
     HRESULT hr = d3d9Device->TestCooperativeLevel();
     if (unlikely(FAILED(hr)))

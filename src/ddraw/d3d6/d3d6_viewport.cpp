@@ -27,6 +27,9 @@ namespace dxvk {
     if (m_commonViewport == nullptr)
       m_commonViewport = new D3DCommonViewport(m_parent->GetCommonD3DInterface());
 
+    if (m_commonViewport->GetOrigin() == nullptr)
+      m_commonViewport->SetOrigin(this);
+
     m_commonViewport->SetD3D6Viewport(this);
 
     m_viewportCount = ++s_viewportCount;
@@ -42,9 +45,32 @@ namespace dxvk {
       light->SetViewport6(nullptr);
     }
 
+    if (m_commonViewport->GetOrigin() == this)
+      m_commonViewport->SetOrigin(nullptr);
+
     m_commonViewport->SetD3D6Viewport(nullptr);
 
     Logger::debug(str::format("D3D6Viewport: Viewport nr. [[3-", m_viewportCount, "]] bites the dust"));
+  }
+
+  // Interlocked refcount with the origin viewport
+  ULONG STDMETHODCALLTYPE D3D6Viewport::AddRef() {
+    IUnknown* origin = m_commonViewport->GetOrigin();
+    if (unlikely(origin != nullptr && origin != this)) {
+      return origin->AddRef();
+    } else {
+      return ComObjectClamp::AddRef();
+    }
+  }
+
+  // Interlocked refcount with the origin viewport
+  ULONG STDMETHODCALLTYPE D3D6Viewport::Release() {
+    IUnknown* origin = m_commonViewport->GetOrigin();
+    if (unlikely(origin != nullptr && origin != this)) {
+      return origin->Release();
+    } else {
+      return ComObjectClamp::Release();
+    }
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Viewport::QueryInterface(REFIID riid, void** ppvObject) {
@@ -69,7 +95,10 @@ namespace dxvk {
       if (unlikely(FAILED(hr)))
         return hr;
 
-      *ppvObject = ref(new D3D3Viewport(m_commonViewport.ptr(), std::move(ppvProxyObject), nullptr));
+      m_viewport3 = new D3D3Viewport(m_commonViewport.ptr(), std::move(ppvProxyObject), nullptr);
+
+      // On native this is the same object, so no need to ref
+      *ppvObject = m_viewport3.ptr();
 
       return S_OK;
     }
@@ -86,7 +115,10 @@ namespace dxvk {
       if (unlikely(FAILED(hr)))
         return hr;
 
-      *ppvObject = ref(new D3D5Viewport(m_commonViewport.ptr(), std::move(ppvProxyObject), nullptr));
+      m_viewport5 = new D3D5Viewport(m_commonViewport.ptr(), std::move(ppvProxyObject), nullptr);
+
+      // On native this is the same object, so no need to ref
+      *ppvObject = m_viewport5.ptr();
 
       return S_OK;
     }
@@ -127,12 +159,13 @@ namespace dxvk {
     data->dwHeight = viewport9->Height;
     data->dvMinZ   = viewport9->MinZ;
     data->dvMaxZ   = viewport9->MaxZ;
-
-    data->dvMaxX   = 1.0f;
-    data->dvMaxY   = 1.0f;
     D3DVECTOR* legacyScale = m_commonViewport->GetLegacyScale();
     data->dvScaleX = legacyScale->x * (float)data->dwWidth / 2.0f;
     data->dvScaleY = legacyScale->y * (float)data->dwHeight / 2.0f;
+    D3DVECTOR* legacyClip = m_commonViewport->GetLegacyClip();
+    // Don't compact these because precision issues can affect the outcome
+    data->dvMaxX   = 2.0f / legacyScale->x * (1.0f + (legacyClip->x + 1.0f) / -2.0f); // dvClipX + dvClipWidth
+    data->dvMaxY   = 2.0f / legacyScale->y * (legacyClip->y - 1.0f) / -2.0f;          // dvClipY
 
     return D3D_OK;
   }
@@ -185,8 +218,35 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Viewport::TransformVertices(DWORD vertex_count, D3DTRANSFORMDATA *data, DWORD flags, DWORD *offscreen) {
-    Logger::debug("<<< D3D6Viewport::TransformVertices: Proxy");
-    return m_proxy->TransformVertices(vertex_count, data, flags, offscreen);
+    Logger::debug(">>> D3D6Viewport::TransformVertices");
+
+    if (unlikely(!m_commonViewport->HasDevice())) {
+      Logger::warn("D3D6Viewport::TransformVertices: Viewport isn't attached to a device");
+      return D3DERR_VIEWPORTHASNODEVICE;
+    }
+
+    d3d9::IDirect3DDevice9* d3d9Device = m_commonViewport->GetD3D9Device();
+
+    // Temporarily activate this viewport, if not already active
+    d3d9::D3DVIEWPORT9 currentViewport9;
+    if (!m_commonViewport->IsCurrentViewport()) {
+      D3D6Viewport* currentViewport = m_commonViewport->GetCurrentD3D6Viewport();
+      if (currentViewport != nullptr) {
+        currentViewport9 = *currentViewport->GetCommonViewport()->GetD3D9Viewport();
+      } else {
+        d3d9Device->GetViewport(&currentViewport9);
+      }
+      d3d9Device->SetViewport(m_commonViewport->GetD3D9Viewport());
+    }
+
+    HRESULT hr = m_commonViewport->TransformVertices(vertex_count, data, flags, offscreen);
+
+    // Restore the previously active viewport
+    if (!m_commonViewport->IsCurrentViewport()) {
+      d3d9Device->SetViewport(&currentViewport9);
+    }
+
+    return hr;
   }
 
   // Docs state: "The IDirect3DViewport3::LightElements method is not currently implemented."
@@ -206,6 +266,16 @@ namespace dxvk {
     if (unlikely(commonMaterial == nullptr))
       return DDERR_INVALIDPARAMS;
 
+    // We still need to proxy this call to DDraw for
+    // proxied clear colors to be accurate
+    D3D6Device* device6 = m_commonViewport->GetD3D6Device();
+    if (likely(device6 != nullptr)) {
+      D3DMATERIALHANDLE proxyHandle = commonMaterial->GetProxiedMaterialHandle(device6->GetProxied());
+      HRESULT hr = m_proxy->SetBackground(proxyHandle);
+      if (unlikely(FAILED(hr)))
+        Logger::warn("D3D6Viewport::SetBackground: Failed to set the proxied viewport background");
+    }
+
     m_commonViewport->MarkMaterialAsSet();
 
     // Cache only the set material handle, as its color can
@@ -221,8 +291,7 @@ namespace dxvk {
     if (unlikely(material == nullptr || valid == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    if (likely(m_commonViewport->IsMaterialSet()))
-      *material = m_commonViewport->GetMaterialHandle();
+    *material = m_commonViewport->GetMaterialHandle();
     *valid = m_commonViewport->IsMaterialSet();
 
     return D3D_OK;

@@ -1,11 +1,12 @@
 #include "ddraw7_surface.h"
 
+#include "../d3d_common_device.h"
+
 #include "../ddraw_gamma.h"
 #include "../ddraw/ddraw_surface.h"
 #include "../ddraw2/ddraw2_surface.h"
 #include "../ddraw2/ddraw3_surface.h"
 #include "../ddraw4/ddraw4_surface.h"
-#include <utility>
 
 #include "../d3d3/d3d3_texture.h"
 #include "../d3d6/d3d6_texture.h"
@@ -286,7 +287,7 @@ namespace dxvk {
       if (unlikely(lpDDSrcSurface == nullptr &&
                     (dwFlags & DDBLT_DEPTHFILL) &&
                     lpDDBltFx != nullptr &&
-                    m_commonIntf->IsCurrentD3D9DepthStencil(m_d3d9.ptr()))) {
+                    m_commonIntf->GetCommonD3DDevice()->IsCurrentD3D9DepthStencil(m_d3d9.ptr()))) {
         Logger::debug("DDraw7Surface::Blt: Clearing d3d9 depth stencil");
 
         HRESULT hrClear;
@@ -304,7 +305,7 @@ namespace dxvk {
       if (unlikely(lpDDSrcSurface == nullptr &&
                     (dwFlags & DDBLT_COLORFILL) &&
                     lpDDBltFx != nullptr &&
-                    m_commonIntf->IsCurrentD3D9RenderTarget(m_d3d9.ptr()))) {
+                    m_commonIntf->GetCommonD3DDevice()->IsCurrentD3D9RenderTarget(m_d3d9.ptr()))) {
         Logger::debug("DDraw7Surface::Blt: Clearing d3d9 render target");
 
         HRESULT hrClear;
@@ -338,7 +339,7 @@ namespace dxvk {
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSrcSurface))) {
       if (unlikely(lpDDSrcSurface != nullptr)) {
         Logger::warn("DDraw7Surface::Blt: Received an unwrapped source surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
       hr = m_proxy->Blt(lpDestRect, lpDDSrcSurface, lpSrcRect, dwFlags, lpDDBltFx);
     } else {
@@ -425,7 +426,7 @@ namespace dxvk {
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSrcSurface))) {
       if (unlikely(lpDDSrcSurface != nullptr)) {
         Logger::warn("DDraw7Surface::BltFast: Received an unwrapped source surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
       hr = m_proxy->BltFast(dwX, dwY, lpDDSrcSurface, lpSrcRect, dwTrans);
     } else {
@@ -454,7 +455,7 @@ namespace dxvk {
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSAttachedSurface))) {
       if (unlikely(lpDDSAttachedSurface != nullptr)) {
         Logger::warn("DDraw7Surface::DeleteAttachedSurface: Received an unwrapped surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
 
       HRESULT hrProxy = m_proxy->DeleteAttachedSurface(dwFlags, lpDDSAttachedSurface);
@@ -570,21 +571,23 @@ namespace dxvk {
       m_commonIntf->ResetDrawTracking();
 
       if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
+        D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+
         if (unlikely(!IsInitialized()))
-          InitializeD3D9(m_commonIntf->IsCurrentRenderTarget(this));
+          InitializeD3D9(commonDevice->IsCurrentRenderTarget(this));
 
         BlitToDDrawSurface<IDirectDrawSurface7, DDSURFACEDESC2>(m_proxy.ptr(), m_d3d9.ptr());
 
         if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSurfaceTargetOverride))) {
           if (unlikely(lpDDSurfaceTargetOverride != nullptr)) {
             Logger::warn("DDraw7Surface::Flip: Received an unwrapped surface");
-            return DDERR_GENERIC;
+            return DDERR_UNSUPPORTED;
           }
-          if (likely(m_commonIntf->IsCurrentRenderTarget(this)))
+          if (likely(commonDevice->IsCurrentRenderTarget(this)))
             m_commonIntf->SetFlipRTSurfaceAndFlags(lpDDSurfaceTargetOverride, dwFlags);
           return m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
         } else {
-          if (likely(m_commonIntf->IsCurrentRenderTarget(this)))
+          if (likely(commonDevice->IsCurrentRenderTarget(this)))
             m_commonIntf->SetFlipRTSurfaceAndFlags(lpDDSurfaceTargetOverride, dwFlags);
           return m_proxy->Flip(surf7->GetProxied(), dwFlags);
         }
@@ -595,9 +598,11 @@ namespace dxvk {
       if (unlikely(m_commonIntf->GetWaitForVBlank() && (dwFlags & DDFLIP_NOVSYNC))) {
         Logger::info("DDraw7Surface::Flip: Switching to D3DPRESENT_INTERVAL_IMMEDIATE for presentation");
 
-        d3d9::D3DPRESENT_PARAMETERS resetParams = m_commonIntf->GetPresentParameters();
+        D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+
+        d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
         resetParams.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
-        HRESULT hrReset = m_commonIntf->ResetD3D9Swapchain(&resetParams);
+        HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
         if (unlikely(FAILED(hrReset))) {
           Logger::warn("DDraw7Surface::Flip: Failed D3D9 swapchain reset");
         } else {
@@ -608,9 +613,11 @@ namespace dxvk {
       } else if (unlikely(!m_commonIntf->GetWaitForVBlank() && IsVSyncFlipFlag(dwFlags))) {
         Logger::info("DDraw7Surface::Flip: Switching to D3DPRESENT_INTERVAL_DEFAULT for presentation");
 
-        d3d9::D3DPRESENT_PARAMETERS resetParams = m_commonIntf->GetPresentParameters();
+        D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+
+        d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
         resetParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
-        HRESULT hrReset = m_commonIntf->ResetD3D9Swapchain(&resetParams);
+        HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
         if (unlikely(FAILED(hrReset))) {
           Logger::warn("DDraw7Surface::Flip: Failed D3D9 swapchain reset");
         } else {
@@ -628,9 +635,9 @@ namespace dxvk {
       m_commonIntf->SetWaitForVBlank(IsVSyncFlipFlag(dwFlags));
 
       if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSurfaceTargetOverride))) {
-        m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
+        return m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
       } else {
-        m_proxy->Flip(surf7->GetProxied(), dwFlags);
+        return m_proxy->Flip(surf7->GetProxied(), dwFlags);
       }
     }
 
@@ -1025,9 +1032,12 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Surface::UpdateOverlay(LPRECT lpSrcRect, LPDIRECTDRAWSURFACE7 lpDDDestSurface, LPRECT lpDestRect, DWORD dwFlags, LPDDOVERLAYFX lpDDOverlayFx) {
     Logger::debug("<<< DDraw7Surface::UpdateOverlay: Proxy");
 
+    if (unlikely(lpDDDestSurface == nullptr))
+      return DDERR_INVALIDPARAMS;
+
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDDestSurface))) {
       Logger::warn("DDraw7Surface::UpdateOverlay: Received an unwrapped surface");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     DDraw7Surface* ddraw7Surface = static_cast<DDraw7Surface*>(lpDDDestSurface);
@@ -1045,7 +1055,7 @@ namespace dxvk {
 
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSReference))) {
       Logger::warn("DDraw7Surface::UpdateOverlayZOrder: Received an unwrapped surface");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     }
 
     DDraw7Surface* ddraw7Surface = static_cast<DDraw7Surface*>(lpDDSReference);
@@ -1432,7 +1442,7 @@ namespace dxvk {
     Logger::debug(str::format("DDraw7Surface::InitializeD3D9: Placing in: ", poolPlacement));
 
     // Use the MSAA type that was determined to be supported during device creation
-    const d3d9::D3DMULTISAMPLE_TYPE multiSampleType = m_commonIntf->GetMultiSampleType();
+    const d3d9::D3DMULTISAMPLE_TYPE multiSampleType = m_commonIntf->GetCommonD3DDevice()->GetMultiSampleType();
     const uint32_t index = m_commonSurf->GetBackBufferIndex();
 
     Com<d3d9::IDirect3DSurface9> surf;
@@ -1587,7 +1597,7 @@ namespace dxvk {
 
       // Sometimes we get passed offscreen plain surfaces which should be tied to the back buffer,
       // either as existing RTs or during SetRenderTarget() calls, which are tracked with initRT
-      if (unlikely(m_commonIntf->IsCurrentRenderTarget(this) || initRT)) {
+      if (unlikely(m_commonIntf->GetCommonD3DDevice()->IsCurrentRenderTarget(this) || initRT)) {
         Logger::debug("DDraw7Surface::InitializeD3D9: Offscreen plain surface is the RT");
 
         m_d3d9Device->GetBackBuffer(0, index, d3d9::D3DBACKBUFFER_TYPE_MONO, &surf);
@@ -1737,6 +1747,23 @@ namespace dxvk {
     }
 
     return DD_OK;
+  }
+
+  inline void DDraw7Surface::RefreshD3D9Device() {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+
+    d3d9::IDirect3DDevice9* d3d9Device = commonDevice != nullptr ? commonDevice->GetD3D9Device() : nullptr;
+    if (unlikely(m_d3d9Device != d3d9Device)) {
+      // Check if the device has been recreated and reset all D3D9 resources
+      if (m_d3d9Device != nullptr) {
+        Logger::debug("DDraw7Surface: Device context has changed, clearing all D3D9 resources");
+        m_cubeMap9 = nullptr;
+        m_texture9 = nullptr;
+        m_d3d9 = nullptr;
+      }
+
+      m_d3d9Device = d3d9Device;
+    }
   }
 
 }

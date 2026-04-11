@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ddraw_include.h"
+#include "ddraw_util.h"
 
 #include "d3d_light.h"
 
@@ -40,6 +41,8 @@ namespace dxvk {
     void EnableLegacyLights(bool isD3DLight2);
 
     d3d9::IDirect3DDevice9* GetD3D9Device();
+
+    HRESULT TransformVertices(DWORD vertex_count, D3DTRANSFORMDATA *data, DWORD flags, DWORD *offscreen);
 
     D3DCommonInterface* GetCommonD3DInterface() const {
       return m_commonD3DIntf;
@@ -109,6 +112,14 @@ namespace dxvk {
 
     D3D3Viewport* GetD3D3Viewport() const {
       return m_d3d3Viewport;
+    }
+
+    void SetOrigin(IUnknown* origin) {
+      m_origin = origin;
+    }
+
+    IUnknown* GetOrigin() const {
+      return m_origin;
     }
 
     void SetD3D6Device(D3D6Device* device6) {
@@ -205,6 +216,10 @@ namespace dxvk {
     D3D6Viewport*       m_d3d6Viewport      = nullptr;
     D3D5Viewport*       m_d3d5Viewport      = nullptr;
     D3D3Viewport*       m_d3d3Viewport      = nullptr;
+
+    // Track the origin viewport, as in the viewport
+    // that gets created through a CreateViewport call
+    IUnknown*           m_origin            = nullptr;
 
     // Track all devices this viewport is attached to
     D3D6Device*         m_device6           = nullptr;

@@ -4,8 +4,9 @@
 #include "../ddraw_wrapped_object.h"
 #include "../ddraw_options.h"
 
+#include "../d3d_common_device.h"
+
 #include "../d3d_multithread.h"
-#include "../ddraw_common_interface.h"
 
 #include "../../d3d9/d3d9_bridge.h"
 
@@ -17,6 +18,8 @@
 
 namespace dxvk {
 
+  class D3DCommonDevice;
+  class DDrawCommonInterface;
   class DDrawSurface;
 
   /**
@@ -26,6 +29,7 @@ namespace dxvk {
 
   public:
     D3D3Device(
+          D3DCommonDevice* commonD3DDevice,
           Com<IDirect3DDevice>&& d3d3DeviceProxy,
           DDrawSurface* pParent,
           D3DDEVICEDESC3 Desc,
@@ -35,6 +39,10 @@ namespace dxvk {
           DWORD CreationFlags9);
 
     ~D3D3Device();
+
+    ULONG STDMETHODCALLTYPE AddRef();
+
+    ULONG STDMETHODCALLTYPE Release();
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject);
 
@@ -78,16 +86,16 @@ namespace dxvk {
 
     void InitializeDS();
 
+    D3DCommonDevice* GetCommonD3DDevice() {
+      return m_commonD3DDevice.ptr();
+    }
+
     D3DDeviceLock LockDevice() {
       return m_multithread.AcquireLock();
     }
 
     void EnableLegacyLights(bool isD3DLight2) {
       m_bridge->SetLegacyLightsState(true, isD3DLight2);
-    }
-
-    uint32_t GetTotalTextureMemory() const {
-      return m_totalMemory;
     }
 
     D3DSTATS GetStatsInternal() const {
@@ -121,8 +129,8 @@ namespace dxvk {
   private:
 
     inline void RefreshLastUsedDevice() {
-      if (unlikely(m_commonIntf->GetD3D3Device() != this))
-        m_commonIntf->SetD3D3Device(this);
+      if (unlikely(m_commonIntf->GetCommonD3DDevice() != m_commonD3DDevice.ptr()))
+        m_commonIntf->SetCommonD3DDevice(m_commonD3DDevice.ptr());
     }
 
     inline void AddViewportInternal(IDirect3DViewport* viewport);
@@ -135,43 +143,24 @@ namespace dxvk {
 
     inline HRESULT STDMETHODCALLTYPE SetLightStateInternal(D3DLIGHTSTATETYPE dwLightStateType, DWORD dwLightState);
 
-    inline void DrawTriangleInternal(D3DTRIANGLE* triangle, DWORD count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer);
+    inline void DrawTriangleInternal(D3DTRIANGLE* triangle, uint16_t count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer);
 
-    inline void DrawLineInternal(D3DLINE* line, DWORD count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer);
+    inline void DrawLineInternal(D3DLINE* line, uint16_t count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer);
 
-    inline void DrawPointInternal(D3DPOINT* point, DWORD count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer);
+    inline void DrawPointInternal(D3DPOINT* point, uint16_t count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer);
 
-    inline void DrawSpanInternal(D3DSPAN* span, DWORD count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer);
+    inline void DrawSpanInternal(D3DSPAN* span, uint16_t count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer);
 
-    inline void TextureLoadInternal(D3DTEXTURELOAD* textureLoad, DWORD count);
-
-    inline void HandlePreDrawLegacyProjection() {
-      if (likely(m_currentViewport != nullptr)) {
-        m_legacyProjection = m_currentViewport->GetCommonViewport()->GetLegacyProjectionMatrix(0);
-
-        if (m_legacyProjection != nullptr) {
-          //Logger::debug("D3D3Device: Applying legacy projection");
-          m_d3d9->GetTransform(d3d9::D3DTS_PROJECTION, &m_projectionMatrix);
-          m_d3d9->MultiplyTransform(d3d9::D3DTS_PROJECTION, m_legacyProjection);
-        }
-      }
-    }
-
-    inline void HandlePostDrawLegacyProjection() {
-      if (m_legacyProjection != nullptr) {
-        //Logger::debug("D3D3Device: Reverting legacy projection");
-        m_d3d9->SetTransform(d3d9::D3DTS_PROJECTION, &m_projectionMatrix);
-      }
-    }
+    inline void TextureLoadInternal(D3DTEXTURELOAD* textureLoad, uint16_t count);
 
     bool                           m_inScene     = false;
 
     static uint32_t                s_deviceCount;
     uint32_t                       m_deviceCount = 0;
 
-    uint32_t                       m_totalMemory = 0;
-
     DDrawCommonInterface*          m_commonIntf  = nullptr;
+
+    Com<D3DCommonDevice>           m_commonD3DDevice;
 
     Com<DxvkD3D8Bridge>            m_bridge;
 

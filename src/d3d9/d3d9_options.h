@@ -74,11 +74,6 @@ namespace dxvk {
     /// for rendering hazards
     bool generalHazards;
 
-    /// Color key compatibility mode for DDraw
-    ///
-    /// Circumvents the texelFetch color key shader path.
-    bool colorKeyCompatibility;
-
     /// Anisotropic filter override
     ///
     /// Enforces anisotropic filtering with the

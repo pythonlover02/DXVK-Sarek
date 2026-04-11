@@ -1,21 +1,23 @@
 #include "d3d3_device.h"
 
 #include "../d3d_common_texture.h"
+#include "../ddraw_common_interface.h"
 
 #include "d3d3_execute_buffer.h"
 
 #include "../ddraw/ddraw_surface.h"
 
+#include "../d3d6/d3d6_device.h"
 #include "../d3d5/d3d5_device.h"
 
 #include <algorithm>
-#include <utility>
 
 namespace dxvk {
 
   uint32_t D3D3Device::s_deviceCount = 0;
 
   D3D3Device::D3D3Device(
+        D3DCommonDevice* commonD3DDevice,
         Com<IDirect3DDevice>&& d3d3DeviceProxy,
         DDrawSurface* pParent,
         D3DDEVICEDESC3 Desc,
@@ -24,27 +26,36 @@ namespace dxvk {
         Com<d3d9::IDirect3DDevice9>&& pDevice9,
         DWORD CreationFlags9)
     : DDrawWrappedObject<DDrawSurface, IDirect3DDevice, d3d9::IDirect3DDevice9>(pParent, std::move(d3d3DeviceProxy), std::move(pDevice9))
-    , m_commonIntf ( pParent->GetCommonInterface() )
+    , m_commonD3DDevice ( commonD3DDevice )
     , m_multithread ( CreationFlags9 & D3DCREATE_MULTITHREADED )
     , m_params9 ( Params9 )
     , m_desc ( Desc )
     , m_deviceGUID ( deviceGUID )
     , m_rt ( pParent ) {
+    if (m_parent != nullptr) {
+      m_commonIntf = m_parent->GetCommonInterface();
+    } else if (m_commonD3DDevice != nullptr) {
+      m_commonIntf = m_commonD3DDevice->GetCommonInterface();
+    } else {
+      throw DxvkError("D3D3Device: ERROR! Failed to retrieve the common interface!");
+    }
+
     // Get the bridge interface to D3D9
     if (unlikely(FAILED(m_d3d9->QueryInterface(__uuidof(IDxvkD3D8Bridge), reinterpret_cast<void**>(&m_bridge))))) {
       throw DxvkError("D3D3Device: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
     }
 
-    m_totalMemory = m_bridge->DetermineInitialTextureMemory();
+    if (likely(m_commonD3DDevice == nullptr)) {
+      m_commonD3DDevice = new D3DCommonDevice(m_commonIntf, CreationFlags9,
+                                              m_bridge->DetermineInitialTextureMemory());
 
-    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+      const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
-    if (unlikely(d3dOptions->emulateFSAA == FSAAEmulation::Forced)) {
-      Logger::warn("D3D3Device: Force enabling AA");
-      m_d3d9->SetRenderState(d3d9::D3DRS_MULTISAMPLEANTIALIAS, TRUE);
-    }
+      if (unlikely(d3dOptions->emulateFSAA == FSAAEmulation::Forced)) {
+        Logger::warn("D3D3Device: Force enabling AA");
+        m_d3d9->SetRenderState(d3d9::D3DRS_MULTISAMPLEANTIALIAS, TRUE);
+      }
 
-    if (m_commonIntf->GetD3D5Device() == nullptr) {
       // The default value of D3DRENDERSTATE_TEXTUREMAPBLEND in D3D3 is D3DTBLEND_MODULATE
       m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
       m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
@@ -53,6 +64,11 @@ namespace dxvk {
       m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
       m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
     }
+
+    if (m_commonD3DDevice->GetOrigin() == nullptr)
+      m_commonD3DDevice->SetOrigin(this);
+
+    m_commonD3DDevice->SetD3D3Device(this);
 
     m_deviceCount = ++s_deviceCount;
 
@@ -65,28 +81,63 @@ namespace dxvk {
       viewport->GetCommonViewport()->SetD3D3Device(nullptr);
     }
 
-    // Clear the common interface device pointer if it points to this device
-    if (m_commonIntf->GetD3D3Device() == this)
-      m_commonIntf->SetD3D3Device(nullptr);
+    if (m_commonD3DDevice->GetD3D3Device() == this)
+      m_commonD3DDevice->SetD3D3Device(nullptr);
+
+    if (m_commonD3DDevice->GetOrigin() == this)
+      m_commonD3DDevice->SetOrigin(nullptr);
 
     Logger::debug(str::format("D3D3Device: Device nr. ((1-", m_deviceCount, ")) bites the dust"));
   }
 
+  // Interlocked refcount with the origin device
+  ULONG STDMETHODCALLTYPE D3D3Device::AddRef() {
+    IUnknown* origin = m_commonD3DDevice->GetOrigin();
+    if (unlikely(origin != nullptr && origin != this)) {
+      return origin->AddRef();
+    } else {
+      return ComObjectClamp::AddRef();
+    }
+  }
+
+  // Interlocked refcount with the origin device
+  ULONG STDMETHODCALLTYPE D3D3Device::Release() {
+    IUnknown* origin = m_commonD3DDevice->GetOrigin();
+    if (unlikely(origin != nullptr && origin != this)) {
+      return origin->Release();
+    } else {
+      return ComObjectClamp::Release();
+    }
+  }
+
   HRESULT STDMETHODCALLTYPE D3D3Device::QueryInterface(REFIID riid, void** ppvObject) {
+    Logger::debug(">>> D3D3Device::QueryInterface");
+
     if (unlikely(ppvObject == nullptr))
       return E_POINTER;
 
     InitReturnPtr(ppvObject);
 
     if (unlikely(riid == __uuidof(IDirect3DDevice2))) {
-      if (likely(m_commonIntf->GetD3D5Device() != nullptr)) {
+      if (likely(m_commonD3DDevice->GetD3D5Device() != nullptr)) {
         Logger::debug("D3D3Device::QueryInterface: Query for existing IDirect3DDevice2");
-        return m_commonIntf->GetD3D5Device()->QueryInterface(riid, ppvObject);
+        return m_commonD3DDevice->GetD3D5Device()->QueryInterface(riid, ppvObject);
       }
 
       // A D3D3 device shouldn't be able to create a D3D5 device
       // if it doesn't previously exist as a parent/origin device
-      Logger::warn("D3D3Device::QueryInterface: Query for IDirect3DDevice2");
+      Logger::debug("D3D3Device::QueryInterface: Query for IDirect3DDevice2");
+      return E_NOINTERFACE;
+    }
+    if (unlikely(riid == __uuidof(IDirect3DDevice3))) {
+      if (likely(m_commonD3DDevice->GetD3D6Device() != nullptr)) {
+        Logger::debug("D3D3Device::QueryInterface: Query for existing IDirect3DDevice3");
+        return m_commonD3DDevice->GetD3D6Device()->QueryInterface(riid, ppvObject);
+      }
+
+      // A D3D3 device shouldn't be able to create a D3D6 device
+      // if it doesn't previously exist as a parent/origin device
+      Logger::debug("D3D3Device::QueryInterface: Query for IDirect3DDevice3");
       return E_NOINTERFACE;
     }
 
@@ -369,7 +420,13 @@ namespace dxvk {
     if (unlikely(d3d == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    *d3d = ref(m_commonIntf->GetD3D3Interface());
+    // D3D3 is "special", and we might not have a D3D interface
+    // to return on the device, as one can potentially not be created
+    D3D3Interface* d3d3Intf = m_commonIntf->GetD3D3Interface();
+    if (unlikely(d3d3Intf == nullptr))
+      return DDERR_NOTFOUND;
+
+    *d3d = ref(d3d3Intf);
 
     return D3D_OK;
   }
@@ -412,13 +469,19 @@ namespace dxvk {
     if (m_currentViewport != d3d3Viewport)
       m_currentViewport = d3d3Viewport;
 
+    m_currentViewport->GetCommonViewport()->SetIsCurrentViewport(true);
+    m_currentViewport->ApplyViewport();
+    m_currentViewport->ApplyAndActivateLights();
+
     D3DEXECUTEDATA data = d3d3ExecuteBuffer->GetExecuteData();
     std::vector<uint8_t> executeBuffer = d3d3ExecuteBuffer->GetBuffer();
     if (unlikely(executeBuffer.size() == 0))
       return DDERR_INVALIDPARAMS;
 
     uint8_t* buf = executeBuffer.data();
-    const D3DTLVERTEX* vertexBuffer = reinterpret_cast<const D3DTLVERTEX*>(&buf[data.dwVertexOffset]);
+    D3DVERTEX* vertexBuffer = reinterpret_cast<D3DVERTEX*>(buf + data.dwVertexOffset);
+    D3DTLVERTEX* hVertexBuffer = reinterpret_cast<D3DTLVERTEX*>(buf + data.dwHVertexOffset);
+
     uint8_t* ptr = buf + data.dwInstructionOffset;
     uint8_t* end = ptr + data.dwInstructionLength;
 
@@ -429,6 +492,7 @@ namespace dxvk {
       const uint32_t instructionSize = sizeof(D3DINSTRUCTION) + (count * size);
       DWORD opcode = instruction->bOpcode;
       uint8_t* operation = ptr + sizeof(D3DINSTRUCTION);
+      bool skip = false;
 
       if (opcode == D3DOP_EXIT)
         break;
@@ -452,7 +516,8 @@ namespace dxvk {
             }
 
             if (masked && b.dwOffset) {
-              ptr+= branch->dwOffset - instructionSize;
+              ptr+= branch->dwOffset;
+              skip = true;
             }
           }
 
@@ -462,7 +527,7 @@ namespace dxvk {
           Logger::debug("D3D3Device::Execute: D3DOP_LINE");
 
           D3DLINE* line = reinterpret_cast<D3DLINE*>(operation);
-          DrawLineInternal(line, count, data.dwVertexCount, vertexBuffer);
+          DrawLineInternal(line, count, data.dwVertexCount, hVertexBuffer);
 
           break;
         }
@@ -470,7 +535,7 @@ namespace dxvk {
           Logger::debug("D3D3Device::Execute: D3DOP_POINT");
 
           D3DPOINT* point = reinterpret_cast<D3DPOINT*>(operation);
-          DrawPointInternal(point, count, data.dwVertexCount, vertexBuffer);
+          DrawPointInternal(point, count, data.dwVertexCount, hVertexBuffer);
 
           break;
         }
@@ -478,20 +543,63 @@ namespace dxvk {
           Logger::debug("D3D3Device::Execute: D3DOP_TRIANGLE");
 
           D3DTRIANGLE* triangle = reinterpret_cast<D3DTRIANGLE*>(operation);
-          DrawTriangleInternal(triangle, count, data.dwVertexCount, vertexBuffer);
+          DrawTriangleInternal(triangle, count, data.dwVertexCount, hVertexBuffer);
 
           break;
         }
         case D3DOP_MATRIXLOAD: {
-          static bool s_matrixLoadErrorShown;
-          if (!std::exchange(s_matrixLoadErrorShown, true))
-            Logger::warn("D3D3Device::Execute: D3DOP_MATRIXLOAD is not implemented");
+          Logger::debug("D3D3Device::Execute: D3DOP_MATRIXLOAD");
+
+          D3DMATRIXLOAD* matrixLoad = reinterpret_cast<D3DMATRIXLOAD*>(operation);
+
+          for (uint16_t i = 0; i < count; i++) {
+            D3DMATRIXLOAD& ml = matrixLoad[i];
+
+            D3DMATRIX srcMatrix;
+            HRESULT hr = GetMatrix(ml.hSrcMatrix, &srcMatrix);
+            if (unlikely(FAILED(hr))) {
+              Logger::warn(str::format("D3D3Device::Execute: D3DOP_MATRIXLOAD failed to retrieve source matrix: ", ml.hSrcMatrix));
+              continue;
+            }
+
+            hr = SetMatrix(ml.hDestMatrix, &srcMatrix);
+            if (unlikely(FAILED(hr)))
+              Logger::warn(str::format("D3D3Device::Execute: D3DOP_MATRIXLOAD failed to set matrix to destination: ", ml.hDestMatrix));
+          }
+
           break;
         }
         case D3DOP_MATRIXMULTIPLY: {
-          static bool s_matrixMultiplyErrorShown;
-          if (!std::exchange(s_matrixMultiplyErrorShown, true))
-            Logger::warn("D3D3Device::Execute: D3DOP_MATRIXMULTIPLY is not implemented");
+          Logger::warn("D3D3Device::Execute: D3DOP_MATRIXMULTIPLY");
+
+          D3DMATRIXMULTIPLY* matrixMultiply = reinterpret_cast<D3DMATRIXMULTIPLY*>(operation);
+
+          for (uint16_t i = 0; i < count; i++) {
+            D3DMATRIXMULTIPLY& mm = matrixMultiply[i];
+
+            D3DMATRIX srcMatrix1;
+            HRESULT hr = GetMatrix(mm.hSrcMatrix1, &srcMatrix1);
+            if (unlikely(FAILED(hr))) {
+              Logger::warn(str::format("D3D3Device::Execute: D3DOP_MATRIXMULTIPLY failed to retrieve first source matrix: ", mm.hSrcMatrix1));
+              ZeroMemory(&srcMatrix1, sizeof(srcMatrix1));
+              continue;
+            }
+
+            D3DMATRIX srcMatrix2;
+            hr = GetMatrix(mm.hSrcMatrix2, &srcMatrix2);
+            if (unlikely(FAILED(hr))) {
+              Logger::warn(str::format("D3D3Device::Execute: D3DOP_MATRIXMULTIPLY failed to retrieve second source matrix: ", mm.hSrcMatrix2));
+              continue;
+            }
+
+            Matrix4 result = MatrixD3DTo4(&srcMatrix2) * MatrixD3DTo4(&srcMatrix1);
+            D3DMATRIX destMatrix = Matrix4ToD3D(&result);
+
+            hr = SetMatrix(mm.hDestMatrix, &destMatrix);
+            if (unlikely(FAILED(hr)))
+              Logger::warn(str::format("D3D3Device::Execute: D3DOP_MATRIXMULTIPLY failed to set matrix to destination: ", mm.hDestMatrix));
+          }
+
           break;
         }
         case D3DOP_PROCESSVERTICES: {
@@ -499,22 +607,61 @@ namespace dxvk {
 
           for (uint16_t i = 0; i < count; i++) {
             D3DPROCESSVERTICES& pv = processVertices[i];
-            if (pv.dwFlags & D3DPROCESSVERTICES_COPY) {
-              static bool s_pvCopyErrorShown;
-              // Appears to be mostly harmless
-              if (!std::exchange(s_pvCopyErrorShown, true))
-                Logger::debug("D3D3Device::Execute: D3DOP_PROCESSVERTICES COPY is not implemented");
-            }
-            // D3DPROCESSVERTICES_NOCOLOR and D3DPROCESSVERTICES_UPDATEEXTENTS are additional flags for transforms
-            if (pv.dwFlags & D3DPROCESSVERTICES_TRANSFORM) {
-              static bool s_pvTransformErrorShown;
-              if (!std::exchange(s_pvTransformErrorShown, true))
-                Logger::warn("D3D3Device::Execute: D3DOP_PROCESSVERTICES TRANSFORM is not implemented");
-            }
-            if (pv.dwFlags & D3DPROCESSVERTICES_TRANSFORMLIGHT) {
-              static bool s_pvTransformLightErrorShown;
-              if (!std::exchange(s_pvTransformLightErrorShown, true))
-                Logger::warn("D3D3Device::Execute: D3DOP_PROCESSVERTICES TRANSORMLIGHT is not implemented");
+            const DWORD op = pv.dwFlags & D3DPROCESSVERTICES_OPMASK;
+
+            switch (op) {
+              case D3DPROCESSVERTICES_COPY: {
+                Logger::debug("D3D3Device::Execute: D3DOP_PROCESSVERTICES COPY");
+                if (pv.wDest != pv.wStart)
+                  memcpy(&hVertexBuffer[pv.wDest], &vertexBuffer[pv.wStart], sizeof(D3DTLVERTEX) * pv.dwCount);
+
+                break;
+              }
+              case D3DPROCESSVERTICES_TRANSFORM:
+              case D3DPROCESSVERTICES_TRANSFORMLIGHT: {
+                Logger::debug("D3D3Device::Execute: D3DOP_PROCESSVERTICES TRANSFORM");
+                D3DMATRIX world{}, view{}, projection{};
+                HRESULT hr = m_d3d9->GetTransform(ConvertTransformState(D3DTRANSFORMSTATE_WORLD), &world);
+                if (FAILED(hr)) {
+                  Logger::debug("D3D3Device::Execute: D3DOP_PROCESSVERTICES TRANSFORM failed to get world transform");
+                }
+                hr = m_d3d9->GetTransform(d3d9::D3DTS_VIEW, &view);
+                if (FAILED(hr)) {
+                  Logger::debug("D3D3Device::Execute: D3DOP_PROCESSVERTICES TRANSFORM failed to get view transform");
+                }
+                hr = m_d3d9->GetTransform(d3d9::D3DTS_PROJECTION, &projection);
+                if (FAILED(hr)) {
+                  Logger::debug("D3D3Device::Execute: D3DOP_PROCESSVERTICES TRANSFORM failed to get projection transform");
+                }
+
+                Matrix4 wv = MatrixD3DTo4(&view) * MatrixD3DTo4(&world);
+                Matrix4 wvp = MatrixD3DTo4(&projection) * wv;
+
+                d3d9::D3DVIEWPORT9* m_viewport9 = m_currentViewport->GetCommonViewport()->GetD3D9Viewport();
+                D3DVECTOR* m_legacyScale = m_currentViewport->GetCommonViewport()->GetLegacyScale();
+                for (DWORD t = 0; t < pv.dwCount; t++) {
+                  D3DVERTEX& in = (vertexBuffer + pv.wStart)[t];
+                  D3DTLVERTEX& out = (hVertexBuffer + pv.wDest)[t];
+
+                  //Logger::debug(str::format("D3D3Device::Execute: D3DOP_PROCESSVERTICES TRANSFORM INPUT: in: ", in.x, ", ", in.y, ", ", in.z, ", start: ", pv.wStart + t * sizeof(D3DVERTEX), ", dest: ", pv.wDest + t * sizeof(D3DTLVERTEX)));
+
+                  Vector4 h = wvp * Vector4({in.x, in.y, in.z, 1.0f});
+                  out.rhw = (h.w != 0.0f) ? (1.0f / h.w) : 0.0f;
+                  out.sx = (m_viewport9->X + (float)m_viewport9->Width * 0.5) + (h.x * out.rhw) * (m_legacyScale->x * (float)m_viewport9->Width * 0.5);
+                  out.sy = (m_viewport9->Y + (float)m_viewport9->Height * 0.5) - (h.y * out.rhw) * (m_legacyScale->y * (float)m_viewport9->Height * 0.5);
+                  out.sz = m_viewport9->MinZ + (h.z * out.rhw) * (m_viewport9->MaxZ - m_viewport9->MinZ);
+
+                  // TODO: D3DPROCESSVERTICES_TRANSFORMLIGHT, D3DPROCESSVERTICES_NOCOLOR, D3DPROCESSVERTICES_UPDATEEXTENTS
+                  out.color = 0xFFFFFFFF;
+                  out.specular = 0;
+
+                  out.tu = in.tu;
+                  out.tv = in.tv;
+
+                  //Logger::debug(str::format("D3D3Device::Execute: D3DOP_PROCESSVERTICES TRANSFORM OUTPUT: out: ", out.sx, ", ", out.sy, ", ", out.sz, ", rhw: ", out.rhw));
+                }
+                break;
+              }
             }
           }
 
@@ -524,7 +671,7 @@ namespace dxvk {
           Logger::warn("D3D3Device::Execute: D3DOP_SPAN");
 
           D3DSPAN* span = reinterpret_cast<D3DSPAN*>(operation);
-          DrawSpanInternal(span, count, data.dwVertexCount, vertexBuffer);
+          DrawSpanInternal(span, count, data.dwVertexCount, hVertexBuffer);
 
           break;
         }
@@ -532,16 +679,19 @@ namespace dxvk {
           Logger::debug("D3D3Device::Execute: D3DOP_STATELIGHT");
 
           D3DSTATE* state = reinterpret_cast<D3DSTATE*>(operation);
+
           for (uint16_t i = 0; i < count; i++) {
             const D3DSTATE& s = state[i];
             SetLightStateInternal(s.dlstLightStateType, s.dwArg[0]);
           }
+
           break;
         }
         case D3DOP_STATERENDER: {
           Logger::debug("D3D3Device::Execute: D3DOP_STATERENDER");
 
           D3DSTATE* state = reinterpret_cast<D3DSTATE*>(operation);
+
           for (uint16_t i = 0; i < count; i++) {
             const D3DSTATE& s = state[i];
             SetRenderStateInternal(s.drstRenderStateType, s.dwArg[0]);
@@ -554,6 +704,7 @@ namespace dxvk {
 
           D3DSTATE* state = reinterpret_cast<D3DSTATE*>(operation);
           D3DMATRIX matrix;
+
           for (uint16_t i = 0; i < count; i++) {
             const D3DSTATE& s = state[i];
 
@@ -603,7 +754,8 @@ namespace dxvk {
           break;
       }
 
-      ptr += instructionSize;
+      if (!skip)
+        ptr += instructionSize;
     }
 
     m_commonIntf->UpdateDrawTracking();
@@ -750,7 +902,8 @@ namespace dxvk {
       HRESULT hrDS = m_ds->InitializeD3D9DepthStencil();
       if (unlikely(FAILED(hrDS))) {
         Logger::err("D3D3Device::InitializeDS: Failed to initialize D3D9 DS");
-      } else if (m_commonIntf->GetD3D5Device() == nullptr) {
+      } else if (m_commonD3DDevice->GetD3D5Device() == nullptr &&
+                 m_commonD3DDevice->GetD3D6Device() == nullptr) {
         Logger::info("D3D3Device::InitializeDS: Got depth stencil from RT");
 
         DDSURFACEDESC descDS;
@@ -766,7 +919,8 @@ namespace dxvk {
           m_d3d9->SetRenderState(d3d9::D3DRS_ZENABLE, d3d9::D3DZB_TRUE);
         }
       }
-    } else if (m_commonIntf->GetD3D5Device() == nullptr) {
+    } else if (m_commonD3DDevice->GetD3D5Device() == nullptr &&
+               m_commonD3DDevice->GetD3D6Device() == nullptr) {
       Logger::info("D3D3Device::InitializeDS: RT has no depth stencil attached");
       m_d3d9->SetDepthStencilSurface(nullptr);
       // Should be superfluous, but play it safe
@@ -803,34 +957,36 @@ namespace dxvk {
 
     switch (dwLightStateType) {
       case D3DLIGHTSTATE_MATERIAL: {
-        D3D5Device* device5 = m_commonIntf->GetD3D5Device();
+        D3D5Device* device5 = m_commonD3DDevice->GetD3D5Device();
+        D3D6Device* device6 = m_commonD3DDevice->GetD3D6Device();
 
         if (unlikely(!dwLightState)) {
           m_materialHandle = dwLightState;
 
           if (device5 != nullptr)
             device5->SetCurrentMaterialHandle(dwLightState);
+          else if (unlikely(device6 != nullptr))
+            device6->SetCurrentMaterialHandle(dwLightState);
 
           return D3D_OK;
         }
 
         Logger::debug(str::format("D3D3Device::SetLightStateInternal: Applying material nr. ", dwLightState, " to D3D9"));
 
-        D3D3Interface* d3d3Intf = m_commonIntf->GetD3D3Interface();
-        // consider pure D3D3 device use by default
-        if (likely(d3d3Intf != nullptr)) {
-          d3d9::D3DMATERIAL9* material9 = d3d3Intf->GetCommonD3DInterface()->GetD3D9MaterialFromHandle(dwLightState);
+        D3DCommonInterface* commonD3DIntf = m_commonD3DDevice->GetCommonD3DInterface();
+        if (likely(commonD3DIntf != nullptr)) {
+          d3d9::D3DMATERIAL9* material9 = commonD3DIntf->GetD3D9MaterialFromHandle(dwLightState);
           if (unlikely(material9 == nullptr))
             return DDERR_INVALIDPARAMS;
 
-          m_materialHandle = dwLightState;
           m_d3d9->SetMaterial(material9);
-        // fall back to using a D3D5 device otherwise
-        } else if (likely(device5 != nullptr)) {
-          d3d9::D3DMATERIAL9* material9 = device5->GetParent()->GetCommonD3DInterface()->GetD3D9MaterialFromHandle(dwLightState);
 
-          device5->SetCurrentMaterialHandle(dwLightState);
-          device5->GetD3D9()->SetMaterial(material9);
+          m_materialHandle = dwLightState;
+          if (device5 != nullptr) {
+            device5->SetCurrentMaterialHandle(dwLightState);
+          } else if (unlikely(device6 != nullptr)) {
+            device6->SetCurrentMaterialHandle(dwLightState);
+          }
         } else {
           Logger::warn("D3D3Device::SetLightStateInternal: Unable to set D3D9 material");
         }
@@ -1170,14 +1326,19 @@ namespace dxvk {
     return m_d3d9->SetRenderState(State9, dwRenderState);
   }
 
-  inline void D3D3Device::DrawTriangleInternal(D3DTRIANGLE* triangle, DWORD count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer) {
+  inline void D3D3Device::DrawTriangleInternal(D3DTRIANGLE* triangle, uint16_t count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer) {
     std::vector<D3DTLVERTEX> vertices;
 
-    for (DWORD i = 0; i < count; i++) {
+    for (uint16_t i = 0; i < count; i++) {
       const D3DTRIANGLE& t = triangle[i];
 
-      if (t.v1 >= vertexCount || t.v2 >= vertexCount || t.v3 >= vertexCount)
+      if (t.v1 >= vertexCount || t.v2 >= vertexCount || t.v3 >= vertexCount) {
+        static bool s_skipErrorShown;
+        if (!std::exchange(s_skipErrorShown, true))
+          Logger::warn(str::format("D3D3Device::Execute: D3DOP_TRIANGLE skipping triangles draw"));
+
         continue;
+      }
 
       // TODO: Ignoring t.wFlags for now as they are relevant only for wireframe mode?
       // (D3DTRIFLAG_START, D3DTRIFLAG_STARTFLAT(1-29), D3DTRIFLAG_ODD(strip),
@@ -1189,16 +1350,12 @@ namespace dxvk {
     }
 
     if (!vertices.empty() && m_d3d9 != nullptr) {
-      HandlePreDrawLegacyProjection();
-
       m_d3d9->SetFVF(D3DFVF_TLVERTEX);
       HRESULT hr = m_d3d9->DrawPrimitiveUP(
            d3d9::D3DPT_TRIANGLELIST,
            GetPrimitiveCount(D3DPT_TRIANGLELIST, vertices.size()),
            vertices.data(),
            GetFVFSize(D3DFVF_TLVERTEX));
-
-      HandlePostDrawLegacyProjection();
 
       if (SUCCEEDED(hr)) {
         Logger::debug(str::format("D3D3Device::Execute: D3DOP_TRIANGLE drawn vertices: ", vertices.size()));
@@ -1211,10 +1368,10 @@ namespace dxvk {
     }
   }
 
-  inline void D3D3Device::DrawLineInternal(D3DLINE* line, DWORD count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer) {
+  inline void D3D3Device::DrawLineInternal(D3DLINE* line, uint16_t count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer) {
     std::vector<D3DTLVERTEX> vertices;
 
-    for (DWORD i = 0; i < count; i++) {
+    for (uint16_t i = 0; i < count; i++) {
       const D3DLINE& l = line[i];
 
       if (l.v1 >= vertexCount || l.v2 >= vertexCount)
@@ -1225,16 +1382,12 @@ namespace dxvk {
     }
 
     if (!vertices.empty() && m_d3d9 != nullptr) {
-      HandlePreDrawLegacyProjection();
-
       m_d3d9->SetFVF(D3DFVF_TLVERTEX);
       HRESULT hr = m_d3d9->DrawPrimitiveUP(
            d3d9::D3DPT_LINELIST,
            GetPrimitiveCount(D3DPT_LINELIST, vertices.size()),
            vertices.data(),
            GetFVFSize(D3DFVF_TLVERTEX));
-
-      HandlePostDrawLegacyProjection();
 
       if (SUCCEEDED(hr)) {
         Logger::debug(str::format("D3D3Device::Execute: D3DOP_LINE drawn vertices: ", vertices.size()));
@@ -1247,10 +1400,10 @@ namespace dxvk {
     }
   }
 
-  inline void D3D3Device::DrawPointInternal(D3DPOINT* point, DWORD count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer) {
+  inline void D3D3Device::DrawPointInternal(D3DPOINT* point, uint16_t count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer) {
     std::vector<D3DTLVERTEX> vertices;
 
-    for (DWORD i = 0; i < count; i++) {
+    for (uint16_t i = 0; i < count; i++) {
       const D3DPOINT& p = point[i];
 
       if (p.wFirst >= vertexCount)
@@ -1262,16 +1415,12 @@ namespace dxvk {
     }
 
     if (!vertices.empty() && m_d3d9 != nullptr) {
-      HandlePreDrawLegacyProjection();
-
       m_d3d9->SetFVF(D3DFVF_TLVERTEX);
       HRESULT hr = m_d3d9->DrawPrimitiveUP(
            d3d9::D3DPT_POINTLIST,
            GetPrimitiveCount(D3DPT_POINTLIST, vertices.size()),
            vertices.data(),
            GetFVFSize(D3DFVF_TLVERTEX));
-
-      HandlePostDrawLegacyProjection();
 
       if (SUCCEEDED(hr)) {
         Logger::debug(str::format("D3D3Device::Execute: D3DOP_POINT drawn vertices: ", vertices.size()));
@@ -1283,10 +1432,10 @@ namespace dxvk {
     }
   }
 
-  inline void D3D3Device::DrawSpanInternal(D3DSPAN* span, DWORD count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer) {
+  inline void D3D3Device::DrawSpanInternal(D3DSPAN* span, uint16_t count, DWORD vertexCount, const D3DTLVERTEX* vertexBuffer) {
     std::vector<D3DTLVERTEX> vertices;
 
-    for (DWORD i = 0; i < count; i++) {
+    for (uint16_t i = 0; i < count; i++) {
       const D3DSPAN& s = span[i];
 
       if (s.wFirst >= vertexCount)
@@ -1298,16 +1447,12 @@ namespace dxvk {
     }
 
     if (!vertices.empty() && m_d3d9 != nullptr) {
-      HandlePreDrawLegacyProjection();
-
       m_d3d9->SetFVF(D3DFVF_TLVERTEX);
       HRESULT hr = m_d3d9->DrawPrimitiveUP(
            d3d9::D3DPT_LINESTRIP,
            GetPrimitiveCount(D3DPT_LINESTRIP, vertices.size()),
            vertices.data(),
            GetFVFSize(D3DFVF_TLVERTEX));
-
-      HandlePostDrawLegacyProjection();
 
       if (SUCCEEDED(hr)) {
         Logger::debug(str::format("D3D3Device::Execute: D3DOP_SPAN drawn vertices: ", vertices.size()));
@@ -1320,8 +1465,8 @@ namespace dxvk {
     }
   }
 
-  inline void D3D3Device::TextureLoadInternal(D3DTEXTURELOAD* textureLoad, DWORD count) {
-    for (DWORD i = 0; i < count; i++) {
+  inline void D3D3Device::TextureLoadInternal(D3DTEXTURELOAD* textureLoad, uint16_t count) {
+    for (uint16_t i = 0; i < count; i++) {
       const D3DTEXTURELOAD& tl = textureLoad[i];
 
       DDrawSurface* destSurf = m_commonIntf->GetSurfaceFromTextureHandle(tl.hDestTexture);

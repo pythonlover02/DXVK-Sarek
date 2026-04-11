@@ -74,6 +74,8 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Interface::QueryInterface(REFIID riid, void** ppvObject) {
+    Logger::debug(">>> D3D6Interface::QueryInterface");
+
     if (unlikely(ppvObject == nullptr))
       return E_POINTER;
 
@@ -182,8 +184,15 @@ namespace dxvk {
 
     InitReturnPtr(lplpDirect3DMaterial);
 
+    Com<IDirect3DMaterial3> ddrawMaterial3Proxied;
+    HRESULT hr = m_proxy->CreateMaterial(&ddrawMaterial3Proxied, pUnkOuter);
+    if (unlikely(FAILED(hr))) {
+      Logger::err("D3D6Interface::CreateMaterial: Failed to create proxied material");
+      return hr;
+    }
+
     D3DMATERIALHANDLE handle = m_commonD3DIntf->GetNextMaterialHandle();
-    Com<D3D6Material> d3d6Material = new D3D6Material(nullptr, this, handle);
+    Com<D3D6Material> d3d6Material = new D3D6Material(std::move(ddrawMaterial3Proxied), this, handle);
     m_commonD3DIntf->EmplaceMaterial(d3d6Material->GetCommonMaterial(), handle);
 
     *lplpDirect3DMaterial = d3d6Material.ref();
@@ -214,6 +223,9 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
 
     if (unlikely(lpD3DFDS->dwSize != sizeof(D3DFINDDEVICESEARCH)))
+      return DDERR_INVALIDPARAMS;
+
+    if (unlikely(!IsValidFindDeviceResultSize(lpD3DFDR->dwSize)))
       return DDERR_INVALIDPARAMS;
 
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
@@ -253,9 +265,8 @@ namespace dxvk {
     if (lpD3DFDS->dwFlags & D3DFDS_GUID) {
       Logger::debug("D3D6Interface::FindDevice: Matching by device GUID");
 
-      if (lpD3DFDS->guid == IID_IDirect3DRGBDevice ||
-          lpD3DFDS->guid == IID_IDirect3DMMXDevice ||
-          lpD3DFDS->guid == IID_IDirect3DRampDevice) {
+      // IID_IDirect3DRampDevice and IID_IDirect3DMMXDevice return DDERR_NOTFOUND in D3D6
+      if (lpD3DFDS->guid == IID_IDirect3DRGBDevice) {
         Logger::debug("D3D6Interface::FindDevice: Matched IID_IDirect3DRGBDevice");
         lpD3DFDR->guid = IID_IDirect3DRGBDevice;
         lpD3DFDR->ddHwDesc = descRGB_HAL;
@@ -283,6 +294,20 @@ namespace dxvk {
         lpD3DFDR->ddHwDesc = descRGB_HAL;
         lpD3DFDR->ddSwDesc = descRGB_HEL;
       }
+    } else if (lpD3DFDS->dwFlags & D3DFDS_COLORMODEL) {
+      Logger::debug("D3D6Interface::FindDevice: Matching by color model");
+
+      Logger::debug("D3D6Interface::FindDevice: Matched IID_IDirect3DHALDevice");
+      lpD3DFDR->guid = IID_IDirect3DHALDevice;
+      lpD3DFDR->ddHwDesc = descHAL_HAL;
+      lpD3DFDR->ddSwDesc = descHAL_HEL;
+    } else if (lpD3DFDS->dwFlags == 0) {
+      Logger::debug("D3D6Interface::FindDevice: No matching criteria specified");
+
+      Logger::debug("D3D6Interface::FindDevice: Matched IID_IDirect3DHALDevice");
+      lpD3DFDR->guid = IID_IDirect3DHALDevice;
+      lpD3DFDR->ddHwDesc = descHAL_HAL;
+      lpD3DFDR->ddSwDesc = descHAL_HEL;
     } else {
       Logger::err("D3D6Interface::FindDevice: Unhandled matching type");
       return DDERR_NOTFOUND;
@@ -337,7 +362,7 @@ namespace dxvk {
     Com<DDraw4Surface> rt4;
     if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDS))) {
       Logger::err("D3D6Interface::CreateDevice: Unwrapped surface passed as RT");
-      return DDERR_GENERIC;
+      return DDERR_UNSUPPORTED;
     } else {
       rt4 = static_cast<DDraw4Surface*>(lpDDS);
     }
@@ -466,12 +491,12 @@ namespace dxvk {
     D3DDEVICEDESC desc6 = GetD3D6Caps(rclsidOverride, d3dOptions);
 
     try{
-      Com<D3D6Device> device6 = new D3D6Device(std::move(d3d6DeviceProxy), this, desc6,
+      Com<D3D6Device> device6 = new D3D6Device(nullptr, std::move(d3d6DeviceProxy), this, desc6,
                                                rclsidOverride, params, std::move(device9),
                                                rt4.ptr(), deviceCreationFlags9);
 
-      // Set the newly created D3D6 device on the common interface
-      m_commonIntf->SetD3D6Device(device6.ptr());
+      // Set the common device on the common interface
+      m_commonIntf->SetCommonD3DDevice(device6->GetCommonD3DDevice());
       // Now that we have a valid D3D9 device pointer, we can initialize the depth stencil (if any)
       device6->InitializeDS();
 
@@ -549,11 +574,12 @@ namespace dxvk {
     if (unlikely(FAILED(hr)))
       return hr;
 
-    D3D6Device* d3d6Device = m_commonIntf->GetD3D6Device();
-    if (likely(d3d6Device != nullptr)) {
-      D3DDeviceLock lock = d3d6Device->LockDevice();
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+    if (likely(commonDevice != nullptr)) {
+      d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();
 
-      HRESULT hr9 = d3d6Device->GetD3D9()->EvictManagedResources();
+      // Note: This doesn't do anything in the D3D9 backend at the moment
+      HRESULT hr9 = d3d9Device->EvictManagedResources();
       if (unlikely(FAILED(hr9))) {
         Logger::err("D3D6Interface::EvictManagedTextures: Failed D3D9 managed resource eviction");
         return hr9;

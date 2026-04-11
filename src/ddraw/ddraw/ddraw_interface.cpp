@@ -1,5 +1,7 @@
 #include "ddraw_interface.h"
 
+#include "../d3d_common_device.h"
+
 #include "ddraw_surface.h"
 
 #include "../ddraw_clipper.h"
@@ -12,7 +14,6 @@
 #include "../d3d3/d3d3_interface.h"
 #include "../d3d5/d3d5_interface.h"
 #include "../d3d6/d3d6_interface.h"
-#include <utility>
 
 namespace dxvk {
 
@@ -24,9 +25,8 @@ namespace dxvk {
     : DDrawWrappedObject<IUnknown, IDirectDraw, IUnknown>(nullptr, std::move(proxyIntf), nullptr)
     , m_commonIntf ( commonIntf ) {
 
-    if (m_commonIntf == nullptr) {
-      // We need a temporary D3D9 interface at this point to retrieve the options,
-      // even if we're only proxying and we don't yet have any child D3D interfaces
+    if (likely(m_commonIntf == nullptr)) {
+      // We need a temporary D3D9 interface to retrieve the options
       Com<d3d9::IDirect3D9> d3d9Intf = d3d9::Direct3DCreate9(D3D_SDK_VERSION);
       Com<IDxvkD3D8InterfaceBridge> d3d9Bridge;
 
@@ -330,7 +330,7 @@ namespace dxvk {
     } else {
       if (unlikely(lpDDSurface != nullptr)) {
         Logger::warn("DDrawInterface::DuplicateSurface: Received an unwrapped source surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
       return m_proxy->DuplicateSurface(lpDDSurface, lplpDupDDSurface);
     }
@@ -342,24 +342,26 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDrawInterface::EnumSurfaces(DWORD dwFlags, LPDDSURFACEDESC lpDDSD, LPVOID lpContext, LPDDENUMSURFACESCALLBACK lpEnumSurfacesCallback) {
-    Logger::debug(">>> DDrawInterface::EnumSurfaces: Proxy");
+    Logger::debug("<<< DDrawInterface::EnumSurfaces: Proxy");
 
     if (unlikely(lpEnumSurfacesCallback == nullptr))
       return DDERR_INVALIDPARAMS;
 
     std::vector<AttachedSurface> attachedSurfaces;
     // Enumerate all surfaces from the underlying DDraw implementation
-    m_proxy->EnumSurfaces(dwFlags, lpDDSD, reinterpret_cast<void*>(&attachedSurfaces), EnumAttachedSurfacesCallback);
+    HRESULT hr = m_proxy->EnumSurfaces(dwFlags, lpDDSD, reinterpret_cast<void*>(&attachedSurfaces), EnumAttachedSurfacesCallback);
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    HRESULT hr = DDENUMRET_OK;
+    HRESULT hrCB = DDENUMRET_OK;
 
     // Wrap surfaces as needed and perform the actual callback the application is requesting
     auto surfaceIt = attachedSurfaces.begin();
-    while (surfaceIt != attachedSurfaces.end() && hr == DDENUMRET_OK) {
+    while (surfaceIt != attachedSurfaces.end() && hrCB == DDENUMRET_OK) {
       Com<IDirectDrawSurface> surface = surfaceIt->surface;
 
       Com<DDrawSurface> ddrawSurface = new DDrawSurface(nullptr, std::move(surface), this, nullptr, false);
-      hr = lpEnumSurfacesCallback(ddrawSurface.ref(), &surfaceIt->desc, lpContext);
+      hrCB = lpEnumSurfacesCallback(ddrawSurface.ref(), &surfaceIt->desc, lpContext);
 
       ++surfaceIt;
     }
@@ -368,7 +370,22 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDrawInterface::FlipToGDISurface() {
+    if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
+      Logger::debug("<<< DDrawInterface::FlipToGDISurface: Proxy");
+      return m_proxy->FlipToGDISurface();
+    }
+
     Logger::debug("*** DDrawInterface::FlipToGDISurface: Ignoring");
+
+    DDrawCommonSurface* ps = m_commonIntf->GetPrimarySurface();
+
+    // A primary surface must exist for a GDI flip to be possible
+    if (unlikely(ps == nullptr))
+      return DDERR_NOTFOUND;
+
+    if (unlikely(!ps->IsFlippable()))
+      return DDERR_NOTFLIPPABLE;
+
     return DD_OK;
   }
 
@@ -388,11 +405,13 @@ namespace dxvk {
     DWORD total9 = 0;
     DWORD free9  = 0;
 
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonIntf->GetD3D9Device();
-    if (likely(d3d9Device != nullptr)) {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+    if (likely(commonDevice != nullptr)) {
       Logger::debug("DDrawInterface::GetCaps: Getting memory stats from D3D9");
 
-      total9 = static_cast<DWORD>(m_commonIntf->GetTotalTextureMemory());
+      d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();
+
+      total9 = static_cast<DWORD>(commonDevice->GetTotalTextureMemory());
       free9  = static_cast<DWORD>(d3d9Device->GetAvailableTextureMem());
 
       if (likely(total9 >= MaxMemory)) {
@@ -603,13 +622,13 @@ namespace dxvk {
 
     // Switch to a default presentation interval when an application
     // tries to wait for vertical blank, if we're not already doing so
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonIntf->GetD3D9Device();
-    if (unlikely(d3d9Device != nullptr && !m_commonIntf->GetWaitForVBlank())) {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+    if (unlikely(commonDevice != nullptr && !m_commonIntf->GetWaitForVBlank())) {
       Logger::info("DDrawInterface::WaitForVerticalBlank: Switching to D3DPRESENT_INTERVAL_DEFAULT for presentation");
 
-      d3d9::D3DPRESENT_PARAMETERS resetParams = m_commonIntf->GetPresentParameters();
+      d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
       resetParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
-      HRESULT hrReset = m_commonIntf->ResetD3D9Swapchain(&resetParams);
+      HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
       if (likely(SUCCEEDED(hrReset)))
         m_commonIntf->SetWaitForVBlank(true);
     }

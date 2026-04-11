@@ -1,0 +1,135 @@
+#pragma once
+
+#include "ddraw_include.h"
+
+#include <unordered_map>
+
+namespace dxvk {
+
+  class D3DCommonInterface;
+  class DDrawCommonInterface;
+
+  class DDraw7Surface;
+  class DDraw4Surface;
+  class DDrawSurface;
+
+  class D3D7Device;
+  class D3D6Device;
+  class D3D5Device;
+  class D3D3Device;
+
+  class D3DCommonDevice : public ComObjectClamp<IUnknown> {
+
+  public:
+
+    D3DCommonDevice(
+          DDrawCommonInterface* commonIntf,
+          DWORD creationFlags9,
+          uint32_t totalMemory);
+
+    ~D3DCommonDevice();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject) {
+      *ppvObject = this;
+      return S_OK;
+    }
+
+    d3d9::IDirect3DDevice9* GetD3D9Device();
+
+    D3DCommonInterface* GetCommonD3DInterface() const;
+
+    d3d9::D3DMULTISAMPLE_TYPE GetMultiSampleType();
+
+    d3d9::D3DPRESENT_PARAMETERS GetPresentParameters();
+
+    HRESULT ResetD3D9Swapchain(d3d9::D3DPRESENT_PARAMETERS* params);
+
+    bool IsCurrentRenderTarget(DDrawSurface* surface) const;
+
+    bool IsCurrentRenderTarget(DDraw4Surface* surface) const;
+
+    bool IsCurrentRenderTarget(DDraw7Surface* surface) const;
+
+    bool IsCurrentD3D9RenderTarget(d3d9::IDirect3DSurface9* surface) const;
+
+    bool IsCurrentDepthStencil(DDrawSurface* surface) const;
+
+    bool IsCurrentDepthStencil(DDraw4Surface* surface) const;
+
+    bool IsCurrentDepthStencil(DDraw7Surface* surface) const;
+
+    bool IsCurrentD3D9DepthStencil(d3d9::IDirect3DSurface9* surface) const;
+
+    DDrawCommonInterface* GetCommonInterface() const {
+      return m_commonIntf;
+    }
+
+    DWORD GetD3D9CreationFlags() const {
+      return m_creationFlags9;
+    }
+
+    void SetD3D7Device(D3D7Device* device7) {
+      m_device7 = device7;
+    }
+
+    D3D7Device* GetD3D7Device() const {
+      return m_device7;
+    }
+
+    void SetD3D6Device(D3D6Device* device6) {
+      m_device6 = device6;
+    }
+
+    D3D6Device* GetD3D6Device() const {
+      return m_device6;
+    }
+
+    void SetD3D5Device(D3D5Device* device5) {
+      m_device5 = device5;
+    }
+
+    D3D5Device* GetD3D5Device() const {
+      return m_device5;
+    }
+
+    void SetD3D3Device(D3D3Device* device3) {
+      m_device3 = device3;
+    }
+
+    D3D3Device* GetD3D3Device() const {
+      return m_device3;
+    }
+
+    void SetOrigin(IUnknown* origin) {
+      m_origin = origin;
+    }
+
+    IUnknown* GetOrigin() const {
+      return m_origin;
+    }
+
+    uint32_t GetTotalTextureMemory() const {
+      return m_totalMemory;
+    }
+
+  private:
+
+    DDrawCommonInterface* m_commonIntf     = nullptr;
+
+    uint32_t              m_totalMemory    = 0;
+
+    DWORD                 m_creationFlags9 = 0;
+
+    // Track all possible last used D3D devices
+    D3D7Device*           m_device7        = nullptr;
+    D3D6Device*           m_device6        = nullptr;
+    D3D5Device*           m_device5        = nullptr;
+    D3D3Device*           m_device3        = nullptr;
+
+    // Track the origin device, as in the device
+    // that gets created through a CreateDevice call
+    IUnknown*             m_origin         = nullptr;
+
+  };
+
+}

@@ -1,17 +1,17 @@
 #include "ddraw2_interface.h"
 
+#include "../d3d_common_device.h"
+
 #include "../ddraw_clipper.h"
 #include "../ddraw_palette.h"
 
 #include "../ddraw/ddraw_surface.h"
-#include "../ddraw/ddraw_interface.h"
 #include "../ddraw4/ddraw4_interface.h"
 #include "../ddraw7/ddraw7_interface.h"
 
 #include "../d3d3/d3d3_interface.h"
 #include "../d3d5/d3d5_interface.h"
 #include "../d3d6/d3d6_interface.h"
-#include <utility>
 
 namespace dxvk {
 
@@ -22,9 +22,15 @@ namespace dxvk {
         Com<IDirectDraw2>&& proxyIntf)
     : DDrawWrappedObject<IUnknown, IDirectDraw2, IUnknown>(nullptr, std::move(proxyIntf), nullptr)
     , m_commonIntf ( commonIntf ) {
+    // Hold a reference to the parent IDirectDraw object, since
+    // it is needed to be able to create surfaces from this interface
+    if (likely(commonIntf->GetDDInterface() != nullptr)) {
+      m_parentIntf = commonIntf->GetDDInterface();
+    } else {
+      Logger::warn("DDraw2Interface: Missing an IDirectDraw parent");
+    }
 
-    if (m_commonIntf->GetOrigin() == nullptr)
-      m_commonIntf->SetOrigin(this);
+    // Note: IDirectDraw2 can never be the origin interface
 
     m_commonIntf->SetDD2Interface(this);
 
@@ -40,9 +46,6 @@ namespace dxvk {
   }
 
   DDraw2Interface::~DDraw2Interface() {
-    if (m_commonIntf->GetOrigin() == this)
-      m_commonIntf->SetOrigin(nullptr);
-
     m_commonIntf->SetDD2Interface(nullptr);
 
     Logger::debug(str::format("DDraw2Interface: Interface nr. <<2-", m_intfCount, ">> bites the dust"));
@@ -323,7 +326,7 @@ namespace dxvk {
     } else {
       if (unlikely(lpDDSurface != nullptr)) {
         Logger::warn("DDraw2Interface::DuplicateSurface: Received an unwrapped source surface");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
       return m_proxy->DuplicateSurface(lpDDSurface, lplpDupDDSurface);
     }
@@ -337,12 +340,32 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDraw2Interface::EnumSurfaces(DWORD dwFlags, LPDDSURFACEDESC lpDDSD, LPVOID lpContext, LPDDENUMSURFACESCALLBACK lpEnumSurfacesCallback) {
-    Logger::warn("<<< DDraw2Interface::EnumSurfaces: Proxy");
-    return m_proxy->EnumSurfaces(dwFlags, lpDDSD, lpContext, lpEnumSurfacesCallback);
+    if (unlikely(m_commonIntf->GetDDInterface() == nullptr)) {
+      Logger::warn("!!! DDraw2Interface::EnumSurfaces: Stub");
+      return DDERR_UNSUPPORTED;
+    }
+
+    Logger::warn(">>> DDraw2Interface::EnumSurfaces");
+    return m_commonIntf->GetDDInterface()->EnumSurfaces(dwFlags, lpDDSD, lpContext, lpEnumSurfacesCallback);
   }
 
   HRESULT STDMETHODCALLTYPE DDraw2Interface::FlipToGDISurface() {
+    if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
+      Logger::debug("<<< DDraw2Interface::FlipToGDISurface: Proxy");
+      return m_proxy->FlipToGDISurface();
+    }
+
     Logger::debug("*** DDraw2Interface::FlipToGDISurface: Ignoring");
+
+    DDrawCommonSurface* ps = m_commonIntf->GetPrimarySurface();
+
+    // A primary surface must exist for a GDI flip to be possible
+    if (unlikely(ps == nullptr))
+      return DDERR_NOTFOUND;
+
+    if (unlikely(!ps->IsFlippable()))
+      return DDERR_NOTFLIPPABLE;
+
     return DD_OK;
   }
 
@@ -362,11 +385,13 @@ namespace dxvk {
     DWORD total9 = 0;
     DWORD free9  = 0;
 
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonIntf->GetD3D9Device();
-    if (likely(d3d9Device != nullptr)) {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+    if (likely(commonDevice != nullptr)) {
       Logger::debug("DDraw2Interface::GetCaps: Getting memory stats from D3D9");
 
-      total9 = static_cast<DWORD>(m_commonIntf->GetTotalTextureMemory());
+      d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();
+
+      total9 = static_cast<DWORD>(commonDevice->GetTotalTextureMemory());
       free9  = static_cast<DWORD>(d3d9Device->GetAvailableTextureMem());
 
       if (likely(total9 >= MaxMemory)) {
@@ -577,13 +602,13 @@ namespace dxvk {
 
     // Switch to a default presentation interval when an application
     // tries to wait for vertical blank, if we're not already doing so
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonIntf->GetD3D9Device();
-    if (unlikely(d3d9Device != nullptr && !m_commonIntf->GetWaitForVBlank())) {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+    if (unlikely(commonDevice != nullptr && !m_commonIntf->GetWaitForVBlank())) {
       Logger::info("DDraw2Interface::WaitForVerticalBlank: Switching to D3DPRESENT_INTERVAL_DEFAULT for presentation");
 
-      d3d9::D3DPRESENT_PARAMETERS resetParams = m_commonIntf->GetPresentParameters();
+      d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
       resetParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
-      HRESULT hrReset = m_commonIntf->ResetD3D9Swapchain(&resetParams);
+      HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
       if (likely(SUCCEEDED(hrReset)))
         m_commonIntf->SetWaitForVBlank(true);
     }
@@ -601,11 +626,13 @@ namespace dxvk {
     static constexpr DWORD MaxMemory = ddrawCaps::MaxTextureMemory * Megabytes;
     static constexpr DWORD ReservedMemory = ddrawCaps::ReservedTextureMemory * Megabytes;
 
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonIntf->GetD3D9Device();
-    if (likely(d3d9Device != nullptr)) {
+    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+    if (likely(commonDevice != nullptr)) {
       Logger::debug("DDraw2Interface::GetAvailableVidMem: Getting memory stats from D3D9");
 
-      DWORD total9 = static_cast<DWORD>(m_commonIntf->GetTotalTextureMemory());
+      d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();
+
+      DWORD total9 = static_cast<DWORD>(commonDevice->GetTotalTextureMemory());
       DWORD free9  = static_cast<DWORD>(d3d9Device->GetAvailableTextureMem());
 
       if (likely(total9 >= MaxMemory)) {

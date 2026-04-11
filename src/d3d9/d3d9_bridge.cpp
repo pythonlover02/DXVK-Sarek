@@ -39,11 +39,11 @@ namespace dxvk {
   }
 
   HRESULT DxvkD3D8Bridge::SetColorKeyState(bool colorKeyState) {
-    return m_device->SetColorKeyState(colorKeyState);
+    return D3D_OK; //m_device->SetColorKeyState(colorKeyState);
   }
 
   HRESULT DxvkD3D8Bridge::SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh) {
-    return m_device->SetColorKey(colorKeyLow, colorKeyHigh);
+    return D3D_OK; //m_device->SetColorKey(colorKeyLow, colorKeyHigh);
   }
 
   HRESULT DxvkD3D8Bridge::SetLegacyLightsState(bool legacyLightsState, bool isD3DLight2) {

@@ -5,8 +5,9 @@
 #include "../ddraw_options.h"
 #include "../ddraw_caps.h"
 
+#include "../d3d_common_device.h"
+
 #include "../d3d_multithread.h"
-#include "../ddraw_common_interface.h"
 
 #include "../../d3d9/d3d9_bridge.h"
 
@@ -17,9 +18,11 @@
 
 namespace dxvk {
 
+  class D3DCommonDevice;
   class DDrawCommonInterface;
   class DDrawSurface;
   class DDrawInterface;
+  class D3D3Device;
 
   /**
   * \brief D3D5 device implementation
@@ -28,6 +31,7 @@ namespace dxvk {
 
   public:
     D3D5Device(
+          D3DCommonDevice* commonD3DDevice,
           Com<IDirect3DDevice2>&& d3d5DeviceProxy,
           D3D5Interface* pParent,
           D3DDEVICEDESC2 Desc,
@@ -38,6 +42,10 @@ namespace dxvk {
           DWORD CreationFlags9);
 
     ~D3D5Device();
+
+    ULONG STDMETHODCALLTYPE AddRef();
+
+    ULONG STDMETHODCALLTYPE Release();
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject);
 
@@ -103,16 +111,16 @@ namespace dxvk {
 
     void InitializeDS();
 
+    D3DCommonDevice* GetCommonD3DDevice() {
+      return m_commonD3DDevice.ptr();
+    }
+
     D3DDeviceLock LockDevice() {
       return m_multithread.AcquireLock();
     }
 
     void EnableLegacyLights(bool isD3DLight2) {
       m_bridge->SetLegacyLightsState(true, isD3DLight2);
-    }
-
-    uint32_t GetTotalTextureMemory() const {
-      return m_totalMemory;
     }
 
     d3d9::D3DPRESENT_PARAMETERS GetPresentParameters() const {
@@ -152,8 +160,8 @@ namespace dxvk {
     inline HRESULT SetTextureInternal(DDrawSurface* surface, DWORD textureHandle);
 
     inline void RefreshLastUsedDevice() {
-      if (unlikely(m_commonIntf->GetD3D5Device() != this))
-        m_commonIntf->SetD3D5Device(this);
+      if (unlikely(m_commonIntf->GetCommonD3DDevice() != m_commonD3DDevice.ptr()))
+        m_commonIntf->SetCommonD3DDevice(m_commonD3DDevice.ptr());
     }
 
     inline void HandlePreDrawFlags(DWORD drawFlags, DWORD vertexTypeDesc) {
@@ -203,15 +211,16 @@ namespace dxvk {
     static uint32_t                s_deviceCount;
     uint32_t                       m_deviceCount = 0;
 
-    uint32_t                       m_totalMemory = 0;
-
     DWORD                          m_lighting    = FALSE;
 
     DDrawCommonInterface*          m_commonIntf  = nullptr;
 
+    Com<D3DCommonDevice>           m_commonD3DDevice;
+
     Com<DxvkD3D8Bridge>            m_bridge;
 
-    DWORD                          m_creationFlags9 = 0;
+    Com<D3D3Device>                m_device3;
+
     D3DMultithread                 m_multithread;
 
     d3d9::D3DPRESENT_PARAMETERS    m_params9;
