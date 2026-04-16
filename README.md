@@ -5,7 +5,7 @@
 
 ### Why Does This Repo Exist?
 
-This repository was created to support users with Vulkan capable GPUs that do not meet the 1.3 requirement of the current builds. My goal is to ensure that everyone can benefit from the nice performance of DXVK, even if their hardware is slightly older. Creating or backporting Quality of Life (QOL) patches, fixes and per game configurations from the latest versions to the 1.10.x branch.
+This repository was created to support users with Vulkan capable GPUs that do not meet the 1.3 requirement of the current builds. My goal is to ensure that everyone can benefit from the nice performance of DXVK, even if their hardware is slightly older. Creating or backporting Quality of Life (QOL) patches, fixes and per game configurations from the latest versions to the 1.10.x branch and a little more.
 
 This project is supported on [proton-cachyos](https://github.com/CachyOS/proton-cachyos), on this you must add this env var to your launch options:
 
