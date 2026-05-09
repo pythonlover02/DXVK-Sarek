@@ -1082,7 +1082,7 @@ namespace dxvk {
 
         uint32_t delta  = m_module.opFSub(m_vec3Type, position, vtx3);
         uint32_t d      = m_module.opLength(m_floatType, delta);
-                 if (m_vsKey.Data.Contents.UseLegacyLights && m_vsKey.Data.Contents.IsD3DLight2) {
+                 if (m_vsKey.Data.Contents.UseLegacyLights) {
                    d    = m_module.opFSub(m_floatType, range, d);
                    d    = m_module.opFDiv(m_floatType, d, range);
                  }
@@ -1096,7 +1096,7 @@ namespace dxvk {
                    atten  = m_module.opFDiv  (m_floatType, m_module.constf32(1.0f), atten);
                  atten  = m_module.opNMin  (m_floatType, atten, m_module.constf32(FLT_MAX));
 
-                 if (m_vsKey.Data.Contents.UseLegacyLights && m_vsKey.Data.Contents.IsD3DLight2)
+                 if (m_vsKey.Data.Contents.UseLegacyLights)
                    atten  = m_module.opSelect(m_floatType, m_module.opFOrdLessThan(bool_t, d, m_module.constf32(0.0f)), m_module.constf32(0.0f), atten);
                  else
                    atten  = m_module.opSelect(m_floatType, m_module.opFOrdGreaterThan(bool_t, d, range), m_module.constf32(0.0f), atten);

@@ -9,7 +9,7 @@ namespace dxvk {
   DDrawPalette::DDrawPalette(
         Com<IDirectDrawPalette>&& paletteProxy,
         IUnknown* pParent)
-    : DDrawWrappedObject<IUnknown, IDirectDrawPalette, IUnknown>(pParent, std::move(paletteProxy), nullptr) {
+    : DDrawWrappedObject<IUnknown, IDirectDrawPalette>(pParent, std::move(paletteProxy)) {
     if (m_parent != nullptr)
       m_parent->AddRef();
 
@@ -26,6 +26,24 @@ namespace dxvk {
       m_parent->Release();
 
     Logger::debug(str::format("DDrawPalette: Palette nr. [[1-", m_paletteCount, "]] bites the dust"));
+  }
+
+  HRESULT STDMETHODCALLTYPE DDrawPalette::QueryInterface(REFIID riid, void** ppvObject) {
+    Logger::debug(">>> DDrawPalette::QueryInterface");
+
+    if (unlikely(ppvObject == nullptr))
+      return E_POINTER;
+
+    InitReturnPtr(ppvObject);
+
+    try {
+      *ppvObject = ref(this->GetInterface(riid));
+      return S_OK;
+    } catch (const DxvkError& e) {
+      Logger::warn(e.message());
+      Logger::warn(str::format(riid));
+      return E_NOINTERFACE;
+    }
   }
 
   // Docs state: "Because the DirectDrawPalette object is initialized when

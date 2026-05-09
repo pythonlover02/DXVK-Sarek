@@ -26,12 +26,10 @@ namespace dxvk {
         Com<d3d9::IDirect3DDevice9>&& pDevice9,
         DDraw4Surface* pSurface,
         DWORD CreationFlags9)
-    : DDrawWrappedObject<D3D6Interface, IDirect3DDevice3, d3d9::IDirect3DDevice9>(pParent, std::move(d3d6DeviceProxy), std::move(pDevice9))
+    : DDrawWrappedObject<D3D6Interface, IDirect3DDevice3>(pParent, std::move(d3d6DeviceProxy))
     , m_commonD3DDevice ( commonD3DDevice )
     , m_multithread ( CreationFlags9 & D3DCREATE_MULTITHREADED )
-    , m_params9 ( Params9 )
     , m_desc ( Desc )
-    , m_deviceGUID ( deviceGUID )
     , m_rt ( pSurface ) {
     if (m_parent != nullptr) {
       m_commonIntf = m_parent->GetCommonInterface();
@@ -41,9 +39,32 @@ namespace dxvk {
       throw DxvkError("D3D6Device: ERROR! Failed to retrieve the common interface!");
     }
 
-    // Get the bridge interface to D3D9
-    if (unlikely(FAILED(m_d3d9->QueryInterface(__uuidof(IDxvkD3D8Bridge), reinterpret_cast<void**>(&m_bridge))))) {
-      throw DxvkError("D3D6Device: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
+    d3d9::IDirect3DDevice9* device9;
+
+    if (likely(m_commonD3DDevice == nullptr)) {
+      m_commonD3DDevice = new D3DCommonDevice(m_commonIntf, deviceGUID, Params9, CreationFlags9);
+
+      m_commonD3DDevice->SetD3D9Device(std::move(pDevice9));
+      device9 = m_commonD3DDevice->GetD3D9Device();
+
+      const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+
+      if (unlikely(d3dOptions->emulateFSAA == FSAAEmulation::Forced)) {
+        Logger::warn("D3D6Device: Force enabling AA");
+        device9->SetRenderState(d3d9::D3DRS_MULTISAMPLEANTIALIAS, TRUE);
+      }
+
+      // The default value of D3DRENDERSTATE_TEXTUREMAPBLEND in D3D6 is D3DTBLEND_MODULATE
+      device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
+      device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+      device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_MODULATE);
+      device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG1);
+      device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+      device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    } else {
+      device9 = m_commonD3DDevice->GetD3D9Device();
+      // Very important, otherwise the depth stencil isn't dirtied on draws
+      m_ds = m_rt->GetAttachedDepthStencil();
     }
 
     // Common D3D9 index buffers
@@ -51,25 +72,16 @@ namespace dxvk {
       throw DxvkError("D3D6Device: ERROR! Failed to initialize D3D9 index buffers.");
     }
 
-    if (likely(m_commonD3DDevice == nullptr)) {
-      m_commonD3DDevice = new D3DCommonDevice(m_commonIntf, CreationFlags9,
-                                              m_bridge->DetermineInitialTextureMemory());
-
-      const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
-
-      if (unlikely(d3dOptions->emulateFSAA == FSAAEmulation::Forced)) {
-        Logger::warn("D3D6Device: Force enabling AA");
-        m_d3d9->SetRenderState(d3d9::D3DRS_MULTISAMPLEANTIALIAS, TRUE);
-      }
-
-      // The default value of D3DRENDERSTATE_TEXTUREMAPBLEND in D3D6 is D3DTBLEND_MODULATE
-      m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
-      m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-      m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_MODULATE);
-      m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG1);
-      m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-      m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+    // Get the bridge interface to D3D9
+    if (unlikely(FAILED(device9->QueryInterface(__uuidof(IDxvkD3D8Bridge), reinterpret_cast<void**>(&m_bridge))))) {
+      throw DxvkError("D3D6Device: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
     }
+
+    if (unlikely(!m_commonD3DDevice->GetTotalTextureMemory()))
+      m_commonD3DDevice->SetTotalTextureMemory(m_bridge->DetermineInitialTextureMemory());
+
+    // Update D3D9 legacy light state
+    m_bridge->SetLegacyLightsState(true);
 
     if (m_commonD3DDevice->GetOrigin() == nullptr)
       m_commonD3DDevice->SetOrigin(this);
@@ -85,14 +97,16 @@ namespace dxvk {
 
   D3D6Device::~D3D6Device() {
     if (LogIndexBufferUsageStats()) {
-      Logger::info("D3D6Device: Index buffer upload statistics:");
-      Logger::info(str::format("   XXS: ", m_ib9_uploads[0]));
-      Logger::info(str::format("   XS : ", m_ib9_uploads[1]));
-      Logger::info(str::format("   S  : ", m_ib9_uploads[2]));
-      Logger::info(str::format("   M  : ", m_ib9_uploads[3]));
-      Logger::info(str::format("   L  : ", m_ib9_uploads[4]));
-      Logger::info(str::format("   XL : ", m_ib9_uploads[5]));
-      Logger::info(str::format("   XXL: ", m_ib9_uploads[6]));
+      Logger::debug("D3D6Device: Index buffer upload statistics:");
+      Logger::debug(str::format("   0.5 kb : ", m_ib9_uploads[0]));
+      Logger::debug(str::format("   1   kb : ", m_ib9_uploads[1]));
+      Logger::debug(str::format("   2   kb : ", m_ib9_uploads[2]));
+      Logger::debug(str::format("   4   kb : ", m_ib9_uploads[3]));
+      Logger::debug(str::format("   8   kb : ", m_ib9_uploads[4]));
+      Logger::debug(str::format("   16  kb : ", m_ib9_uploads[5]));
+      Logger::debug(str::format("   32  kb : ", m_ib9_uploads[6]));
+      Logger::debug(str::format("   64  kb : ", m_ib9_uploads[7]));
+      Logger::debug(str::format("   128 kb : ", m_ib9_uploads[8]));
     }
 
     // Dissasociate every bound viewport from this device
@@ -157,25 +171,49 @@ namespace dxvk {
 
       // Reuse the existing D3D9 device in situations where games want
       // to get access only to D3D3 execute buffers on a D3D6 device
-      Com<d3d9::IDirect3DDevice9> device9 = m_d3d9.ptr();
       m_device3 = new D3D3Device(m_commonD3DDevice.ptr(), std::move(ppvProxyObject),
-                                 m_rt->GetCommonSurface()->GetDDSurface(), GetD3D3Caps(d3dOptions), m_deviceGUID,
-                                 m_params9, std::move(device9), m_commonD3DDevice->GetD3D9CreationFlags());
+                                 m_rt->GetCommonSurface()->GetDDSurface(), GetD3D3Caps(d3dOptions),
+                                 m_commonD3DDevice->GetDeviceGUID(), m_commonD3DDevice->GetPresentParameters(),
+                                 nullptr, m_commonD3DDevice->GetD3D9CreationFlags());
+      m_commonD3DDevice->SetD3D3Device(m_device3.ptr());
 
       // On native this is the same object, so no need to ref
       *ppvObject = m_device3.ptr();
 
       return S_OK;
     }
-    // Technically possible, shouldn't ever be needed or make sense
+    // Some games, such as Hype: The Time Quest, apparently query this
+    // as well, albeit without actually using the returned object...
     if (unlikely(riid == __uuidof(IDirect3DDevice2))) {
       if (m_commonD3DDevice->GetD3D5Device() != nullptr) {
         Logger::debug("D3D6Device::QueryInterface: Query for existing IDirect3DDevice2");
         return m_commonD3DDevice->GetD3D5Device()->QueryInterface(riid, ppvObject);
       }
 
-      Logger::err("D3D6Device::QueryInterface: Query for IDirect3DDevice2");
-      return E_NOINTERFACE;
+      Logger::debug("D3D6Device::QueryInterface: Query for IDirect3DDevice2");
+
+      Com<IDirect3DDevice2> ppvProxyObject;
+      HRESULT hr = m_proxy->QueryInterface(riid, reinterpret_cast<void**>(&ppvProxyObject));
+      if (unlikely(FAILED(hr)))
+        return hr;
+
+      const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+
+      // TODO: Make sure the RT has an existing DDrawSurface,
+      // and QueryInterface for one if that's not the case
+
+      m_device5 = new D3D5Device(m_commonD3DDevice.ptr(), std::move(ppvProxyObject),
+                                 m_commonD3DDevice->GetCommonD3DInterface()->GetD3D5Interface(),
+                                 GetD3D5Caps(m_commonD3DDevice->GetDeviceGUID(), d3dOptions),
+                                 m_commonD3DDevice->GetDeviceGUID(), m_commonD3DDevice->GetPresentParameters(),
+                                 nullptr, m_rt->GetCommonSurface()->GetDDSurface(),
+                                 m_commonD3DDevice->GetD3D9CreationFlags());
+      m_commonD3DDevice->SetD3D5Device(m_device5.ptr());
+
+      // On native this is the same object, so no need to ref
+      *ppvObject = m_device5.ptr();
+
+      return S_OK;
     }
 
     try {
@@ -201,7 +239,9 @@ namespace dxvk {
     D3DDEVICEDESC desc_HAL = m_desc;
     D3DDEVICEDESC desc_HEL = m_desc;
 
-    if (m_deviceGUID == IID_IDirect3DRGBDevice) {
+    const GUID deviceGUID = m_commonD3DDevice->GetDeviceGUID();
+
+    if (deviceGUID == IID_IDirect3DRGBDevice) {
       desc_HAL.dwFlags = 0;
       desc_HAL.dcmColorModel = 0;
       // Some applications apparently care about RGB texture caps
@@ -211,7 +251,7 @@ namespace dxvk {
                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
       desc_HEL.dpcLineCaps.dwTextureCaps |= D3DPTEXTURECAPS_POW2;
       desc_HEL.dpcTriCaps.dwTextureCaps  |= D3DPTEXTURECAPS_POW2;
-    } else if (m_deviceGUID == IID_IDirect3DHALDevice) {
+    } else if (deviceGUID == IID_IDirect3DHALDevice) {
       desc_HEL.dcmColorModel = 0;
       desc_HEL.dwDevCaps &= ~D3DDEVCAPS_HWTRANSFORMANDLIGHT
                           & ~D3DDEVCAPS_DRAWPRIMITIVES2
@@ -406,13 +446,13 @@ namespace dxvk {
 
     RefreshLastUsedDevice();
 
-    if (unlikely(m_inScene))
+    if (unlikely(m_commonD3DDevice->IsInScene()))
       return D3DERR_SCENE_IN_SCENE;
 
-    HRESULT hr = m_d3d9->BeginScene();
+    HRESULT hr = m_commonD3DDevice->GetD3D9Device()->BeginScene();
 
     if (likely(SUCCEEDED(hr)))
-      m_inScene = true;
+      m_commonD3DDevice->SetInScene(true);
 
     return hr;
   }
@@ -424,29 +464,13 @@ namespace dxvk {
 
     RefreshLastUsedDevice();
 
-    if (unlikely(!m_inScene))
+    if (unlikely(!m_commonD3DDevice->IsInScene()))
       return D3DERR_SCENE_NOT_IN_SCENE;
 
-    HRESULT hr = m_d3d9->EndScene();
+    HRESULT hr = m_commonD3DDevice->GetD3D9Device()->EndScene();
 
-    if (likely(SUCCEEDED(hr))) {
-      const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
-
-      if (d3dOptions->forceProxiedPresent) {
-        // If we have drawn anything, we need to make sure we blit back
-        // the results onto the D3D6 render target before we flip it
-        if (m_commonIntf->HasDrawn())
-          BlitToDDrawSurface<IDirectDrawSurface4, DDSURFACEDESC2>(m_rt->GetProxied(), m_rt->GetD3D9());
-
-        m_rt->GetProxied()->Flip(static_cast<IDirectDrawSurface4*>(m_commonIntf->GetFlipRTSurface()),
-                                 m_commonIntf->GetFlipRTFlags());
-
-        if (likely(d3dOptions->backBufferGuard != D3DBackBufferGuard::Strict))
-          m_commonIntf->ResetDrawTracking();
-      }
-
-      m_inScene = false;
-    }
+    if (likely(SUCCEEDED(hr)))
+      m_commonD3DDevice->SetInScene(false);
 
     return hr;
   }
@@ -480,8 +504,10 @@ namespace dxvk {
     if (unlikely(m_currentViewport == d3d6Viewport))
       return D3D_OK;
 
-    if (likely(m_currentViewport != nullptr))
+    if (likely(m_currentViewport != nullptr)) {
+      m_currentViewport->DeactivateLights();
       m_currentViewport->GetCommonViewport()->SetIsCurrentViewport(false);
+    }
 
     m_currentViewport = d3d6Viewport.ptr();
 
@@ -529,20 +555,10 @@ namespace dxvk {
 
     DDraw4Surface* rt6 = static_cast<DDraw4Surface*>(surface);
 
-    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
-
-    if (unlikely(d3dOptions->forceProxiedPresent)) {
-      HRESULT hrRT = m_proxy->SetRenderTarget(rt6->GetProxied(), flags);
-      if (unlikely(FAILED(hrRT))) {
-        Logger::warn("D3D6Device::SetRenderTarget: Failed to set RT");
-        return hrRT;
-      }
-    } else {
-      // Needed to ensure proxied Z/Stencil viewport clears will work
-      HRESULT hrRT = m_proxy->SetRenderTarget(rt6->GetProxied(), flags);
-      if (unlikely(FAILED(hrRT)))
-        Logger::debug("D3D6Device::SetRenderTarget: Failed to set RT");
-    }
+    // Needed to ensure proxied Z/Stencil viewport clears will work
+    HRESULT hrRT = m_proxy->SetRenderTarget(rt6->GetShadowOrProxied(), flags);
+    if (unlikely(FAILED(hrRT)))
+      Logger::debug("D3D6Device::SetRenderTarget: Failed to set RT");
 
     HRESULT hr = rt6->GetCommonSurface()->ValidateRTUsage();
     if (unlikely(FAILED(hr)))
@@ -554,7 +570,9 @@ namespace dxvk {
       return hr;
     }
 
-    hr = m_d3d9->SetRenderTarget(0, rt6->GetD3D9());
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+    hr = device9->SetRenderTarget(0, rt6->GetCommonSurface()->GetD3D9Surface());
 
     if (likely(SUCCEEDED(hr))) {
       Logger::debug("D3D6Device::SetRenderTarget: Set a new D3D9 RT");
@@ -573,7 +591,7 @@ namespace dxvk {
           return hrDS;
         }
 
-        hrDS = m_d3d9->SetDepthStencilSurface(m_ds->GetD3D9());
+        hrDS = device9->SetDepthStencilSurface(m_ds->GetCommonSurface()->GetD3D9Surface());
         if (unlikely(FAILED(hrDS))) {
           Logger::err("D3D6Device::SetRenderTarget: Failed to set D3D9 DS");
           return hrDS;
@@ -583,7 +601,7 @@ namespace dxvk {
       } else {
         Logger::debug("D3D6Device::SetRenderTarget: RT has no depth stencil attached");
 
-        hrDS = m_d3d9->SetDepthStencilSurface(nullptr);
+        hrDS = device9->SetDepthStencilSurface(nullptr);
         if (unlikely(FAILED(hrDS))) {
           Logger::err("D3D6Device::SetRenderTarget: Failed to clear the D3D9 DS");
           return hrDS;
@@ -706,12 +724,14 @@ namespace dxvk {
 
     // As opposed to D3D7, D3D6 does not error out on
     // unknown or invalid render states.
-    if (unlikely(!IsValidD3D6RenderStateType(dwRenderStateType))) {
+    if (unlikely(!IsValidD3D6RenderStateType(dwRenderStateType)
+              && !m_commonIntf->GetOptions()->apitraceMode)) {
       Logger::debug(str::format("D3D6Device::GetRenderState: Invalid render state ", dwRenderStateType));
       *lpdwRenderState = 0;
       return D3D_OK;
     }
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
     d3d9::D3DRENDERSTATETYPE State9 = d3d9::D3DRENDERSTATETYPE(dwRenderStateType);
 
     switch (dwRenderStateType) {
@@ -725,11 +745,11 @@ namespace dxvk {
         return D3D_OK;
 
       case D3DRENDERSTATE_ANTIALIAS:
-        *lpdwRenderState = m_antialias;
+        *lpdwRenderState = m_commonD3DDevice->GetAntialias();
         return D3D_OK;
 
       case D3DRENDERSTATE_TEXTUREADDRESS:
-        m_d3d9->GetSamplerState(0, d3d9::D3DSAMP_ADDRESSU, lpdwRenderState);
+        device9->GetSamplerState(0, d3d9::D3DSAMP_ADDRESSU, lpdwRenderState);
         return D3D_OK;
 
       // Always enabled on later APIs, default TRUE in D3D6
@@ -740,7 +760,7 @@ namespace dxvk {
       // Not implemented in DXVK, but retrieve it as it were
       case D3DRENDERSTATE_WRAPU: {
         DWORD value9 = 0;
-        m_d3d9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
+        device9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
         *lpdwRenderState = value9 & D3DWRAP_U;
         return D3D_OK;
       }
@@ -748,13 +768,13 @@ namespace dxvk {
       // Not implemented in DXVK, but retrieve it as it were
       case D3DRENDERSTATE_WRAPV: {
         DWORD value9 = 0;
-        m_d3d9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
+        device9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
         *lpdwRenderState = value9 & D3DWRAP_V;
         return D3D_OK;
       }
 
       case D3DRENDERSTATE_LINEPATTERN:
-        *lpdwRenderState = bit::cast<DWORD>(m_linePattern);
+        *lpdwRenderState = bit::cast<DWORD>(m_commonD3DDevice->GetLinePattern());
         return D3D_OK;
 
       case D3DRENDERSTATE_MONOENABLE:
@@ -770,20 +790,20 @@ namespace dxvk {
         return D3D_OK;
 
       case D3DRENDERSTATE_TEXTUREMAG:
-        m_d3d9->GetSamplerState(0, d3d9::D3DSAMP_MAGFILTER, lpdwRenderState);
+        device9->GetSamplerState(0, d3d9::D3DSAMP_MAGFILTER, lpdwRenderState);
         return D3D_OK;
 
       case D3DRENDERSTATE_TEXTUREMIN: {
         DWORD minFilter = 0;
         DWORD mipFilter = 0;
-        m_d3d9->GetSamplerState(0, d3d9::D3DSAMP_MINFILTER, &minFilter);
-        m_d3d9->GetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, &mipFilter);
+        device9->GetSamplerState(0, d3d9::D3DSAMP_MINFILTER, &minFilter);
+        device9->GetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, &mipFilter);
         *lpdwRenderState = DecodeTextureMinValues(minFilter, mipFilter);
         return D3D_OK;
       }
 
       case D3DRENDERSTATE_TEXTUREMAPBLEND:
-        *lpdwRenderState = m_textureMapBlend;
+        *lpdwRenderState = m_commonD3DDevice->GetTextureMapBlend();
         return D3D_OK;
 
       // Not supported by D3D6
@@ -809,34 +829,34 @@ namespace dxvk {
         break;
 
       case D3DRENDERSTATE_COLORKEYENABLE:
-        *lpdwRenderState = m_colorKeyEnabled;
+        *lpdwRenderState = m_commonD3DDevice->GetColorKeyEnable();
         return D3D_OK;
 
       case D3DRENDERSTATE_BORDERCOLOR:
-        m_d3d9->GetSamplerState(0, d3d9::D3DSAMP_BORDERCOLOR, lpdwRenderState);
+        device9->GetSamplerState(0, d3d9::D3DSAMP_BORDERCOLOR, lpdwRenderState);
         return D3D_OK;
 
       case D3DRENDERSTATE_TEXTUREADDRESSU:
-        m_d3d9->GetSamplerState(0, d3d9::D3DSAMP_ADDRESSU, lpdwRenderState);
+        device9->GetSamplerState(0, d3d9::D3DSAMP_ADDRESSU, lpdwRenderState);
         return D3D_OK;
 
       case D3DRENDERSTATE_TEXTUREADDRESSV:
-        m_d3d9->GetSamplerState(0, d3d9::D3DSAMP_ADDRESSV, lpdwRenderState);
+        device9->GetSamplerState(0, d3d9::D3DSAMP_ADDRESSV, lpdwRenderState);
         return D3D_OK;
 
       case D3DRENDERSTATE_MIPMAPLODBIAS:
-        m_d3d9->GetSamplerState(0, d3d9::D3DSAMP_MIPMAPLODBIAS, lpdwRenderState);
+        device9->GetSamplerState(0, d3d9::D3DSAMP_MIPMAPLODBIAS, lpdwRenderState);
         return D3D_OK;
 
       case D3DRENDERSTATE_ZBIAS: {
         DWORD bias = 0;
-        m_d3d9->GetRenderState(d3d9::D3DRS_DEPTHBIAS, &bias);
+        device9->GetRenderState(d3d9::D3DRS_DEPTHBIAS, &bias);
         *lpdwRenderState = static_cast<DWORD>(bit::cast<float>(bias) * ddrawCaps::ZBIAS_SCALE_INV);
         return D3D_OK;
       }
 
       case D3DRENDERSTATE_ANISOTROPY:
-        m_d3d9->GetSamplerState(0, d3d9::D3DSAMP_MAXANISOTROPY, lpdwRenderState);
+        device9->GetSamplerState(0, d3d9::D3DSAMP_MAXANISOTROPY, lpdwRenderState);
         return D3D_OK;
 
       // "Batched primitives are implicitly flushed when rendering with the
@@ -886,7 +906,7 @@ namespace dxvk {
     }
 
     // This call will never fail
-    return m_d3d9->GetRenderState(State9, lpdwRenderState);
+    return device9->GetRenderState(State9, lpdwRenderState);
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::SetRenderState(D3DRENDERSTATETYPE dwRenderStateType, DWORD dwRenderState) {
@@ -901,6 +921,7 @@ namespace dxvk {
       return D3D_OK;
     }
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
     d3d9::D3DRENDERSTATETYPE State9 = d3d9::D3DRENDERSTATETYPE(dwRenderStateType);
 
     switch (dwRenderStateType) {
@@ -923,16 +944,16 @@ namespace dxvk {
         }
 
         State9        = d3d9::D3DRS_MULTISAMPLEANTIALIAS;
-        m_antialias   = dwRenderState;
-        dwRenderState = m_antialias == D3DANTIALIAS_SORTDEPENDENT
-                     || m_antialias == D3DANTIALIAS_SORTINDEPENDENT
+        m_commonD3DDevice->SetAntialias(dwRenderState);
+        dwRenderState = dwRenderState == D3DANTIALIAS_SORTDEPENDENT
+                     || dwRenderState == D3DANTIALIAS_SORTINDEPENDENT
                      || d3dOptions->emulateFSAA == FSAAEmulation::Forced ? TRUE : FALSE;
         break;
       }
 
       case D3DRENDERSTATE_TEXTUREADDRESS:
-        m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_ADDRESSU, dwRenderState);
-        m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_ADDRESSV, dwRenderState);
+        device9->SetSamplerState(0, d3d9::D3DSAMP_ADDRESSU, dwRenderState);
+        device9->SetSamplerState(0, d3d9::D3DSAMP_ADDRESSV, dwRenderState);
         return D3D_OK;
 
       // Always enabled on later APIs, default TRUE in D3D6
@@ -942,11 +963,11 @@ namespace dxvk {
       // Not implemented in DXVK, but forward it anyway
       case D3DRENDERSTATE_WRAPU: {
         DWORD value9 = 0;
-        m_d3d9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
+        device9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
         if (dwRenderState == TRUE) {
-          m_d3d9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & D3DWRAP_U);
+          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & D3DWRAP_U);
         } else {
-          m_d3d9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & ~D3DWRAP_U);
+          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & ~D3DWRAP_U);
         }
         return D3D_OK;
       }
@@ -954,11 +975,11 @@ namespace dxvk {
       // Not implemented in DXVK, but forward it anyway
       case D3DRENDERSTATE_WRAPV: {
         DWORD value9 = 0;
-        m_d3d9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
+        device9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
         if (dwRenderState == TRUE) {
-          m_d3d9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & D3DWRAP_V);
+          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & D3DWRAP_V);
         } else {
-          m_d3d9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & ~D3DWRAP_V);
+          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & ~D3DWRAP_V);
         }
         return D3D_OK;
       }
@@ -971,7 +992,7 @@ namespace dxvk {
         if (!std::exchange(s_linePatternErrorShown, true))
           Logger::warn("D3D6Device::SetRenderState: Unimplemented render state D3DRS_LINEPATTERN");
 
-        m_linePattern = bit::cast<D3DLINEPATTERN>(dwRenderState);
+        m_commonD3DDevice->SetLinePattern(bit::cast<D3DLINEPATTERN>(dwRenderState));
         return D3D_OK;
 
       case D3DRENDERSTATE_MONOENABLE:
@@ -1001,7 +1022,7 @@ namespace dxvk {
         switch (dwRenderState) {
           case D3DFILTER_NEAREST:
           case D3DFILTER_LINEAR:
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MAGFILTER, dwRenderState);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MAGFILTER, dwRenderState);
             break;
           default:
             break;
@@ -1013,29 +1034,29 @@ namespace dxvk {
         switch (dwRenderState) {
           case D3DFILTER_NEAREST:
           case D3DFILTER_LINEAR:
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MINFILTER, dwRenderState);
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, d3d9::D3DTEXF_NONE);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MINFILTER, dwRenderState);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, d3d9::D3DTEXF_NONE);
             break;
           // "The closest mipmap level is chosen and a point filter is applied."
           case D3DFILTER_MIPNEAREST:
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MINFILTER, d3d9::D3DTEXF_POINT);
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, d3d9::D3DTEXF_POINT);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MINFILTER, d3d9::D3DTEXF_POINT);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, d3d9::D3DTEXF_POINT);
             break;
           // "The closest mipmap level is chosen and a bilinear filter is applied within it."
           case D3DFILTER_MIPLINEAR:
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MINFILTER, d3d9::D3DTEXF_LINEAR);
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, d3d9::D3DTEXF_POINT);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MINFILTER, d3d9::D3DTEXF_LINEAR);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, d3d9::D3DTEXF_POINT);
             break;
           // "The two closest mipmap levels are chosen and then a linear
           //  blend is used between point filtered samples of each level."
           case D3DFILTER_LINEARMIPNEAREST:
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MINFILTER, d3d9::D3DTEXF_POINT);
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, d3d9::D3DTEXF_LINEAR);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MINFILTER, d3d9::D3DTEXF_POINT);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, d3d9::D3DTEXF_LINEAR);
             break;
           // "The two closest mipmap levels are chosen and then combined using a bilinear filter."
           case D3DFILTER_LINEARMIPLINEAR:
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MINFILTER, d3d9::D3DTEXF_LINEAR);
-            m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, d3d9::D3DTEXF_LINEAR);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MINFILTER, d3d9::D3DTEXF_LINEAR);
+            device9->SetSamplerState(0, d3d9::D3DSAMP_MIPFILTER, d3d9::D3DTEXF_LINEAR);
             break;
           default:
             break;
@@ -1044,19 +1065,19 @@ namespace dxvk {
       }
 
       case D3DRENDERSTATE_TEXTUREMAPBLEND:
-        m_textureMapBlend = dwRenderState;
+        m_commonD3DDevice->SetTextureMapBlend(dwRenderState);
 
         switch (dwRenderState) {
           // "In this mode, the RGB and alpha values of the texture replace
           //  the colors that would have been used with no texturing."
           case D3DTBLEND_DECAL:
           case D3DTBLEND_COPY:
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_SELECTARG1);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG1);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_CURRENT);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_CURRENT);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_SELECTARG1);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG1);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_CURRENT);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_CURRENT);
             break;
           // "In this mode, the RGB values of the texture are multiplied with the RGB values
           //  that would have been used with no texturing. Any alpha values in the texture
@@ -1064,43 +1085,43 @@ namespace dxvk {
           //  if the texture does not contain an alpha component, alpha values at the vertices
           //  in the source are interpolated between vertices."
           case D3DTBLEND_MODULATE:
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_MODULATE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG1);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_MODULATE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG1);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
             break;
           // "In this mode, the RGB and alpha values of the texture are blended with the colors
           //  that would have been used with no texturing, according to the following formulas [...]"
           case D3DTBLEND_DECALALPHA:
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_BLENDTEXTUREALPHA);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG2);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_BLENDTEXTUREALPHA);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG2);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
             break;
           // "In this mode, the RGB values of the texture are multiplied with the RGB values that
           //  would have been used with no texturing, and the alpha values of the texture
           //  are multiplied with the alpha values that would have been used with no texturing."
           case D3DTBLEND_MODULATEALPHA:
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_MODULATE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_MODULATE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_MODULATE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_MODULATE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
             break;
           // "Add the Gouraud interpolants to the texture lookup with saturation semantics
           //  (that is, if the color value overflows it is set to the maximum possible value)."
           case D3DTBLEND_ADD:
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_ADD);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG2);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-            m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_ADD);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG2);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
             break;
           // Unsupported
           default:
@@ -1145,11 +1166,11 @@ namespace dxvk {
         break;
 
       case D3DRENDERSTATE_COLORKEYENABLE: {
-        m_colorKeyEnabled = dwRenderState;
+        m_commonD3DDevice->SetColorKeyEnable(dwRenderState);
 
         const bool validColorKey = m_textures[0] != nullptr ? m_textures[0]->GetParent()->GetCommonSurface()->HasValidColorKey() : false;
-        m_bridge->SetColorKeyState(m_colorKeyEnabled && validColorKey);
-        if (m_colorKeyEnabled && validColorKey) {
+        m_bridge->SetColorKeyState(dwRenderState && validColorKey);
+        if (dwRenderState && validColorKey) {
           DDCOLORKEY normalizedColorKey = m_textures[0]->GetParent()->GetCommonSurface()->GetColorKeyNormalized();
           m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
                                 normalizedColorKey.dwColorSpaceHighValue);
@@ -1159,19 +1180,19 @@ namespace dxvk {
       }
 
       case D3DRENDERSTATE_BORDERCOLOR:
-        m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_BORDERCOLOR, dwRenderState);
+        device9->SetSamplerState(0, d3d9::D3DSAMP_BORDERCOLOR, dwRenderState);
         return D3D_OK;
 
       case D3DRENDERSTATE_TEXTUREADDRESSU:
-        m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_ADDRESSU, dwRenderState);
+        device9->SetSamplerState(0, d3d9::D3DSAMP_ADDRESSU, dwRenderState);
         return D3D_OK;
 
       case D3DRENDERSTATE_TEXTUREADDRESSV:
-        m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_ADDRESSV, dwRenderState);
+        device9->SetSamplerState(0, d3d9::D3DSAMP_ADDRESSV, dwRenderState);
         return D3D_OK;
 
       case D3DRENDERSTATE_MIPMAPLODBIAS:
-        m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MIPMAPLODBIAS, dwRenderState);
+        device9->SetSamplerState(0, d3d9::D3DSAMP_MIPMAPLODBIAS, dwRenderState);
         return D3D_OK;
 
       case D3DRENDERSTATE_ZBIAS:
@@ -1180,7 +1201,7 @@ namespace dxvk {
         break;
 
       case D3DRENDERSTATE_ANISOTROPY:
-        m_d3d9->SetSamplerState(0, d3d9::D3DSAMP_MAXANISOTROPY, dwRenderState);
+        device9->SetSamplerState(0, d3d9::D3DSAMP_MAXANISOTROPY, dwRenderState);
         return D3D_OK;
 
       // "Batched primitives are implicitly flushed when rendering with the
@@ -1236,7 +1257,7 @@ namespace dxvk {
     }
 
     // This call will never fail
-    return m_d3d9->SetRenderState(State9, dwRenderState);
+    return device9->SetRenderState(State9, dwRenderState);
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::GetLightState(D3DLIGHTSTATETYPE dwLightStateType, LPDWORD lpdwLightState) {
@@ -1244,30 +1265,32 @@ namespace dxvk {
 
     Logger::debug(">>> D3D6Device::GetLightState");
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
     switch (dwLightStateType) {
       case D3DLIGHTSTATE_MATERIAL:
-        *lpdwLightState = m_materialHandle;
+        *lpdwLightState = m_commonD3DDevice->GetCurrentMaterialHandle();
         break;
       case D3DLIGHTSTATE_AMBIENT:
-        m_d3d9->GetRenderState(d3d9::D3DRS_AMBIENT, lpdwLightState);
+        device9->GetRenderState(d3d9::D3DRS_AMBIENT, lpdwLightState);
         break;
       case D3DLIGHTSTATE_COLORMODEL:
         *lpdwLightState = D3DCOLOR_RGB;
         break;
       case D3DLIGHTSTATE_FOGMODE:
-        m_d3d9->GetRenderState(d3d9::D3DRS_FOGVERTEXMODE, lpdwLightState);
+        device9->GetRenderState(d3d9::D3DRS_FOGVERTEXMODE, lpdwLightState);
         break;
       case D3DLIGHTSTATE_FOGSTART:
-        m_d3d9->GetRenderState(d3d9::D3DRS_FOGSTART, lpdwLightState);
+        device9->GetRenderState(d3d9::D3DRS_FOGSTART, lpdwLightState);
         break;
       case D3DLIGHTSTATE_FOGEND:
-        m_d3d9->GetRenderState(d3d9::D3DRS_FOGEND, lpdwLightState);
+        device9->GetRenderState(d3d9::D3DRS_FOGEND, lpdwLightState);
         break;
       case D3DLIGHTSTATE_FOGDENSITY:
-        m_d3d9->GetRenderState(d3d9::D3DRS_FOGDENSITY, lpdwLightState);
+        device9->GetRenderState(d3d9::D3DRS_FOGDENSITY, lpdwLightState);
         break;
       case D3DLIGHTSTATE_COLORVERTEX:
-        m_d3d9->GetRenderState(d3d9::D3DRS_COLORVERTEX, lpdwLightState);
+        device9->GetRenderState(d3d9::D3DRS_COLORVERTEX, lpdwLightState);
         break;
       default:
         return DDERR_INVALIDPARAMS;
@@ -1281,10 +1304,12 @@ namespace dxvk {
 
     Logger::debug(">>> D3D6Device::SetLightState");
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
     switch (dwLightStateType) {
       case D3DLIGHTSTATE_MATERIAL: {
         if (unlikely(!dwLightState)) {
-          m_materialHandle = dwLightState;
+          m_commonD3DDevice->SetCurrentMaterialHandle(dwLightState);
           return D3D_OK;
         }
 
@@ -1292,33 +1317,33 @@ namespace dxvk {
         if (unlikely(material9 == nullptr))
           return DDERR_INVALIDPARAMS;
 
-        m_materialHandle = dwLightState;
+        m_commonD3DDevice->SetCurrentMaterialHandle(dwLightState);
         Logger::debug(str::format("D3D6Device::SetLightState: Applying material nr. ", dwLightState, " to D3D9"));
-        m_d3d9->SetMaterial(material9);
+        device9->SetMaterial(material9);
 
         break;
       }
       case D3DLIGHTSTATE_AMBIENT:
-        m_d3d9->SetRenderState(d3d9::D3DRS_AMBIENT, dwLightState);
+        device9->SetRenderState(d3d9::D3DRS_AMBIENT, dwLightState);
         break;
       case D3DLIGHTSTATE_COLORMODEL:
         if (unlikely(dwLightState != D3DCOLOR_RGB))
           Logger::warn("D3D6Device::SetLightState: Unsupported D3DLIGHTSTATE_COLORMODEL");
         break;
       case D3DLIGHTSTATE_FOGMODE:
-        m_d3d9->SetRenderState(d3d9::D3DRS_FOGVERTEXMODE, dwLightState);
+        device9->SetRenderState(d3d9::D3DRS_FOGVERTEXMODE, dwLightState);
         break;
       case D3DLIGHTSTATE_FOGSTART:
-        m_d3d9->SetRenderState(d3d9::D3DRS_FOGSTART, dwLightState);
+        device9->SetRenderState(d3d9::D3DRS_FOGSTART, dwLightState);
         break;
       case D3DLIGHTSTATE_FOGEND:
-        m_d3d9->SetRenderState(d3d9::D3DRS_FOGEND, dwLightState);
+        device9->SetRenderState(d3d9::D3DRS_FOGEND, dwLightState);
         break;
       case D3DLIGHTSTATE_FOGDENSITY:
-        m_d3d9->SetRenderState(d3d9::D3DRS_FOGDENSITY, dwLightState);
+        device9->SetRenderState(d3d9::D3DRS_FOGDENSITY, dwLightState);
         break;
       case D3DLIGHTSTATE_COLORVERTEX:
-        m_d3d9->SetRenderState(d3d9::D3DRS_COLORVERTEX, dwLightState);
+        device9->SetRenderState(d3d9::D3DRS_COLORVERTEX, dwLightState);
         break;
       default:
         return DDERR_INVALIDPARAMS;
@@ -1329,17 +1354,17 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D6Device::SetTransform(D3DTRANSFORMSTATETYPE state, D3DMATRIX *matrix) {
     Logger::debug(">>> D3D6Device::SetTransform");
-    return m_d3d9->SetTransform(ConvertTransformState(state), matrix);
+    return m_commonD3DDevice->GetD3D9Device()->SetTransform(ConvertTransformState(state), matrix);
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::GetTransform(D3DTRANSFORMSTATETYPE state, D3DMATRIX *matrix) {
     Logger::debug(">>> D3D6Device::GetTransform");
-    return m_d3d9->GetTransform(ConvertTransformState(state), matrix);
+    return m_commonD3DDevice->GetD3D9Device()->GetTransform(ConvertTransformState(state), matrix);
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::MultiplyTransform(D3DTRANSFORMSTATETYPE state, D3DMATRIX *matrix) {
     Logger::debug(">>> D3D6Device::MultiplyTransform");
-    return m_d3d9->MultiplyTransform(ConvertTransformState(state), matrix);
+    return m_commonD3DDevice->GetD3D9Device()->MultiplyTransform(ConvertTransformState(state), matrix);
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::DrawPrimitive(D3DPRIMITIVETYPE primitive_type, DWORD vertex_type, void *vertices, DWORD vertex_count, DWORD flags) {
@@ -1355,11 +1380,17 @@ namespace dxvk {
     if (unlikely(vertices == nullptr))
       return DDERR_INVALIDPARAMS;
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+    m_rt->InitializeOrUploadD3D9();
+    if (likely(m_ds != nullptr))
+      m_ds->InitializeOrUploadD3D9();
+
     HandlePreDrawFlags(flags, vertex_type);
     HandlePreDrawLegacyProjection(flags);
 
-    m_d3d9->SetFVF(vertex_type);
-    HRESULT hr = m_d3d9->DrawPrimitiveUP(
+    device9->SetFVF(vertex_type);
+    HRESULT hr = device9->DrawPrimitiveUP(
                      d3d9::D3DPRIMITIVETYPE(primitive_type),
                      GetPrimitiveCount(primitive_type, vertex_count),
                      vertices,
@@ -1373,7 +1404,7 @@ namespace dxvk {
       return hr;
     }
 
-    m_commonIntf->UpdateDrawTracking();
+    UpdateSurfaceDirtyTracking(true, true, true);
 
     return hr;
   }
@@ -1391,11 +1422,17 @@ namespace dxvk {
     if (unlikely(vertices == nullptr || indices == nullptr))
       return DDERR_INVALIDPARAMS;
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+    m_rt->InitializeOrUploadD3D9();
+    if (likely(m_ds != nullptr))
+      m_ds->InitializeOrUploadD3D9();
+
     HandlePreDrawFlags(flags, fvf);
     HandlePreDrawLegacyProjection(flags);
 
-    m_d3d9->SetFVF(fvf);
-    HRESULT hr = m_d3d9->DrawIndexedPrimitiveUP(
+    device9->SetFVF(fvf);
+    HRESULT hr = device9->DrawIndexedPrimitiveUP(
                       d3d9::D3DPRIMITIVETYPE(primitive_type),
                       0,
                       vertex_count,
@@ -1413,33 +1450,37 @@ namespace dxvk {
       return hr;
     }
 
-    m_commonIntf->UpdateDrawTracking();
+    UpdateSurfaceDirtyTracking(true, true, true);
 
     return hr;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::SetClipStatus(D3DCLIPSTATUS *clip_status) {
-    D3DDeviceLock lock = LockDevice();
-
     Logger::debug(">>> D3D6Device::SetClipStatus");
 
     if (unlikely(clip_status == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    m_clipStatus = *clip_status;
-
     return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::GetClipStatus(D3DCLIPSTATUS *clip_status) {
-    D3DDeviceLock lock = LockDevice();
-
     Logger::debug(">>> D3D6Device::GetClipStatus");
 
     if (unlikely(clip_status == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    *clip_status = m_clipStatus;
+    d3d9::D3DVIEWPORT9 viewport9;
+    if (SUCCEEDED(m_commonD3DDevice->GetD3D9Device()->GetViewport(&viewport9))) {
+      clip_status->dwFlags = D3DCLIPSTATUS_EXTENTS2;
+      clip_status->dwStatus = 0;
+      clip_status->minx = viewport9.X;
+      clip_status->maxx = viewport9.X + viewport9.Height;
+      clip_status->miny = viewport9.Y;
+      clip_status->maxy = viewport9.Y + viewport9.Width;
+      clip_status->minz = 0;
+      clip_status->maxz = 0;
+    }
 
     return D3D_OK;
   }
@@ -1457,14 +1498,20 @@ namespace dxvk {
     if (unlikely(strided_data == nullptr))
       return DDERR_INVALIDPARAMS;
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+    m_rt->InitializeOrUploadD3D9();
+    if (likely(m_ds != nullptr))
+      m_ds->InitializeOrUploadD3D9();
+
     // Transform strided vertex data to a standard vertex buffer stream
     PackedVertexBuffer pvb = TransformStridedtoUP(fvf, strided_data, vertex_count);
 
     HandlePreDrawFlags(flags, fvf);
     HandlePreDrawLegacyProjection(flags);
 
-    m_d3d9->SetFVF(fvf);
-    HRESULT hr = m_d3d9->DrawPrimitiveUP(
+    device9->SetFVF(fvf);
+    HRESULT hr = device9->DrawPrimitiveUP(
                      d3d9::D3DPRIMITIVETYPE(primitive_type),
                      GetPrimitiveCount(primitive_type, vertex_count),
                      pvb.vertexData.data(),
@@ -1478,7 +1525,7 @@ namespace dxvk {
       return hr;
     }
 
-    m_commonIntf->UpdateDrawTracking();
+    UpdateSurfaceDirtyTracking(true, true, true);
 
     return hr;
   }
@@ -1496,14 +1543,20 @@ namespace dxvk {
     if (unlikely(strided_data == nullptr || indices == nullptr))
       return DDERR_INVALIDPARAMS;
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+    m_rt->InitializeOrUploadD3D9();
+    if (likely(m_ds != nullptr))
+      m_ds->InitializeOrUploadD3D9();
+
     // Transform strided vertex data to a standard vertex buffer stream
     PackedVertexBuffer pvb = TransformStridedtoUP(fvf, strided_data, vertex_count);
 
     HandlePreDrawFlags(flags, fvf);
     HandlePreDrawLegacyProjection(flags);
 
-    m_d3d9->SetFVF(fvf);
-    HRESULT hr = m_d3d9->DrawIndexedPrimitiveUP(
+    device9->SetFVF(fvf);
+    HRESULT hr = device9->DrawIndexedPrimitiveUP(
                       d3d9::D3DPRIMITIVETYPE(primitive_type),
                       0,
                       vertex_count,
@@ -1521,7 +1574,7 @@ namespace dxvk {
       return hr;
     }
 
-    m_commonIntf->UpdateDrawTracking();
+    UpdateSurfaceDirtyTracking(true, true, true);
 
     return hr;
   }
@@ -1546,12 +1599,18 @@ namespace dxvk {
       return D3DERR_VERTEXBUFFERLOCKED;
     }
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+    m_rt->InitializeOrUploadD3D9();
+    if (likely(m_ds != nullptr))
+      m_ds->InitializeOrUploadD3D9();
+
     HandlePreDrawFlags(flags, vb6->GetFVF());
     HandlePreDrawLegacyProjection(flags);
 
-    m_d3d9->SetFVF(vb6->GetFVF());
-    m_d3d9->SetStreamSource(0, vb6->GetD3D9(), 0, vb6->GetStride());
-    HRESULT hr = m_d3d9->DrawPrimitive(
+    device9->SetFVF(vb6->GetFVF());
+    device9->SetStreamSource(0, vb6->GetD3D9VertexBuffer(), 0, vb6->GetStride());
+    HRESULT hr = device9->DrawPrimitive(
                            d3d9::D3DPRIMITIVETYPE(primitive_type),
                            start_vertex,
                            GetPrimitiveCount(primitive_type, vertex_count));
@@ -1564,7 +1623,7 @@ namespace dxvk {
       return hr;
     }
 
-    m_commonIntf->UpdateDrawTracking();
+    UpdateSurfaceDirtyTracking(true, true, true);
 
     return hr;
   }
@@ -1596,9 +1655,15 @@ namespace dxvk {
       ibIndex++;
       if (unlikely(ibIndex > ddrawCaps::IndexBufferCount - 1)) {
         Logger::err("D3D6Device::DrawIndexedPrimitiveVB: Exceeded size of largest index buffer");
-        return DDERR_GENERIC;
+        return DDERR_UNSUPPORTED;
       }
     }
+
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+    m_rt->InitializeOrUploadD3D9();
+    if (likely(m_ds != nullptr))
+      m_ds->InitializeOrUploadD3D9();
 
     HandlePreDrawFlags(flags, vb6->GetFVF());
     HandlePreDrawLegacyProjection(flags);
@@ -1607,10 +1672,10 @@ namespace dxvk {
 
     UploadIndices(ib9, indices, index_count);
     m_ib9_uploads[ibIndex]++;
-    m_d3d9->SetIndices(ib9);
-    m_d3d9->SetFVF(vb6->GetFVF());
-    m_d3d9->SetStreamSource(0, vb6->GetD3D9(), 0, vb6->GetStride());
-    HRESULT hr = m_d3d9->DrawIndexedPrimitive(
+    device9->SetIndices(ib9);
+    device9->SetFVF(vb6->GetFVF());
+    device9->SetStreamSource(0, vb6->GetD3D9VertexBuffer(), 0, vb6->GetStride());
+    HRESULT hr = device9->DrawIndexedPrimitive(
                     d3d9::D3DPRIMITIVETYPE(primitive_type),
                     0,
                     0,
@@ -1626,7 +1691,7 @@ namespace dxvk {
       return hr;
     }
 
-    m_commonIntf->UpdateDrawTracking();
+    UpdateSurfaceDirtyTracking(true, true, true);
 
     return hr;
   }
@@ -1679,13 +1744,15 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
     }
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
     HRESULT hr;
 
     // Unbinding texture stages
     if (texture == nullptr) {
       Logger::debug("D3D6Device::SetTexture: Unbiding D3D9 texture");
 
-      hr = m_d3d9->SetTexture(stage, nullptr);
+      hr = device9->SetTexture(stage, nullptr);
 
       if (likely(SUCCEEDED(hr))) {
         if (m_textures[stage] != nullptr) {
@@ -1702,38 +1769,30 @@ namespace dxvk {
       return hr;
     }
 
-    Logger::debug("D3D6Device::SetTexture: Binding D3D9 texture");
-
     D3D6Texture* texture6 = static_cast<D3D6Texture*>(texture);
     DDraw4Surface* surface6 = texture6->GetParent();
 
-    // Only upload textures if any sort of blit/lock operation
-    // has been performed on them since the last SetTexture call,
-    // or textures which have been used on a different device, and
-    // need their D3D9 object to be reinitialized at this point
-    if (surface6->GetCommonSurface()->HasDirtyMipMaps() ||
-        unlikely(surface6->GetD3D9Device() != m_d3d9.ptr())) {
-      hr = surface6->InitializeOrUploadD3D9();
-      if (unlikely(FAILED(hr))) {
-        Logger::err("D3D6Device::SetTexture: Failed to initialize/upload D3D9 texture");
-        return hr;
-      }
+    Logger::debug("D3D6Device::SetTexture: Binding D3D9 texture");
 
-      surface6->GetCommonSurface()->UnDirtyMipMaps();
-    } else {
-      Logger::debug("D3D6Device::SetTexture: Skipping upload of texture and mip maps");
+    // If textures have been used on a different device, they
+    // will get their D3D9 object reinitialized at this point
+    if (unlikely(surface6->GetCommonSurface()->GetCommonD3DDevice() != m_commonD3DDevice.ptr()))
+      surface6->GetCommonSurface()->DirtyDDrawSurface();
+
+    hr = surface6->InitializeOrUploadD3D9();
+    if (unlikely(FAILED(hr))) {
+      Logger::err("D3D6Device::SetTexture: Failed to initialize/upload D3D9 texture");
+      return hr;
     }
 
-    // Only fast skip on D3D9 side, since we want to ensure
-    // color keying is applied properly even in the case
-    // of the same texture being set again (color key may change)
+    // Don't fast skip, since color key might change
     //if (unlikely(m_textures[stage] == texture6))
       //return D3D_OK;
 
-    d3d9::IDirect3DTexture9* tex9 = surface6->GetD3D9Texture();
+    d3d9::IDirect3DTexture9* tex9 = surface6->GetCommonSurface()->GetD3D9Texture();
 
     if (likely(tex9 != nullptr)) {
-      hr = m_d3d9->SetTexture(stage, tex9);
+      hr = device9->SetTexture(stage, tex9);
       if (unlikely(FAILED(hr))) {
         Logger::warn("D3D6Device::SetTexture: Failed to bind D3D9 texture");
         return hr;
@@ -1743,14 +1802,15 @@ namespace dxvk {
         // "Any alpha values in the texture replace the alpha values in the colors that would
         //  have been used with no texturing; if the texture does not contain an alpha component,
         //  alpha values at the vertices in the source are interpolated between vertices."
-        if (m_textureMapBlend == D3DTBLEND_MODULATE && !m_alphaOpSet) {
+        if (m_commonD3DDevice->GetTextureMapBlend() == D3DTBLEND_MODULATE && !m_alphaOpSet) {
           const DWORD textureOp = surface6->GetCommonSurface()->IsAlphaFormat() ? D3DTOP_SELECTARG1 : D3DTOP_MODULATE;
-          m_d3d9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP, textureOp);
+          device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP, textureOp);
         }
 
+        const bool colorKeyEnable = m_commonD3DDevice->GetColorKeyEnable();
         const bool validColorKey = surface6->GetCommonSurface()->HasValidColorKey();
-        m_bridge->SetColorKeyState(m_colorKeyEnabled && validColorKey);
-        if (m_colorKeyEnabled && validColorKey) {
+        m_bridge->SetColorKeyState(colorKeyEnable && validColorKey);
+        if (colorKeyEnable && validColorKey) {
           DDCOLORKEY normalizedColorKey = surface6->GetCommonSurface()->GetColorKeyNormalized();
           m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
                                 normalizedColorKey.dwColorSpaceHighValue);
@@ -1769,10 +1829,12 @@ namespace dxvk {
     if (unlikely(lpdwState == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    // In the case of D3DTSS_ADDRESS, which is D3D6 specific,
-    // simply return based on D3DTSS_ADDRESSU
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+    // In the case of D3DTSS_ADDRESS, which is exclusive to D3D7
+    // and D3D6, simply return based on D3DTSS_ADDRESSU
     if (d3dTexStageStateType == D3DTSS_ADDRESS) {
-      return m_d3d9->GetSamplerState(dwStage, d3d9::D3DSAMP_ADDRESSU, lpdwState);
+      return device9->GetSamplerState(dwStage, d3d9::D3DSAMP_ADDRESSU, lpdwState);
     }
 
     d3d9::D3DSAMPLERSTATETYPE stateType = ConvertSamplerStateType(d3dTexStageStateType);
@@ -1783,25 +1845,27 @@ namespace dxvk {
       if (stateType == d3d9::D3DSAMP_MAGFILTER ||
           stateType == d3d9::D3DSAMP_MINFILTER || stateType == d3d9::D3DSAMP_MIPFILTER) {
         DWORD dwStateProxy9 = 0;
-        HRESULT hr = m_d3d9->GetSamplerState(dwStage, stateType, &dwStateProxy9);
+        HRESULT hr = device9->GetSamplerState(dwStage, stateType, &dwStateProxy9);
         *lpdwState = DecodeD3D9TexFilterValues(d3dTexStageStateType, dwStateProxy9);
         return hr;
       } else {
-        return m_d3d9->GetSamplerState(dwStage, stateType, lpdwState);
+        return device9->GetSamplerState(dwStage, stateType, lpdwState);
       }
     } else {
-      return m_d3d9->GetTextureStageState(dwStage, d3d9::D3DTEXTURESTAGESTATETYPE(d3dTexStageStateType), lpdwState);
+      return device9->GetTextureStageState(dwStage, d3d9::D3DTEXTURESTAGESTATETYPE(d3dTexStageStateType), lpdwState);
     }
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::SetTextureStageState(DWORD dwStage, D3DTEXTURESTAGESTATETYPE d3dTexStageStateType, DWORD dwState) {
     Logger::debug(">>> D3D6Device::SetTextureStageState");
 
-    // In the case of D3DTSS_ADDRESS, which is D3D6 specific,
-    // we need to set up both D3DTSS_ADDRESSU and D3DTSS_ADDRESSV
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+    // In the case of D3DTSS_ADDRESS, which is exclusive to D3D7
+    // and D3D6, we need to set up both D3DTSS_ADDRESSU and D3DTSS_ADDRESSV
     if (d3dTexStageStateType == D3DTSS_ADDRESS) {
-      m_d3d9->SetSamplerState(dwStage, d3d9::D3DSAMP_ADDRESSU, dwState);
-      return m_d3d9->SetSamplerState(dwStage, d3d9::D3DSAMP_ADDRESSV, dwState);
+      device9->SetSamplerState(dwStage, d3d9::D3DSAMP_ADDRESSU, dwState);
+      return device9->SetSamplerState(dwStage, d3d9::D3DSAMP_ADDRESSV, dwState);
     }
 
     if (!m_alphaOpSet && d3dTexStageStateType == D3DTSS_ALPHAOP)
@@ -1815,19 +1879,19 @@ namespace dxvk {
       if (stateType == d3d9::D3DSAMP_MAGFILTER ||
           stateType == d3d9::D3DSAMP_MINFILTER || stateType == d3d9::D3DSAMP_MIPFILTER) {
         const DWORD dwState9 = DecodeD3D7TexFilterValues(d3dTexStageStateType, dwState);
-        return m_d3d9->SetSamplerState(dwStage, stateType, dwState9);
+        return device9->SetSamplerState(dwStage, stateType, dwState9);
       } else {
-        return m_d3d9->SetSamplerState(dwStage, stateType, dwState);
+        return device9->SetSamplerState(dwStage, stateType, dwState);
       }
     } else {
-      return m_d3d9->SetTextureStageState(dwStage, d3d9::D3DTEXTURESTAGESTATETYPE(d3dTexStageStateType), dwState);
+      return device9->SetTextureStageState(dwStage, d3d9::D3DTEXTURESTAGESTATETYPE(d3dTexStageStateType), dwState);
     }
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::ValidateDevice(LPDWORD lpdwPasses) {
     Logger::debug(">>> D3D6Device::ValidateDevice");
 
-    HRESULT hr = m_d3d9->ValidateDevice(lpdwPasses);
+    HRESULT hr = m_commonD3DDevice->GetD3D9Device()->ValidateDevice(lpdwPasses);
     if (unlikely(FAILED(hr)))
       return DDERR_INVALIDPARAMS;
 
@@ -1835,8 +1899,9 @@ namespace dxvk {
   }
 
   void D3D6Device::InitializeDS() {
-    if (!m_rt->IsInitialized())
-      m_rt->InitializeD3D9RenderTarget();
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+    m_rt->InitializeD3D9RenderTarget();
 
     m_ds = m_rt->GetAttachedDepthStencil();
 
@@ -1854,20 +1919,36 @@ namespace dxvk {
         m_ds->GetProxied()->GetSurfaceDesc(&descDS);
         Logger::debug(str::format("D3D6Device::InitializeDS: DepthStencil: ", descDS.dwWidth, "x", descDS.dwHeight));
 
-        HRESULT hrDS9 = m_d3d9->SetDepthStencilSurface(m_ds->GetD3D9());
+        HRESULT hrDS9 = device9->SetDepthStencilSurface(m_ds->GetCommonSurface()->GetD3D9Surface());
         if(unlikely(FAILED(hrDS9))) {
           Logger::err("D3D6Device::InitializeDS: Failed to set D3D9 depth stencil");
         } else {
           // This needs to act like an auto depth stencil of sorts, so manually enable z-buffering
-          m_d3d9->SetRenderState(d3d9::D3DRS_ZENABLE, d3d9::D3DZB_TRUE);
+          device9->SetRenderState(d3d9::D3DRS_ZENABLE, d3d9::D3DZB_TRUE);
         }
       }
     } else {
       Logger::info("D3D6Device::InitializeDS: RT has no depth stencil attached");
-      m_d3d9->SetDepthStencilSurface(nullptr);
+      device9->SetDepthStencilSurface(nullptr);
       // Should be superfluous, but play it safe
-      m_d3d9->SetRenderState(d3d9::D3DRS_ZENABLE, d3d9::D3DZB_FALSE);
+      device9->SetRenderState(d3d9::D3DRS_ZENABLE, d3d9::D3DZB_FALSE);
     }
+  }
+
+  void D3D6Device::UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface) {
+    if(likely(dirtyRenderTarget))
+      m_rt->GetCommonSurface()->DirtyD3D9Surface();
+
+    if (likely(dirtyPrimarySurface)) {
+      DDrawCommonSurface* primarySurface = m_commonIntf->GetPrimarySurface();
+      // The primary surface can be bound as RT, in which case it will
+      // get dirtied twice, but we have no guarantees that will happen
+      if (likely(primarySurface != nullptr))
+        primarySurface->DirtyD3D9Surface();
+    }
+
+    if (likely(dirtyDepthStencil && m_ds != nullptr))
+      m_ds->GetCommonSurface()->DirtyD3D9Surface();
   }
 
   HRESULT D3D6Device::ResetD3D9Swapchain(d3d9::D3DPRESENT_PARAMETERS* params) {
@@ -1878,7 +1959,7 @@ namespace dxvk {
       Logger::err("D3D6Device::ResetD3D9Swapchain: Failed to reset the D3D9 swapchain");
     } else {
       // TODO: Cache and reset all surfaces tied to the D3D9 backbuffers
-      m_rt->SetD3D9(nullptr);
+      m_rt->GetCommonSurface()->SetD3D9Surface(nullptr);
       // Note that the D3D9 depth stencil survives a swapchain reset,
       // so there's no need to worry about it in this case
     }
@@ -1889,13 +1970,15 @@ namespace dxvk {
   inline HRESULT D3D6Device::InitializeIndexBuffers() {
     static constexpr DWORD Usage = D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY;
 
+    d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
     for (uint8_t ibIndex = 0; ibIndex < ddrawCaps::IndexBufferCount ; ibIndex++) {
       const UINT ibSize = ddrawCaps::IndexCount[ibIndex] * sizeof(WORD);
 
-      Logger::debug(str::format("D3D6Device::InitializeIndexBuffer: Creating index buffer, size: ", ibSize));
+      Logger::debug(str::format("D3D6Device::InitializeIndexBuffer: Creating D3D9 index buffer, size: ", ibSize));
 
-      HRESULT hr = m_d3d9->CreateIndexBuffer(ibSize, Usage, d3d9::D3DFMT_INDEX16,
-                                             d3d9::D3DPOOL_DEFAULT, &m_ib9[ibIndex], nullptr);
+      HRESULT hr = device9->CreateIndexBuffer(ibSize, Usage, d3d9::D3DFMT_INDEX16,
+                                              d3d9::D3DPOOL_DEFAULT, &m_ib9[ibIndex], nullptr);
       if (unlikely(FAILED(hr)))
         return hr;
     }

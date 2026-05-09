@@ -12,7 +12,7 @@ namespace dxvk {
         Com<IDirect3DTexture>&& proxyTexture,
         DDrawSurface* pParent,
         D3DTEXTUREHANDLE handle)
-    : DDrawWrappedObject<DDrawSurface, IDirect3DTexture, IUnknown>(pParent, std::move(proxyTexture), nullptr) {
+    : DDrawWrappedObject<DDrawSurface, IDirect3DTexture>(pParent, std::move(proxyTexture)) {
     m_commonTex = new D3DCommonTexture(m_parent->GetCommonSurface(), handle);
 
     m_texCount = ++s_texCount;
@@ -69,6 +69,14 @@ namespace dxvk {
       Logger::debug("D3D3Texture::QueryInterface: Query for IDirectDrawSurface3");
       return m_parent->QueryInterface(riid, ppvObject);
     }
+    if (unlikely(riid == __uuidof(IDirectDrawSurface4))) {
+      Logger::debug("D3D3Texture::QueryInterface: Query for IDirectDrawSurface4");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
+    if (unlikely(riid == __uuidof(IDirectDrawSurface7))) {
+      Logger::debug("D3D3Texture::QueryInterface: Query for IDirectDrawSurface7");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
 
     try {
       *ppvObject = ref(this->GetInterface(riid));
@@ -92,9 +100,11 @@ namespace dxvk {
     return D3D_OK;
   }
 
+  // Docs state: "This method only affects the legacy ramp device.
+  // For all other devices, this method takes no action and returns D3D_OK."
   HRESULT STDMETHODCALLTYPE D3D3Texture::PaletteChanged(DWORD dwStart, DWORD dwCount) {
-    Logger::warn("<<< D3D3Texture::PaletteChanged: Proxy");
-    return m_proxy->PaletteChanged(dwStart, dwCount);
+    Logger::debug(">>> D3D3Texture::PaletteChanged");
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D3Texture::Load(LPDIRECT3DTEXTURE lpD3DTexture) {
@@ -117,25 +127,21 @@ namespace dxvk {
       m_parent->GetCommonSurface()->SetDesc(desc);
     }
 
-    m_parent->GetCommonSurface()->DirtyMipMaps();
+    m_parent->GetCommonSurface()->DirtyDDrawSurface();
 
     return hr;
   }
 
+  // Docs state: "Returns DDERR_ALREADYINITIALIZED because the Direct3DTexture object is initialized when it is created."
   HRESULT STDMETHODCALLTYPE D3D3Texture::Initialize(LPDIRECT3DDEVICE lpDirect3DDevice, LPDIRECTDRAWSURFACE lpDDSurface) {
-    Logger::debug("<<< D3D3Texture::Initialize: Proxy");
-
-    if(unlikely(lpDirect3DDevice == nullptr || lpDDSurface == nullptr))
-      return DDERR_INVALIDPARAMS;
-
-    D3D3Device* d3d3Device = static_cast<D3D3Device*>(lpDirect3DDevice);
-    DDrawSurface* ddrawSurface = static_cast<DDrawSurface*>(lpDDSurface);
-    return m_proxy->Initialize(d3d3Device->GetProxied(), ddrawSurface->GetProxied());
+    Logger::debug(">>> D3D3Texture::Initialize");
+    return DDERR_ALREADYINITIALIZED;
   }
 
+  // Nothing to do here, this isn't managed texture unloading
   HRESULT STDMETHODCALLTYPE D3D3Texture::Unload() {
-    Logger::debug("<<< D3D3Texture::Unload: Proxy");
-    return m_proxy->Unload();
+    Logger::debug(">>> D3D3Texture::Unload");
+    return D3D_OK;
   }
 
 }

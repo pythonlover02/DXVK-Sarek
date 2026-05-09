@@ -3,18 +3,18 @@
 #include "ddraw_include.h"
 
 #include "../util/config/config.h"
+#include "../util/util_math.h"
 
 namespace dxvk {
 
   enum class FSAAEmulation {
     Disabled,
-    Enabled,
     Forced
   };
 
-  enum class D3DBackBufferGuard {
+  enum class D3DLegacyPresentGuard {
+    Auto,
     Disabled,
-    Enabled,
     Strict
   };
 
@@ -32,6 +32,9 @@ namespace dxvk {
     /// Advertise support for D16
     bool supportD16;
 
+    /// Advertise support for any 32-bit bitmask depth foramts
+    bool support32BitDepth;
+
     /// Replaces any use of D32 with D24X8
     bool useD24X8forD32;
 
@@ -44,8 +47,11 @@ namespace dxvk {
     /// Respect DISCARD only on DYNAMIC + WRITEONLY buffers
     bool forceLegacyDiscard;
 
-    /// Circumvents the texelFetch color key shader path
-    bool colorKeyCompatibility;
+    /// Process vertices on the CPU, instead of relaying to D3D9
+    bool cpuProcessVertices;
+
+    /// Correction offset for X/Y vertex position
+    float vertexOffset;
 
     /// Map all back buffers onto a single D3D9 back buffer
     bool forceSingleBackBuffer;
@@ -53,20 +59,8 @@ namespace dxvk {
     /// Resize the back buffer size to screen size when needed
     bool backBufferResize;
 
-    /// Write back D3D9 back buffers during blits/locks on DDraw surfaces
-    bool backBufferWriteBack;
-
-    /// Write back D3D9 depth stencils during blits/locks on DDraw surfaces
-    bool depthWriteBack;
-
-    /// Upload or skip upload of depth stencils
-    bool uploadDepthStencils;
-
-    /// Blits back to the proxied flippable surface and presents with DDraw
-    bool forceProxiedPresent;
-
-    /// Workaround that uses blits instead of flips for presentation
-    bool forceBlitOnFlip;
+    /// Blits back to the proxied flippable surface and back again for presentation
+    bool forceLegacyPresent;
 
     /// Ignore any application set gamma ramp
     bool ignoreGammaRamp;
@@ -77,17 +71,26 @@ namespace dxvk {
     /// Automatically generate all texture mip maps on the GPU
     bool autoGenMipMaps;
 
-    /// Enables all surface write-backs, but comes with performance penalties
+    /// Allow cross-device resource (surfaces/textures) use
+    bool deviceResourceSharing;
+
+    /// Masks the color key values based on surface format color depth
+    bool colorKeyMasking;
+
+    /// Uses a tolerance interval for color key inverval matching
+    bool colorKeyTolerance;
+
+    /// Extends features and relaxes validations to enable apitrace debugging
     bool apitraceMode;
+
+    /// Enumerate with legacy/official implementation device names
+    bool legacyDeviceNames;
+
+    /// By default guards against legacy presents while inside of a scene
+    D3DLegacyPresentGuard legacyPresentGuard;
 
     /// Uses supported MSAA up to 4x to emulate FSAA
     FSAAEmulation emulateFSAA;
-
-    /// Determines how uploads for back buffer blits are handled
-    D3DBackBufferGuard backBufferGuard;
-
-    /// Max available memory override, shared with the D3D9 backend
-    uint32_t maxAvailableMemory;
 
     D3DOptions() {}
 
@@ -97,39 +100,42 @@ namespace dxvk {
       this->forceSWVP             = config.getOption<bool>   ("ddraw.forceSWVP",             false);
       this->supportR3G3B2         = config.getOption<bool>   ("ddraw.supportR3G3B2",         false);
       this->supportD16            = config.getOption<bool>   ("ddraw.supportD16",             true);
+      this->support32BitDepth     = config.getOption<bool>   ("ddraw.support32BitDepth",      true);
       this->useD24X8forD32        = config.getOption<bool>   ("ddraw.useD24X8forD32",        false);
       this->mask8BitModes         = config.getOption<bool>   ("ddraw.mask8BitModes",         false);
       this->forcePOW2Textures     = config.getOption<bool>   ("ddraw.forcePOW2Textures",     false);
       this->forceLegacyDiscard    = config.getOption<bool>   ("ddraw.forceLegacyDiscard",    false);
-      this->colorKeyCompatibility = config.getOption<bool>   ("ddraw.colorKeyCompatibility", false);
+      this->cpuProcessVertices    = config.getOption<bool>   ("ddraw.cpuProcessVertices",     true);
+      this->vertexOffset          = config.getOption<float>  ("ddraw.vertexOffset",           0.0f);
       this->forceSingleBackBuffer = config.getOption<bool>   ("ddraw.forceSingleBackBuffer", false);
       this->backBufferResize      = config.getOption<bool>   ("ddraw.backBufferResize",       true);
-      this->backBufferWriteBack   = config.getOption<bool>   ("ddraw.backBufferWriteBack",   false);
-      this->depthWriteBack        = config.getOption<bool>   ("ddraw.depthWriteBack",        false);
-      this->uploadDepthStencils   = config.getOption<bool>   ("ddraw.uploadDepthStencils",    true);
-      this->forceProxiedPresent   = config.getOption<bool>   ("ddraw.forceProxiedPresent",   false);
-      this->forceBlitOnFlip       = config.getOption<bool>   ("ddraw.forceBlitOnFlip",       false);
+      this->forceLegacyPresent    = config.getOption<bool>   ("ddraw.forceLegacyPresent",    false);
       this->ignoreGammaRamp       = config.getOption<bool>   ("ddraw.ignoreGammaRamp",       false);
       this->ignoreExclusiveMode   = config.getOption<bool>   ("ddraw.ignoreExclusiveMode",   false);
       this->autoGenMipMaps        = config.getOption<bool>   ("ddraw.autoGenMipMaps",        false);
+      this->deviceResourceSharing = config.getOption<bool>   ("ddraw.deviceResourceSharing", false);
+      this->colorKeyMasking       = config.getOption<bool>   ("ddraw.colorKeyMasking",       false);
+      this->colorKeyTolerance     = config.getOption<bool>   ("ddraw.colorKeyTolerance",     false);
+      this->legacyDeviceNames     = config.getOption<bool>   ("ddraw.legacyDeviceNames",     false);
       this->apitraceMode          = config.getOption<bool>   ("ddraw.apitraceMode",          false);
 
+      // Clamp the vertex offset in the (sensible) -1.0f/1.0f range
+      this->vertexOffset = dxvk::fclamp(this->vertexOffset, -1.0f, 1.0f);
+
+      std::string legacyPresentGuardStr = Config::toLower(config.getOption<std::string>("ddraw.legacyPresentGuard", "auto"));
+      if (legacyPresentGuardStr == "strict") {
+        this->legacyPresentGuard = D3DLegacyPresentGuard::Strict;
+      } else if (legacyPresentGuardStr == "disabled") {
+        this->legacyPresentGuard = D3DLegacyPresentGuard::Disabled;
+      } else {
+        this->legacyPresentGuard = D3DLegacyPresentGuard::Auto;
+      }
+
       std::string emulateFSAAStr = Config::toLower(config.getOption<std::string>("ddraw.emulateFSAA", "auto"));
-      if (emulateFSAAStr == "true") {
-        this->emulateFSAA = FSAAEmulation::Enabled;
-      } else if (emulateFSAAStr == "forced") {
+      if (emulateFSAAStr == "forced") {
         this->emulateFSAA = FSAAEmulation::Forced;
       } else {
         this->emulateFSAA = FSAAEmulation::Disabled;
-      }
-
-      std::string backBufferGuardStr = Config::toLower(config.getOption<std::string>("ddraw.backBufferGuard", "auto"));
-      if (backBufferGuardStr == "strict") {
-        this->backBufferGuard = D3DBackBufferGuard::Strict;
-      } else if (backBufferGuardStr == "disabled") {
-        this->backBufferGuard = D3DBackBufferGuard::Disabled;
-      } else {
-        this->backBufferGuard = D3DBackBufferGuard::Enabled;
       }
     }
 

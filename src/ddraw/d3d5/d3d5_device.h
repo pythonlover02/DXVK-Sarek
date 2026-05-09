@@ -27,7 +27,7 @@ namespace dxvk {
   /**
   * \brief D3D5 device implementation
   */
-  class D3D5Device final : public DDrawWrappedObject<D3D5Interface, IDirect3DDevice2, d3d9::IDirect3DDevice9> {
+  class D3D5Device final : public DDrawWrappedObject<D3D5Interface, IDirect3DDevice2> {
 
   public:
     D3D5Device(
@@ -111,24 +111,14 @@ namespace dxvk {
 
     void InitializeDS();
 
+    void UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface);
+
     D3DCommonDevice* GetCommonD3DDevice() {
       return m_commonD3DDevice.ptr();
     }
 
     D3DDeviceLock LockDevice() {
       return m_multithread.AcquireLock();
-    }
-
-    void EnableLegacyLights(bool isD3DLight2) {
-      m_bridge->SetLegacyLightsState(true, isD3DLight2);
-    }
-
-    d3d9::D3DPRESENT_PARAMETERS GetPresentParameters() const {
-      return m_params9;
-    }
-
-    d3d9::D3DMULTISAMPLE_TYPE GetMultiSampleType() const {
-      return m_params9.MultiSampleType;
     }
 
     DDrawSurface* GetRenderTarget() const {
@@ -141,14 +131,6 @@ namespace dxvk {
 
     D3D5Viewport* GetCurrentViewportInternal() const {
       return m_currentViewport.ptr();
-    }
-
-    D3DMATERIALHANDLE GetCurrentMaterialHandle() const {
-      return m_materialHandle;
-    }
-
-    void SetCurrentMaterialHandle(D3DMATERIALHANDLE handle) {
-      m_materialHandle = handle;
     }
 
   private:
@@ -167,23 +149,27 @@ namespace dxvk {
     inline void HandlePreDrawFlags(DWORD drawFlags, DWORD vertexTypeDesc) {
       // Docs: "Direct3D normally performs lighting calculations
       // on any vertices that contain a vertex normal."
-      if (m_materialHandle == 0 ||
+      if (m_commonD3DDevice->GetCurrentMaterialHandle() == 0 ||
           (drawFlags & D3DDP_DONOTLIGHT) ||
          !(vertexTypeDesc & D3DFVF_NORMAL)) {
-        m_d3d9->GetRenderState(d3d9::D3DRS_LIGHTING, &m_lighting);
+        d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
+        device9->GetRenderState(d3d9::D3DRS_LIGHTING, &m_lighting);
         if (m_lighting) {
           //Logger::debug("D3D5Device: Disabling lighting");
-          m_d3d9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
+          device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
         }
       }
     }
 
     inline void HandlePostDrawFlags(DWORD drawFlags, DWORD vertexTypeDesc) {
-      if ((m_materialHandle == 0 ||
+      if ((m_commonD3DDevice->GetCurrentMaterialHandle() == 0 ||
           (drawFlags & D3DDP_DONOTLIGHT) ||
          !(vertexTypeDesc & D3DFVF_NORMAL)) && m_lighting) {
+        d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
         //Logger::debug("D3D5Device: Enabling lighting");
-        m_d3d9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
+        device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
       }
     }
 
@@ -192,21 +178,23 @@ namespace dxvk {
         m_legacyProjection = m_currentViewport->GetCommonViewport()->GetLegacyProjectionMatrix(drawFlags);
 
         if (m_legacyProjection != nullptr) {
+          d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
           //Logger::debug("D3D5Device: Applying legacy projection");
-          m_d3d9->GetTransform(d3d9::D3DTS_PROJECTION, &m_projectionMatrix);
-          m_d3d9->MultiplyTransform(d3d9::D3DTS_PROJECTION, m_legacyProjection);
+          device9->GetTransform(d3d9::D3DTS_PROJECTION, &m_projectionMatrix);
+          device9->MultiplyTransform(d3d9::D3DTS_PROJECTION, m_legacyProjection);
         }
       }
     }
 
     inline void HandlePostDrawLegacyProjection() {
       if (m_legacyProjection != nullptr) {
+        d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
+
         //Logger::debug("D3D5Device: Reverting legacy projection");
-        m_d3d9->SetTransform(d3d9::D3DTS_PROJECTION, &m_projectionMatrix);
+        device9->SetTransform(d3d9::D3DTS_PROJECTION, &m_projectionMatrix);
       }
     }
-
-    bool                           m_inScene     = false;
 
     static uint32_t                s_deviceCount;
     uint32_t                       m_deviceCount = 0;
@@ -223,13 +211,7 @@ namespace dxvk {
 
     D3DMultithread                 m_multithread;
 
-    d3d9::D3DPRESENT_PARAMETERS    m_params9;
-
-    D3DMATERIALHANDLE              m_materialHandle = 0;
-    D3DTEXTUREHANDLE               m_textureHandle  = 0;
-
     D3DDEVICEDESC2                 m_desc;
-    GUID                           m_deviceGUID;
 
     Com<DDrawSurface>              m_rt;
     Com<DDrawSurface, false>       m_ds;
@@ -241,17 +223,6 @@ namespace dxvk {
     std::vector<D3DVERTEX>         m_vertexStream;
     std::vector<D3DLVERTEX>        m_lvertexStream;
     std::vector<D3DTLVERTEX>       m_tlvertexStream;
-
-    // Value of D3DRENDERSTATE_COLORKEYENABLE
-    DWORD            m_colorKeyEnabled  = 0;
-    // Value of D3DRENDERSTATE_ANTIALIAS
-    DWORD            m_antialias        = D3DANTIALIAS_NONE;
-    // Value of D3DRENDERSTATE_LINEPATTERN
-    D3DLINEPATTERN   m_linePattern      = { };
-    // Value of D3DCLIPSTATUS
-    D3DCLIPSTATUS    m_clipStatus       = { };
-    // Value of D3DRENDERSTATE_TEXTUREMAPBLEND
-    DWORD            m_textureMapBlend  = D3DTBLEND_MODULATE;
 
     D3DMATRIX        m_projectionMatrix = { };
     const D3DMATRIX* m_legacyProjection = nullptr;

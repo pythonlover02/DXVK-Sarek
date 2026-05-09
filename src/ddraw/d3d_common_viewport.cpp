@@ -36,26 +36,26 @@ namespace dxvk {
     return nullptr;
   }
 
-  void D3DCommonViewport::EnableLegacyLights(bool isD3DLight2) {
-    if (m_device6 != nullptr) {
-      return m_device6->EnableLegacyLights(isD3DLight2);
-    } else if (m_device5 != nullptr) {
-      return m_device5->EnableLegacyLights(isD3DLight2);
-    } else if (m_device3 != nullptr) {
-      return m_device3->EnableLegacyLights(isD3DLight2);
-    }
-  }
-
   d3d9::IDirect3DDevice9* D3DCommonViewport::GetD3D9Device() {
     if (m_device6 != nullptr) {
-      return m_device6->GetD3D9();
+      return m_device6->GetCommonD3DDevice()->GetD3D9Device();
     } else if (m_device5 != nullptr) {
-      return m_device5->GetD3D9();
+      return m_device5->GetCommonD3DDevice()->GetD3D9Device();
     } else if (m_device3 != nullptr) {
-      return m_device3->GetD3D9();
+      return m_device3->GetCommonD3DDevice()->GetD3D9Device();
     }
 
     return nullptr;
+  }
+
+  void D3DCommonViewport::UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface) {
+    if (m_device6 != nullptr) {
+      m_device6->UpdateSurfaceDirtyTracking(dirtyRenderTarget, dirtyDepthStencil, dirtyPrimarySurface);
+    } else if (m_device5 != nullptr) {
+      m_device5->UpdateSurfaceDirtyTracking(dirtyRenderTarget, dirtyDepthStencil, dirtyPrimarySurface);
+    } else if (m_device3 != nullptr) {
+      m_device3->UpdateSurfaceDirtyTracking(dirtyRenderTarget, dirtyDepthStencil, dirtyPrimarySurface);
+    }
   }
 
   HRESULT D3DCommonViewport::TransformVertices(DWORD vertex_count, D3DTRANSFORMDATA *data, DWORD flags, DWORD *offscreen) {
@@ -154,7 +154,9 @@ namespace dxvk {
         }
       }
 
-      out.rhw = (h.w != 0.0f) ? (1.0f / h.w) : 0.0f;
+      // Hidden & Dangerous (D3D6) relies on NAN/INF output
+      // in ProcessVertices, so do the same here just in case
+      out.rhw = 1.0f / h.w;
       out.sx = m_viewport9.X + static_cast<float>(m_viewport9.Width) * 0.5 * (h.x * out.rhw + 1.0f);
       out.sy = m_viewport9.Y + static_cast<float>(m_viewport9.Height) * 0.5 * (1.0f - h.y * out.rhw);
       out.sz = m_viewport9.MinZ + h.z * out.rhw * (m_viewport9.MaxZ - m_viewport9.MinZ);

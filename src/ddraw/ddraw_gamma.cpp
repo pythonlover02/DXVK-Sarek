@@ -8,7 +8,7 @@ namespace dxvk {
         DDrawCommonSurface* commonSurf,
         Com<IDirectDrawGammaControl>&& proxyGamma,
         IUnknown* pParent)
-    : DDrawWrappedObject<IUnknown, IDirectDrawGammaControl, IUnknown>(pParent, std::move(proxyGamma), nullptr)
+    : DDrawWrappedObject<IUnknown, IDirectDrawGammaControl>(pParent, std::move(proxyGamma))
     , m_commonSurf ( commonSurf ) {
     Logger::debug("DDrawGammaControl: Created a new gamma control interface");
   }
@@ -46,6 +46,14 @@ namespace dxvk {
       Logger::debug("DDrawGammaControl::QueryInterface: Query for IDirectDrawSurface7");
       return m_parent->QueryInterface(riid, ppvObject);
     }
+    if (unlikely(riid == __uuidof(IDirect3DTexture))) {
+      Logger::debug("DDrawGammaControl::QueryInterface: Query for IDirect3DTexture");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
+    if (unlikely(riid == __uuidof(IDirect3DTexture2))) {
+      Logger::debug("DDrawGammaControl::QueryInterface: Query for IDirect3DTexture2");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
 
     try {
       *ppvObject = ref(this->GetInterface(riid));
@@ -67,7 +75,7 @@ namespace dxvk {
 
     D3DCommonDevice* commonDevice = commonIntf->GetCommonD3DDevice();
     // For proxied pesentation we need to rely on ddraw to handle gamma
-    if (likely(commonDevice != nullptr && !commonIntf->GetOptions()->forceProxiedPresent)) {
+    if (likely(commonDevice != nullptr)) {
       Logger::debug("DDrawGammaControl::GetGammaRamp: Getting gamma ramp via D3D9");
 
       d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();
@@ -96,7 +104,7 @@ namespace dxvk {
     if (likely(!commonIntf->GetOptions()->ignoreGammaRamp)) {
       D3DCommonDevice* commonDevice = commonIntf->GetCommonD3DDevice();
       // For proxied pesentation we need to rely on ddraw to handle gamma
-      if (likely(commonDevice != nullptr && !commonIntf->GetOptions()->forceProxiedPresent)) {
+      if (likely(commonDevice != nullptr)) {
         Logger::debug("DDrawGammaControl::SetGammaRamp: Setting gamma ramp via D3D9");
 
         d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();

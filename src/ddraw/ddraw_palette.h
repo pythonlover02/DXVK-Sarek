@@ -7,7 +7,7 @@ namespace dxvk {
 
   class DDrawCommonSurface;
 
-  class DDrawPalette final : public DDrawWrappedObject<IUnknown, IDirectDrawPalette, IUnknown> {
+  class DDrawPalette final : public DDrawWrappedObject<IUnknown, IDirectDrawPalette> {
 
   public:
 
@@ -16,6 +16,8 @@ namespace dxvk {
           IUnknown* pParent);
 
     ~DDrawPalette();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject);
 
     HRESULT STDMETHODCALLTYPE Initialize(LPDIRECTDRAW lpDD, DWORD dwFlags, LPPALETTEENTRY lpDDColorTable);
 

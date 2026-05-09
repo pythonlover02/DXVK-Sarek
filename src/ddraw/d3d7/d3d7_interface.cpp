@@ -17,16 +17,22 @@ namespace dxvk {
         D3DCommonInterface* commonD3DIntf,
         Com<IDirect3D7>&& d3d7IntfProxy,
         IUnknown* pParent)
-    : DDrawWrappedObject<IUnknown, IDirect3D7, d3d9::IDirect3D9>(pParent, std::move(d3d7IntfProxy), std::move(d3d9::Direct3DCreate9(D3D_SDK_VERSION)))
+    : DDrawWrappedObject<IUnknown, IDirect3D7>(pParent, std::move(d3d7IntfProxy))
     , m_commonIntf ( commonIntf )
     , m_commonD3DIntf ( commonD3DIntf ) {
-    // Get the bridge interface to D3D9.
-    if (unlikely(FAILED(m_d3d9->QueryInterface(__uuidof(IDxvkD3D8InterfaceBridge), reinterpret_cast<void**>(&m_bridge))))) {
-      throw DxvkError("D3D7Interface: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
+    if (m_commonD3DIntf == nullptr) {
+      m_commonD3DIntf = new D3DCommonInterface();
+
+      Com<d3d9::IDirect3D9> d3d9Intf = d3d9::Direct3DCreate9(D3D_SDK_VERSION);
+      m_commonD3DIntf->SetD3D9Interface(std::move(d3d9Intf));
     }
 
-    if (m_commonD3DIntf == nullptr)
-      m_commonD3DIntf = new D3DCommonInterface();
+    d3d9::IDirect3D9* d3d9Intf = m_commonD3DIntf->GetD3D9Interface();
+
+    // Get the bridge interface to D3D9
+    if (unlikely(FAILED(d3d9Intf->QueryInterface(__uuidof(IDxvkD3D8InterfaceBridge), reinterpret_cast<void**>(&m_bridge))))) {
+      throw DxvkError("D3D7Interface: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
+    }
 
     m_commonD3DIntf->SetD3D7Interface(this);
 
@@ -115,30 +121,47 @@ namespace dxvk {
     // Note: The enumeration order seems to matter for some applications,
     // such as (The) Summoner, so always report RGB first, then HAL, then T&L HAL
 
+    HRESULT hr;
+
     // Software emulation, this is expected to be exposed
     D3DDEVICEDESC7 desc7RGB = GetD3D7Caps(IID_IDirect3DRGBDevice, d3dOptions);
-    static char deviceDescRGB[100] = "D7VK RGB";
-    static char deviceNameRGB[100] = "D7VK RGB";
-
-    HRESULT hr = cb(&deviceDescRGB[0], &deviceNameRGB[0], &desc7RGB, ctx);
+    if (likely(!d3dOptions->legacyDeviceNames)) {
+      static char deviceDescRGB[100] = "D7VK RGB";
+      static char deviceNameRGB[100] = "D7VK RGB";
+      hr = cb(&deviceDescRGB[0], &deviceNameRGB[0], &desc7RGB, ctx);
+    } else {
+      static char legacyDeviceDescRGB[100] = "RGB Emulation";
+      static char legacyDeviceNameRGB[100] = "RGB Emulation";
+      hr = cb(&legacyDeviceDescRGB[0], &legacyDeviceNameRGB[0], &desc7RGB, ctx);
+    }
     if (hr != D3DENUMRET_OK)
       return D3D_OK;
 
     // Hardware acceleration (no T&L)
     D3DDEVICEDESC7 desc7HAL = GetD3D7Caps(IID_IDirect3DHALDevice, d3dOptions);
-    static char deviceDescHAL[100] = "D7VK HAL";
-    static char deviceNameHAL[100] = "D7VK HAL";
-
-    hr = cb(&deviceDescHAL[0], &deviceNameHAL[0], &desc7HAL, ctx);
+    if (likely(!d3dOptions->legacyDeviceNames)) {
+      static char deviceDescHAL[100] = "D7VK HAL";
+      static char deviceNameHAL[100] = "D7VK HAL";
+      hr = cb(&deviceDescHAL[0], &deviceNameHAL[0], &desc7HAL, ctx);
+    } else {
+      static char legacyDeviceDescHAL[100] = "Direct3D HAL";
+      static char legacyDeviceNameHAL[100] = "Direct3D HAL";
+      hr = cb(&legacyDeviceDescHAL[0], &legacyDeviceNameHAL[0], &desc7HAL, ctx);
+    }
     if (hr != D3DENUMRET_OK)
       return D3D_OK;
 
     // Hardware acceleration with T&L
     D3DDEVICEDESC7 desc7TNL = GetD3D7Caps(IID_IDirect3DTnLHalDevice, d3dOptions);
-    static char deviceDescTNL[100] = "D7VK T&L HAL";
-    static char deviceNameTNL[100] = "D7VK T&L HAL";
-
-    hr = cb(&deviceDescTNL[0], &deviceNameTNL[0], &desc7TNL, ctx);
+    if (likely(!d3dOptions->legacyDeviceNames)) {
+      static char deviceDescTNL[100] = "D7VK T&L HAL";
+      static char deviceNameTNL[100] = "D7VK T&L HAL";
+      hr = cb(&deviceDescTNL[0], &deviceNameTNL[0], &desc7TNL, ctx);
+    } else {
+      static char legacyDeviceDescTNL[100] = "Direct3D T&L HAL";
+      static char legacyDeviceNameTNL[100] = "Direct3D T&L HAL";
+      hr = cb(&legacyDeviceDescTNL[0], &legacyDeviceNameTNL[0], &desc7TNL, ctx);
+    }
     if (hr != D3DENUMRET_OK)
       return D3D_OK;
 
@@ -167,7 +190,7 @@ namespace dxvk {
       if (rclsid == IID_IDirect3DTnLHalDevice) {
         Logger::info("D3D7Interface::CreateDevice: Creating an IID_IDirect3DTnLHalDevice device");
         deviceCreationFlags9 = D3DCREATE_HARDWARE_VERTEXPROCESSING;
-      } else if (rclsid == IID_IDirect3DHALDevice) {
+      } else if (rclsid == IID_IDirect3DHALDevice || rclsid == IID_WineD3DDevice) {
         Logger::info("D3D7Interface::CreateDevice: Creating an IID_IDirect3DHALDevice device");
         deviceCreationFlags9 = D3DCREATE_MIXED_VERTEXPROCESSING;
       } else if (rclsid == IID_IDirect3DRGBDevice) {
@@ -196,7 +219,7 @@ namespace dxvk {
     }
 
     Com<IDirect3DDevice7> d3d7DeviceProxy;
-    HRESULT hr = m_proxy->CreateDevice(rclsidOverride, rt7->GetProxied(), &d3d7DeviceProxy);
+    HRESULT hr = m_proxy->CreateDevice(rclsidOverride, rt7->GetShadowOrProxied(), &d3d7DeviceProxy);
     if (unlikely(FAILED(hr))) {
       Logger::warn("D3D7Interface::CreateDevice: Failed to create the proxy device");
       return hr;
@@ -209,8 +232,7 @@ namespace dxvk {
     DWORD backBufferWidth  = desc.dwWidth;
     DWORD BackBufferHeight = desc.dwHeight;
 
-    if (likely(!d3dOptions->forceProxiedPresent &&
-                d3dOptions->backBufferResize)) {
+    if (likely(d3dOptions->backBufferResize)) {
       const bool exclusiveMode = m_commonIntf->GetCooperativeLevel() & DDSCL_EXCLUSIVE;
 
       // Ignore any mode size dimensions when in windowed present mode
@@ -227,29 +249,7 @@ namespace dxvk {
       }
     }
 
-    d3d9::D3DFORMAT backBufferFormat = ConvertFormat(desc.ddpfPixelFormat);
-
-    // Determine the supported AA sample count by querying the D3D9 interface
-    d3d9::D3DMULTISAMPLE_TYPE multiSampleType = d3d9::D3DMULTISAMPLE_NONE;
-    if (likely(d3dOptions->emulateFSAA != FSAAEmulation::Disabled)) {
-      HRESULT hr4S = m_d3d9->CheckDeviceMultiSampleType(0, d3d9::D3DDEVTYPE_HAL, backBufferFormat,
-                                                        TRUE, d3d9::D3DMULTISAMPLE_4_SAMPLES, NULL);
-      if (unlikely(FAILED(hr4S))) {
-        HRESULT hr2S = m_d3d9->CheckDeviceMultiSampleType(0, d3d9::D3DDEVTYPE_HAL, backBufferFormat,
-                                                          TRUE, d3d9::D3DMULTISAMPLE_2_SAMPLES, NULL);
-        if (unlikely(FAILED(hr2S))) {
-          Logger::warn("D3D7Interface::CreateDevice: No MSAA support has been detected");
-        } else {
-          Logger::info("D3D7Interface::CreateDevice: Using 2x MSAA for FSAA emulation");
-          multiSampleType = d3d9::D3DMULTISAMPLE_2_SAMPLES;
-        }
-      } else {
-        Logger::info("D3D7Interface::CreateDevice: Using 4x MSAA for FSAA emulation");
-        multiSampleType = d3d9::D3DMULTISAMPLE_4_SAMPLES;
-      }
-    } else {
-      Logger::info("D3D7Interface::CreateDevice: FSAA emulation is disabled");
-    }
+    const d3d9::D3DFORMAT backBufferFormat = ConvertFormat(desc.ddpfPixelFormat);
 
     const DWORD cooperativeLevel = m_commonIntf->GetCooperativeLevel();
 
@@ -267,21 +267,16 @@ namespace dxvk {
 
     Logger::info(str::format("D3D7Interface::CreateDevice: Back buffer size: ", desc.dwWidth, "x", desc.dwHeight));
 
-    DWORD backBufferCount = 0;
-    if (likely(!d3dOptions->forceSingleBackBuffer)) {
-      IDirectDrawSurface7* backBuffer = rt7->GetProxied();
-      while (backBuffer != nullptr) {
-        IDirectDrawSurface7* parentSurface = backBuffer;
-        backBuffer = nullptr;
-        parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfaces7Callback);
-        backBufferCount++;
-        // the swapchain will eventually return to its origin
-        if (backBuffer == rt7->GetProxied())
-          break;
-      }
-    }
+    const DWORD backBufferCount = DetermineBackBufferCount(rt7->GetProxied());
     // Consider the front buffer as well when reporting the overall count
     Logger::info(str::format("D3D7Interface::CreateDevice: Back buffer count: ", backBufferCount + 1));
+
+    Com<d3d9::IDirect3D9> d3d9Intf = m_commonD3DIntf->GetD3D9Interface();
+
+    // Determine the supported AA sample count by querying the D3D9 interface
+    const d3d9::D3DMULTISAMPLE_TYPE multiSampleType = d3dOptions->emulateFSAA != FSAAEmulation::Disabled ?
+                                                      GetSupportedMultiSampleType(d3d9Intf.ptr(), backBufferFormat) :
+                                                      d3d9::D3DMULTISAMPLE_NONE;
 
     // Always appears to be enabled when running in non-exclusive mode
     const bool vBlankStatus = m_commonIntf->GetWaitForVBlank();
@@ -303,7 +298,7 @@ namespace dxvk {
     params.PresentationInterval       = vBlankStatus ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;
 
     Com<d3d9::IDirect3DDevice9> device9;
-    hr = m_d3d9->CreateDevice(
+    hr = d3d9Intf->CreateDevice(
       D3DADAPTER_DEFAULT,
       d3d9::D3DDEVTYPE_HAL,
       hWnd,
@@ -320,8 +315,8 @@ namespace dxvk {
     D3DDEVICEDESC7 desc7 = GetD3D7Caps(rclsidOverride, d3dOptions);
 
     try{
-      Com<D3D7Device> device7 = new D3D7Device(nullptr, std::move(d3d7DeviceProxy), this,
-                                               desc7, params, std::move(device9),
+      Com<D3D7Device> device7 = new D3D7Device(nullptr, std::move(d3d7DeviceProxy), this, desc7,
+                                               rclsidOverride, params, std::move(device9),
                                                rt7.ptr(), deviceCreationFlags9);
 
       // Set the common device on the common interface
@@ -346,25 +341,15 @@ namespace dxvk {
 
     InitReturnPtr(ppVertexBuffer);
 
-    Com<IDirect3DVertexBuffer7> vertexBuffer7;
-    // We don't really need a proxy buffer any longer
-    /*HRESULT hr = m_proxy->CreateVertexBuffer(desc, &vertexBuffer7, usage);
-    if (unlikely(FAILED(hr))) {
-      Logger::warn("D3D7Interface::CreateVertexBuffer: Failed to create proxy vertex buffer");
-      return hr;
-    }*/
-
-    // We need to delay the D3D9 vertex buffer creation as long as possible, to ensure
-    // that (ideally) we actually have a valid D3D7 device in place when that happens
-    *ppVertexBuffer = ref(new D3D7VertexBuffer(std::move(vertexBuffer7), nullptr, this, *desc));
+    *ppVertexBuffer = ref(new D3D7VertexBuffer(this, *desc));
 
     return D3D_OK;
   }
 
-  HRESULT STDMETHODCALLTYPE D3D7Interface::EnumZBufferFormats(REFCLSID riidDevice, LPD3DENUMPIXELFORMATSCALLBACK cb, LPVOID ctx) {
+  HRESULT STDMETHODCALLTYPE D3D7Interface::EnumZBufferFormats(REFCLSID riidDevice, LPD3DENUMPIXELFORMATSCALLBACK lpEnumCallback, LPVOID lpContext) {
     Logger::debug(">>> D3D7Interface::EnumZBufferFormats");
 
-    if (unlikely(cb == nullptr))
+    if (unlikely(lpEnumCallback == nullptr))
       return DDERR_INVALIDPARAMS;
 
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
@@ -376,20 +361,33 @@ namespace dxvk {
 
     if (likely(d3dOptions->supportD16)) {
       depthFormat = GetZBufferFormat(d3d9::D3DFMT_D16);
-      hr = cb(&depthFormat, ctx);
+      hr = lpEnumCallback(&depthFormat, lpContext);
       if (unlikely(hr != D3DENUMRET_OK))
         return D3D_OK;
     }
 
+    // Apparently some games expect D3DFMT_D24X8 to have a 24-bit
+    // dwZBufferBitDepth, so we have to enumerate both variants.
+    // According to Wine tests, Windows Vista and newer also enumerate both.
     depthFormat = GetZBufferFormat(d3d9::D3DFMT_D24X8);
-    hr = cb(&depthFormat, ctx);
+    depthFormat.dwZBufferBitDepth = 24;
+    hr = lpEnumCallback(&depthFormat, lpContext);
     if (unlikely(hr != D3DENUMRET_OK))
       return D3D_OK;
 
-    depthFormat = GetZBufferFormat(d3d9::D3DFMT_D24S8);
-    hr = cb(&depthFormat, ctx);
-    if (unlikely(hr != D3DENUMRET_OK))
-      return D3D_OK;
+    // Expendable relies on having only the 24-bit dwZBufferBitDepth variant
+    // of D3DFMT_D24X8 enumerated in order to have working projected shadows
+    if (likely(d3dOptions->support32BitDepth)) {
+      depthFormat = GetZBufferFormat(d3d9::D3DFMT_D24X8);
+      hr = lpEnumCallback(&depthFormat, lpContext);
+      if (unlikely(hr != D3DENUMRET_OK))
+        return D3D_OK;
+
+      depthFormat = GetZBufferFormat(d3d9::D3DFMT_D24S8);
+      hr = lpEnumCallback(&depthFormat, lpContext);
+      if (unlikely(hr != D3DENUMRET_OK))
+        return D3D_OK;
+    }
 
     return D3D_OK;
   }
@@ -414,6 +412,36 @@ namespace dxvk {
     }
 
     return D3D_OK;
+  }
+
+  inline DWORD D3D7Interface::DetermineBackBufferCount(IDirectDrawSurface7* renderTarget) {
+    DWORD backBufferCount = 0;
+
+    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+
+    if (likely(!d3dOptions->forceSingleBackBuffer && !d3dOptions->forceLegacyPresent)) {
+      IDirectDrawSurface7* backBuffer = renderTarget;
+      HRESULT hr;
+
+      while (backBuffer != nullptr) {
+        IDirectDrawSurface7* parentSurface = backBuffer;
+        backBuffer = nullptr;
+
+        hr = parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfaces7Callback);
+        if (unlikely(FAILED(hr))) {
+          Logger::warn("D3D7Interface::DetermineBackBufferCount: Unable to enumerate attached surfaces");
+          break;
+        }
+
+        backBufferCount++;
+
+        // the swapchain will eventually return to its origin
+        if (backBuffer == renderTarget)
+          break;
+      }
+    }
+
+    return backBufferCount;
   }
 
 }

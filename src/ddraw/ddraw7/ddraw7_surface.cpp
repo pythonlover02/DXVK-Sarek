@@ -21,7 +21,7 @@ namespace dxvk {
         DDraw7Interface* pParent,
         DDraw7Surface* pParentSurf,
         bool isChildObject)
-    : DDrawWrappedObject<DDraw7Interface, IDirectDrawSurface7, d3d9::IDirect3DSurface9>(pParent, std::move(surfProxy), nullptr)
+    : DDrawWrappedObject<DDraw7Interface, IDirectDrawSurface7>(pParent, std::move(surfProxy))
     , m_isChildObject ( isChildObject )
     , m_commonSurf ( commonSurf )
     , m_parentSurf ( pParentSurf ) {
@@ -51,13 +51,23 @@ namespace dxvk {
       }
     }
 
+    // Retrieve and cache the next surface in a flippable chain
+    if (unlikely(m_commonSurf->IsFlippable() && !m_commonSurf->IsBackBuffer())) {
+      IDirectDrawSurface7* nextFlippable = nullptr;
+      EnumAttachedSurfaces(&nextFlippable, ListBackBufferSurfaces7Callback);
+      m_nextFlippable = reinterpret_cast<DDraw7Surface*>(nextFlippable);
+      if (likely(m_nextFlippable != nullptr))
+        Logger::debug("DDraw7Surface: Retrieved the next swapchain surface");
+    }
+
     m_commonIntf->AddWrappedSurface(this);
 
     m_commonSurf->SetDD7Surface(this);
 
-    if (m_parentSurf != nullptr && !m_commonSurf->IsFrontBuffer()
+    if (m_parentSurf != nullptr
      && m_parentSurf->GetCommonSurface()->IsBackBufferOrFlippable()
-     && !m_commonIntf->GetOptions()->forceSingleBackBuffer) {
+     && !m_commonIntf->GetOptions()->forceSingleBackBuffer
+     && !m_commonIntf->GetOptions()->forceLegacyPresent) {
       const uint32_t index = m_parentSurf->GetCommonSurface()->GetBackBufferIndex();
       m_commonSurf->IncrementBackBufferIndex(index);
     }
@@ -118,6 +128,11 @@ namespace dxvk {
     // Black & White queries for IDirect3DTexture2 for whatever reason...
     if (unlikely(riid == __uuidof(IDirect3DTexture2))) {
       Logger::debug("DDraw7Surface::QueryInterface: Query for IDirect3DTexture2");
+      return E_NOINTERFACE;
+    }
+    // Shouldn't ever be called in practice
+    if (unlikely(riid == __uuidof(IDirect3DTexture))) {
+      Logger::debug("DDraw7Surface::QueryInterface: Query for IDirect3DTexture");
       return E_NOINTERFACE;
     }
     // Wrap IDirectDrawGammaControl, to potentially ignore application set gamma ramps
@@ -248,89 +263,30 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Surface::Blt(LPRECT lpDestRect, LPDIRECTDRAWSURFACE7 lpDDSrcSurface, LPRECT lpSrcRect, DWORD dwFlags, LPDDBLTFX lpDDBltFx) {
     Logger::debug("<<< DDraw7Surface::Blt: Proxy");
 
-    // Write back any flippable surfaces or depth stencils from D3D9
+    // Write back any dirty surface data from bound D3D9 back buffers or
+    // depth stencils, for both the source surface and the current surface
     if (likely(lpDDSrcSurface != nullptr && m_commonIntf->IsWrappedSurface(lpDDSrcSurface))) {
-      DDraw7Surface* sourceSurface = static_cast<DDraw7Surface*>(lpDDSrcSurface);
-      if (unlikely(sourceSurface->GetCommonSurface()->IsGuardableSurface())) {
-        if (m_commonIntf->GetOptions()->backBufferWriteBack || m_commonIntf->GetOptions()->apitraceMode) {
-          Logger::debug("DDraw7Surface::Blt: Source surface is a swapchain surface");
-
-          if (unlikely(m_commonIntf->GetOptions()->apitraceMode && !sourceSurface->IsInitialized()))
-            sourceSurface->InitializeOrUploadD3D9();
-
-          if (likely(sourceSurface->IsInitialized()))
-            BlitToDDrawSurface<IDirectDrawSurface7, DDSURFACEDESC2>(sourceSurface->GetProxied(), sourceSurface->GetD3D9());
-        } else {
-          static bool s_swapchainWarningShown;
-
-          if (!std::exchange(s_swapchainWarningShown, true))
-            Logger::warn("DDraw7Surface::Blt: Source surface is a swapchain surface");
-        }
-      } else if (unlikely(sourceSurface->GetCommonSurface()->IsDepthStencil())) {
-        if (m_commonIntf->GetOptions()->depthWriteBack || m_commonIntf->GetOptions()->apitraceMode) {
-          Logger::debug("DDraw7Surface::Blt: Source surface is a depth stencil");
-
-          if (likely(sourceSurface->IsInitialized()))
-            BlitToDDrawSurface<IDirectDrawSurface7, DDSURFACEDESC2>(sourceSurface->GetProxied(), sourceSurface->GetD3D9());
-        } else {
-          static bool s_depthStencilWarningShown;
-
-          if (!std::exchange(s_depthStencilWarningShown, true))
-            Logger::warn("DDraw7Surface::Blt: Source surface is a depth stencil");
-        }
-      }
+      DDraw7Surface* surface7 = static_cast<DDraw7Surface*>(lpDDSrcSurface);
+      surface7->DownloadSurfaceData();
     }
+    DownloadSurfaceData();
 
-    RefreshD3D9Device();
-    if (likely(m_d3d9Device != nullptr)) {
-      // Forward DDBLT_DEPTHFILL clears to D3D9 if done on the current depth stencil
-      if (unlikely(lpDDSrcSurface == nullptr &&
-                    (dwFlags & DDBLT_DEPTHFILL) &&
-                    lpDDBltFx != nullptr &&
-                    m_commonIntf->GetCommonD3DDevice()->IsCurrentD3D9DepthStencil(m_d3d9.ptr()))) {
-        Logger::debug("DDraw7Surface::Blt: Clearing d3d9 depth stencil");
-
-        HRESULT hrClear;
-        const float zClear = m_commonSurf->GetNormalizedFloatDepth(lpDDBltFx->dwFillDepth);
-
-        if (lpDestRect == nullptr) {
-          hrClear = m_d3d9Device->Clear(0, NULL, D3DCLEAR_ZBUFFER, 0, zClear, 0);
-        } else {
-          hrClear = m_d3d9Device->Clear(1, reinterpret_cast<D3DRECT*>(lpDestRect), D3DCLEAR_ZBUFFER, 0, zClear, 0);
-        }
-        if (unlikely(FAILED(hrClear)))
-          Logger::warn("DDraw7Surface::Blt: Failed to clear d3d9 depth");
-      }
-      // Forward DDBLT_COLORFILL clears to D3D9 if done on the current render target
-      if (unlikely(lpDDSrcSurface == nullptr &&
-                    (dwFlags & DDBLT_COLORFILL) &&
-                    lpDDBltFx != nullptr &&
-                    m_commonIntf->GetCommonD3DDevice()->IsCurrentD3D9RenderTarget(m_d3d9.ptr()))) {
-        Logger::debug("DDraw7Surface::Blt: Clearing d3d9 render target");
-
-        HRESULT hrClear;
-        if (lpDestRect == nullptr) {
-          hrClear = m_d3d9Device->Clear(0, NULL, D3DCLEAR_TARGET, lpDDBltFx->dwFillColor, 0.0f, 0);
-        } else {
-          hrClear = m_d3d9Device->Clear(1, reinterpret_cast<D3DRECT*>(lpDestRect), D3DCLEAR_TARGET, lpDDBltFx->dwFillColor, 0.0f, 0);
-        }
-        if (unlikely(FAILED(hrClear)))
-          Logger::warn("DDraw7Surface::Blt: Failed to clear d3d9 render target");
-      }
-
+    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
+    if (likely(d3d9Device != nullptr)) {
       const bool exclusiveMode = (m_commonIntf->GetCooperativeLevel() & DDSCL_EXCLUSIVE)
                               && !m_commonIntf->GetOptions()->ignoreExclusiveMode;
 
-      // Eclusive mode back buffer guard
-      if (exclusiveMode && m_commonIntf->HasDrawn() &&
-          m_commonSurf->IsGuardableSurface() &&
-          m_commonIntf->GetOptions()->backBufferGuard != D3DBackBufferGuard::Disabled) {
-        return DD_OK;
       // Windowed mode presentation path
-      } else if (!exclusiveMode && m_commonIntf->HasDrawn() && m_commonSurf->IsPrimarySurface()) {
-        m_commonIntf->ResetDrawTracking();
-        m_d3d9Device->Present(NULL, NULL, NULL, NULL);
-        return DD_OK;
+      if (!exclusiveMode && lpDDSrcSurface != nullptr && m_commonSurf->IsPrimarySurface()) {
+        // TODO: Handle this properly, not by uploading the RT again
+        DDraw7Surface* ddraw7Surface = static_cast<DDraw7Surface*>(lpDDSrcSurface);
+        DDraw7Surface* renderTarget = m_commonSurf->GetCommonD3DDevice()->GetCurrentRenderTarget7();
+
+        if (ddraw7Surface == renderTarget) {
+          renderTarget->InitializeOrUploadD3D9();
+          d3d9Device->Present(NULL, NULL, NULL, NULL);
+          return DD_OK;
+        }
       }
     }
 
@@ -341,20 +297,24 @@ namespace dxvk {
         Logger::warn("DDraw7Surface::Blt: Received an unwrapped source surface");
         return DDERR_UNSUPPORTED;
       }
-      hr = m_proxy->Blt(lpDestRect, lpDDSrcSurface, lpSrcRect, dwFlags, lpDDBltFx);
+      hr = GetShadowOrProxied()->Blt(lpDestRect, lpDDSrcSurface, lpSrcRect, dwFlags, lpDDBltFx);
     } else {
       DDraw7Surface* ddraw7Surface = static_cast<DDraw7Surface*>(lpDDSrcSurface);
-      hr = m_proxy->Blt(lpDestRect, ddraw7Surface->GetProxied(), lpSrcRect, dwFlags, lpDDBltFx);
+      hr = GetShadowOrProxied()->Blt(lpDestRect, ddraw7Surface->GetShadowOrProxied(), lpSrcRect, dwFlags, lpDDBltFx);
     }
 
     if (likely(SUCCEEDED(hr))) {
-      // Textures and cubemaps get uploaded during SetTexture calls
-      if (!m_commonSurf->IsTextureOrCubeMap()) {
-        HRESULT hrUpload = InitializeOrUploadD3D9();
-        if (unlikely(FAILED(hrUpload)))
-          Logger::warn("DDraw7Surface::Blt: Failed upload to d3d9 surface");
-      } else {
-        m_commonSurf->DirtyMipMaps();
+      m_commonSurf->DirtyDDrawSurface();
+
+      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                   false : true;
+        if (shouldPresent) {
+          InitializeOrUploadD3D9();
+          d3d9Device->Present(NULL, NULL, NULL, NULL);
+        }
       }
     }
 
@@ -370,54 +330,32 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Surface::BltFast(DWORD dwX, DWORD dwY, LPDIRECTDRAWSURFACE7 lpDDSrcSurface, LPRECT lpSrcRect, DWORD dwTrans) {
     Logger::debug("<<< DDraw7Surface::BltFast: Proxy");
 
-    // Write back any flippable surfaces or depth stencils from D3D9
+    // Write back any dirty surface data from bound D3D9 back buffers or
+    // depth stencils, for both the source surface and the current surface
+    // Write back any dirty surface data from bound D3D9 back buffers or
+    // depth stencils, for both the source surface and the current surface
     if (likely(lpDDSrcSurface != nullptr && m_commonIntf->IsWrappedSurface(lpDDSrcSurface))) {
-      DDraw7Surface* sourceSurface = static_cast<DDraw7Surface*>(lpDDSrcSurface);
-      if (unlikely(sourceSurface->GetCommonSurface()->IsGuardableSurface())) {
-        if (m_commonIntf->GetOptions()->backBufferWriteBack || m_commonIntf->GetOptions()->apitraceMode) {
-          Logger::debug("DDraw7Surface::BltFast: Source surface is a swapchain surface");
-
-          if (unlikely(m_commonIntf->GetOptions()->apitraceMode && !sourceSurface->IsInitialized()))
-            sourceSurface->InitializeOrUploadD3D9();
-
-          if (likely(sourceSurface->IsInitialized()))
-            BlitToDDrawSurface<IDirectDrawSurface7, DDSURFACEDESC2>(sourceSurface->GetProxied(), sourceSurface->GetD3D9());
-        } else {
-          static bool s_swapchainWarningShown;
-
-          if (!std::exchange(s_swapchainWarningShown, true))
-            Logger::warn("DDraw7Surface::BltFast: Source surface is a swapchain surface");
-        }
-      } else if (unlikely(sourceSurface->GetCommonSurface()->IsDepthStencil())) {
-        if (m_commonIntf->GetOptions()->depthWriteBack || m_commonIntf->GetOptions()->apitraceMode) {
-          Logger::debug("DDraw7Surface::BltFast: Source surface is a depth stencil");
-
-          if (likely(sourceSurface->IsInitialized()))
-            BlitToDDrawSurface<IDirectDrawSurface7, DDSURFACEDESC2>(sourceSurface->GetProxied(), sourceSurface->GetD3D9());
-        } else {
-          static bool s_depthStencilWarningShown;
-
-          if (!std::exchange(s_depthStencilWarningShown, true))
-            Logger::warn("DDraw7Surface::BltFast: Source surface is a depth stencil");
-        }
-      }
+      DDraw7Surface* surface7 = static_cast<DDraw7Surface*>(lpDDSrcSurface);
+      surface7->DownloadSurfaceData();
     }
+    DownloadSurfaceData();
 
-    RefreshD3D9Device();
-    if (likely(m_d3d9Device != nullptr)) {
+    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
+    if (likely(d3d9Device != nullptr)) {
       const bool exclusiveMode = (m_commonIntf->GetCooperativeLevel() & DDSCL_EXCLUSIVE)
                               && !m_commonIntf->GetOptions()->ignoreExclusiveMode;
 
-      // Eclusive mode back buffer guard
-      if (exclusiveMode && m_commonIntf->HasDrawn() &&
-          m_commonSurf->IsGuardableSurface() &&
-          m_commonIntf->GetOptions()->backBufferGuard != D3DBackBufferGuard::Disabled) {
-        return DD_OK;
       // Windowed mode presentation path
-      } else if (!exclusiveMode && m_commonIntf->HasDrawn() && m_commonSurf->IsPrimarySurface()) {
-        m_commonIntf->ResetDrawTracking();
-        m_d3d9Device->Present(NULL, NULL, NULL, NULL);
-        return DD_OK;
+      if (!exclusiveMode && lpDDSrcSurface != nullptr && m_commonSurf->IsPrimarySurface()) {
+        // TODO: Handle this properly, not by uploading the RT again
+        DDraw7Surface* ddraw7Surface = static_cast<DDraw7Surface*>(lpDDSrcSurface);
+        DDraw7Surface* renderTarget = m_commonSurf->GetCommonD3DDevice()->GetCurrentRenderTarget7();
+
+        if (ddraw7Surface == renderTarget) {
+          renderTarget->InitializeOrUploadD3D9();
+          d3d9Device->Present(NULL, NULL, NULL, NULL);
+          return DD_OK;
+        }
       }
     }
 
@@ -428,20 +366,24 @@ namespace dxvk {
         Logger::warn("DDraw7Surface::BltFast: Received an unwrapped source surface");
         return DDERR_UNSUPPORTED;
       }
-      hr = m_proxy->BltFast(dwX, dwY, lpDDSrcSurface, lpSrcRect, dwTrans);
+      hr = GetShadowOrProxied()->BltFast(dwX, dwY, lpDDSrcSurface, lpSrcRect, dwTrans);
     } else {
       DDraw7Surface* ddraw7Surface = static_cast<DDraw7Surface*>(lpDDSrcSurface);
-      hr = m_proxy->BltFast(dwX, dwY, ddraw7Surface->GetProxied(), lpSrcRect, dwTrans);
+      hr = GetShadowOrProxied()->BltFast(dwX, dwY, ddraw7Surface->GetShadowOrProxied(), lpSrcRect, dwTrans);
     }
 
     if (likely(SUCCEEDED(hr))) {
-      // Textures and cubemaps get uploaded during SetTexture calls
-      if (!m_commonSurf->IsTextureOrCubeMap()) {
-        HRESULT hrUpload = InitializeOrUploadD3D9();
-        if (unlikely(FAILED(hrUpload)))
-          Logger::warn("DDraw7Surface::BltFast: Failed upload to d3d9 surface");
-      } else {
-        m_commonSurf->DirtyMipMaps();
+      m_commonSurf->DirtyDDrawSurface();
+
+      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                   false : true;
+        if (shouldPresent) {
+          InitializeOrUploadD3D9();
+          d3d9Device->Present(NULL, NULL, NULL, NULL);
+        }
       }
     }
 
@@ -526,71 +468,44 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDraw7Surface::Flip(LPDIRECTDRAWSURFACE7 lpDDSurfaceTargetOverride, DWORD dwFlags) {
-    Logger::debug("*** DDraw7Surface::Flip: Presenting");
-
-    // Lost surfaces are not flippable
-    HRESULT hr = m_proxy->IsLost();
-    if (unlikely(FAILED(hr))) {
-      Logger::debug("DDraw7Surface::Flip: Lost surface");
-      return hr;
-    }
-
-    if (unlikely(!(m_commonSurf->IsFrontBuffer() || m_commonSurf->IsBackBufferOrFlippable()))) {
-      Logger::debug("DDraw7Surface::Flip: Unflippable surface");
-      return DDERR_NOTFLIPPABLE;
-    }
-
-    const bool exclusiveMode = m_commonIntf->GetCooperativeLevel() & DDSCL_EXCLUSIVE;
-
-    // Non-exclusive mode validations
-    if (unlikely(m_commonSurf->IsPrimarySurface() && !exclusiveMode)) {
-      Logger::debug("DDraw7Surface::Flip: Primary surface flip in non-exclusive mode");
-      return DDERR_NOEXCLUSIVEMODE;
-    }
-
-    // Exclusive mode validations
-    if (unlikely(m_commonSurf->IsBackBufferOrFlippable() && exclusiveMode)) {
-      Logger::debug("DDraw7Surface::Flip: Back buffer flip in exclusive mode");
-      return DDERR_NOTFLIPPABLE;
-    }
 
     Com<DDraw7Surface> surf7;
-    if (m_commonIntf->IsWrappedSurface(lpDDSurfaceTargetOverride)) {
+    if (m_commonIntf->IsWrappedSurface(lpDDSurfaceTargetOverride))
       surf7 = static_cast<DDraw7Surface*>(lpDDSurfaceTargetOverride);
 
-      if (unlikely(!surf7->GetCommonSurface()->IsBackBufferOrFlippable())) {
-        Logger::debug("DDraw7Surface::Flip: Unflippable override surface");
-        return DDERR_NOTFLIPPABLE;
-      }
-    }
-
-    RefreshD3D9Device();
-    if (likely(m_d3d9Device != nullptr)) {
+    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
+    if (likely(d3d9Device != nullptr)) {
       Logger::debug("*** DDraw7Surface::Flip: Presenting");
 
-      m_commonIntf->ResetDrawTracking();
+      // Lost surfaces are not flippable
+      HRESULT hr = m_proxy->IsLost();
+      if (unlikely(FAILED(hr))) {
+        Logger::debug("DDraw7Surface::Flip: Lost surface");
+        return hr;
+      }
 
-      if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
-        D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+      if (unlikely(!(m_commonSurf->IsFrontBuffer() || m_commonSurf->IsBackBufferOrFlippable()))) {
+        Logger::debug("DDraw7Surface::Flip: Unflippable surface");
+        return DDERR_NOTFLIPPABLE;
+      }
 
-        if (unlikely(!IsInitialized()))
-          InitializeD3D9(commonDevice->IsCurrentRenderTarget(this));
+      const bool exclusiveMode = m_commonIntf->GetCooperativeLevel() & DDSCL_EXCLUSIVE;
 
-        BlitToDDrawSurface<IDirectDrawSurface7, DDSURFACEDESC2>(m_proxy.ptr(), m_d3d9.ptr());
+      // Non-exclusive mode validations
+      if (unlikely(m_commonSurf->IsPrimarySurface() && !exclusiveMode)) {
+        Logger::debug("DDraw7Surface::Flip: Primary surface flip in non-exclusive mode");
+        return DDERR_NOEXCLUSIVEMODE;
+      }
 
-        if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSurfaceTargetOverride))) {
-          if (unlikely(lpDDSurfaceTargetOverride != nullptr)) {
-            Logger::warn("DDraw7Surface::Flip: Received an unwrapped surface");
-            return DDERR_UNSUPPORTED;
-          }
-          if (likely(commonDevice->IsCurrentRenderTarget(this)))
-            m_commonIntf->SetFlipRTSurfaceAndFlags(lpDDSurfaceTargetOverride, dwFlags);
-          return m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
-        } else {
-          if (likely(commonDevice->IsCurrentRenderTarget(this)))
-            m_commonIntf->SetFlipRTSurfaceAndFlags(lpDDSurfaceTargetOverride, dwFlags);
-          return m_proxy->Flip(surf7->GetProxied(), dwFlags);
-        }
+      // Exclusive mode validations
+      if (unlikely(m_commonSurf->IsBackBufferOrFlippable() && exclusiveMode)) {
+        Logger::debug("DDraw7Surface::Flip: Back buffer flip in exclusive mode");
+        return DDERR_NOTFLIPPABLE;
+      }
+
+      if (unlikely(surf7 != nullptr && !surf7->GetCommonSurface()->IsBackBufferOrFlippable())) {
+        Logger::debug("DDraw7Surface::Flip: Unflippable override surface");
+        return DDERR_NOTFLIPPABLE;
       }
 
       // If the interface is waiting for VBlank and we get a no VSync flip, switch
@@ -598,11 +513,11 @@ namespace dxvk {
       if (unlikely(m_commonIntf->GetWaitForVBlank() && (dwFlags & DDFLIP_NOVSYNC))) {
         Logger::info("DDraw7Surface::Flip: Switching to D3DPRESENT_INTERVAL_IMMEDIATE for presentation");
 
-        D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+        D3DCommonDevice* commonD3DDevice = m_commonSurf->GetCommonD3DDevice();
 
-        d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
+        d3d9::D3DPRESENT_PARAMETERS resetParams = commonD3DDevice->GetPresentParameters();
         resetParams.PresentationInterval = D3DPRESENT_INTERVAL_IMMEDIATE;
-        HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
+        HRESULT hrReset = commonD3DDevice->ResetD3D9Swapchain(&resetParams);
         if (unlikely(FAILED(hrReset))) {
           Logger::warn("DDraw7Surface::Flip: Failed D3D9 swapchain reset");
         } else {
@@ -613,11 +528,11 @@ namespace dxvk {
       } else if (unlikely(!m_commonIntf->GetWaitForVBlank() && IsVSyncFlipFlag(dwFlags))) {
         Logger::info("DDraw7Surface::Flip: Switching to D3DPRESENT_INTERVAL_DEFAULT for presentation");
 
-        D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+        D3DCommonDevice* commonD3DDevice = m_commonSurf->GetCommonD3DDevice();
 
-        d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
+        d3d9::D3DPRESENT_PARAMETERS resetParams = commonD3DDevice->GetPresentParameters();
         resetParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
-        HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
+        HRESULT hrReset = commonD3DDevice->ResetD3D9Swapchain(&resetParams);
         if (unlikely(FAILED(hrReset))) {
           Logger::warn("DDraw7Surface::Flip: Failed D3D9 swapchain reset");
         } else {
@@ -625,9 +540,14 @@ namespace dxvk {
         }
       }
 
-      m_d3d9Device->Present(NULL, NULL, NULL, NULL);
-    // If we don't yet have a device, perhaps a D3D7 application is trying to
-    // present exclusively on DDraw (such as a main menu), so allow the flip
+      if (likely(m_nextFlippable != nullptr)) {
+        m_nextFlippable->InitializeOrUploadD3D9();
+      } else {
+        InitializeOrUploadD3D9();
+      }
+
+      d3d9Device->Present(NULL, NULL, NULL, NULL);
+
     } else {
       Logger::debug("<<< DDraw7Surface::Flip: Proxy");
 
@@ -710,11 +630,6 @@ namespace dxvk {
 
   // Blitting can be done at any time and completes within its call frame
   HRESULT STDMETHODCALLTYPE DDraw7Surface::GetBltStatus(DWORD dwFlags) {
-    if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
-      Logger::debug("<<< DDraw7Surface::GetBltStatus: Proxy");
-      m_proxy->GetBltStatus(dwFlags);
-    }
-
     Logger::debug(">>> DDraw7Surface::GetBltStatus");
 
     if (likely(dwFlags == DDGBS_CANBLT || dwFlags == DDGBS_ISBLTDONE))
@@ -758,42 +673,16 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDraw7Surface::GetDC(HDC *lphDC) {
-    if (likely(!m_commonIntf->GetOptions()->forceProxiedPresent)) {
-      if (unlikely(lphDC == nullptr))
-        return DDERR_INVALIDPARAMS;
-
-      InitReturnPtr(lphDC);
-
-      // Foward GetDC calls if we have drawn and the surface is flippable
-      RefreshD3D9Device();
-      if (m_d3d9Device != nullptr && (m_commonIntf->HasDrawn() &&
-                                      m_commonSurf->IsGuardableSurface())) {
-        Logger::debug(">>> DDraw7Surface::GetDC");
-
-        if (unlikely(!IsInitialized())) {
-          HRESULT hrUpload = InitializeOrUploadD3D9();
-          if (unlikely(FAILED(hrUpload)))
-            Logger::warn("DDraw7Surface::GetDC: Failed to initialize d3d9 surface");
-        }
-
-        HRESULT hr9 = m_d3d9->GetDC(lphDC);
-        if (unlikely(FAILED(hr9)))
-          Logger::warn("DDraw7Surface::GetDC: Failed D3D9 call");
-        return hr9;
-      }
-    }
-
     Logger::debug("<<< DDraw7Surface::GetDC: Proxy");
-    return m_proxy->GetDC(lphDC);
+
+    // Write back any dirty surface data from bound D3D9 back buffers or depth stencils
+    DownloadSurfaceData();
+
+    return GetShadowOrProxied()->GetDC(lphDC);
   }
 
   // Flipping can be done at any time and completes within its call frame
   HRESULT STDMETHODCALLTYPE DDraw7Surface::GetFlipStatus(DWORD dwFlags) {
-    if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
-      Logger::debug("<<< DDraw7Surface::GetFlipStatus: Proxy");
-      m_proxy->GetFlipStatus(dwFlags);
-    }
-
     Logger::debug(">>> DDraw7Surface::GetFlipStatus");
 
     if (likely(dwFlags == DDGFS_CANFLIP || dwFlags == DDGFS_ISFLIPDONE))
@@ -865,75 +754,30 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Surface::Lock(LPRECT lpDestRect, LPDDSURFACEDESC2 lpDDSurfaceDesc, DWORD dwFlags, HANDLE hEvent) {
     Logger::debug("<<< DDraw7Surface::Lock: Proxy");
 
-    // Write back any flippable surfaces or depth stencils from D3D9
-    if (unlikely(m_commonSurf->IsGuardableSurface())) {
-      if (m_commonIntf->GetOptions()->backBufferWriteBack || m_commonIntf->GetOptions()->apitraceMode) {
-        Logger::debug("DDraw7Surface::Lock: Surface is a swapchain surface");
+    // Write back any dirty surface data from bound D3D9 back buffers or depth stencils
+    DownloadSurfaceData();
 
-        if (unlikely(m_commonIntf->GetOptions()->apitraceMode && !IsInitialized()))
-          InitializeOrUploadD3D9();
-
-        if (likely(IsInitialized()))
-          BlitToDDrawSurface<IDirectDrawSurface7, DDSURFACEDESC2>(m_proxy.ptr(), m_d3d9.ptr());
-      } else {
-        static bool s_swapchainWarningShown;
-
-        if (!std::exchange(s_swapchainWarningShown, true))
-          Logger::warn("DDraw7Surface::Lock: Surface is a swapchain surface");
-      }
-    } else if (unlikely(m_commonSurf->IsDepthStencil())) {
-      if (m_commonIntf->GetOptions()->depthWriteBack || m_commonIntf->GetOptions()->apitraceMode) {
-        Logger::debug("DDraw7Surface::Lock: Surface is a depth stencil");
-
-        if (likely(IsInitialized()))
-          BlitToDDrawSurface<IDirectDrawSurface7, DDSURFACEDESC2>(m_proxy.ptr(), m_d3d9.ptr());
-      } else {
-        static bool s_depthStencilWarningShown;
-
-        if (!std::exchange(s_depthStencilWarningShown, true))
-          Logger::warn("DDraw7Surface::Lock: Surface is a depth stencil");
-      }
-    }
-
-    return m_proxy->Lock(lpDestRect, lpDDSurfaceDesc, dwFlags, hEvent);
+    return GetShadowOrProxied()->Lock(lpDestRect, lpDDSurfaceDesc, dwFlags, hEvent);
   }
 
   HRESULT STDMETHODCALLTYPE DDraw7Surface::ReleaseDC(HDC hDC) {
-    if (likely(!m_commonIntf->GetOptions()->forceProxiedPresent)) {
-      // Foward ReleaseDC calls if we have drawn and the surface is flippable
-      RefreshD3D9Device();
-      if (m_d3d9Device != nullptr && (m_commonIntf->HasDrawn() &&
-                                      m_commonSurf->IsGuardableSurface())) {
-        Logger::debug(">>> DDraw7Surface::ReleaseDC");
-
-        if (unlikely(!IsInitialized())) {
-          HRESULT hrUpload = InitializeOrUploadD3D9();
-          if (unlikely(FAILED(hrUpload)))
-            Logger::warn("DDraw7Surface::ReleaseDC: Failed to initialize d3d9 surface");
-        }
-
-        HRESULT hr9 = m_d3d9->ReleaseDC(hDC);
-        if (unlikely(FAILED(hr9)))
-          Logger::warn("DDraw7Surface::ReleaseDC: Failed D3D9 call");
-        return hr9;
-      }
-    }
-
     Logger::debug("<<< DDraw7Surface::ReleaseDC: Proxy");
 
-    HRESULT hr = m_proxy->ReleaseDC(hDC);
+    HRESULT hr = GetShadowOrProxied()->ReleaseDC(hDC);
 
     if (likely(SUCCEEDED(hr))) {
-      // Textures and cubemaps get uploaded during SetTexture calls
-      if (m_commonSurf->IsTexture()) {
-        m_commonSurf->DirtyMipMaps();
-      } else if (unlikely(m_commonIntf->GetOptions()->apitraceMode)) {
-        // We should ideally upload the surface contents here at all times,
-        // however some games are amazing, and do hundreds of locks on the same
-        // surface per frame, so this would absolutely tank performance
-        HRESULT hrUpload = InitializeOrUploadD3D9();
-        if (unlikely(FAILED(hrUpload)))
-          Logger::warn("DDraw7Surface::ReleaseDC: Failed upload to d3d9 surface");
+      m_commonSurf->DirtyDDrawSurface();
+
+      d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
+      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                   false : true;
+        if (shouldPresent) {
+          InitializeOrUploadD3D9();
+          d3d9Device->Present(NULL, NULL, NULL, NULL);
+        }
       }
     }
 
@@ -963,6 +807,15 @@ namespace dxvk {
         return hr;
 
       m_commonSurf->SetClipper(ddrawClipper);
+
+      // Retrieve a hWnd, if needed, during clipper attachment
+      HWND hWnd = nullptr;
+      hr = ddrawClipper->GetProxied()->GetHWnd(&hWnd);
+      if (unlikely(FAILED(hr))) {
+        Logger::debug("DDraw7Surface::SetClipper: Failed to retrieve hWnd");
+      } else {
+        m_commonIntf->SetHWND(hWnd);
+      }
     }
 
     return DD_OK;
@@ -971,6 +824,16 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Surface::SetColorKey(DWORD dwFlags, LPDDCOLORKEY lpDDColorKey) {
     Logger::debug("<<< DDraw7Surface::SetColorKey: Proxy");
 
+    // The Combat Mission series of games set a color key which is
+    // outside the color range of the surface they are setting it on...
+    // clamp it to the surface color depth in that case. This doesn't
+    // appear to work well universally, however, so only apply when needed.
+    if (unlikely(m_commonIntf->GetOptions()->colorKeyMasking && lpDDColorKey != nullptr)) {
+      const uint8_t colorBitCount = m_commonSurf->GetColorBitCount();
+      lpDDColorKey->dwColorSpaceLowValue  &= (1 << colorBitCount) - 1;
+      lpDDColorKey->dwColorSpaceHighValue &= (1 << colorBitCount) - 1;
+    }
+
     HRESULT hr = m_proxy->SetColorKey(dwFlags, lpDDColorKey);
     if (unlikely(FAILED(hr)))
       return hr;
@@ -978,6 +841,17 @@ namespace dxvk {
     hr = m_commonSurf->RefreshSurfaceDescripton();
     if (unlikely(FAILED(hr)))
       Logger::err("DDraw7Surface::SetColorKey: Failed to retrieve updated surface desc");
+
+    if (unlikely(m_shadowSurf != nullptr)) {
+      hr = m_shadowSurf->GetProxied()->SetColorKey(dwFlags, lpDDColorKey);
+      if (unlikely(FAILED(hr))) {
+        Logger::warn("DDraw7Surface::SetColorKey: Failed to set shadow surface color key");
+      } else {
+        hr = m_shadowSurf->GetCommonSurface()->RefreshSurfaceDescripton();
+        if (unlikely(FAILED(hr)))
+          Logger::warn("DDraw7Surface::SetColorKey: Failed to retrieve updated shadow surface desc");
+      }
+    }
 
     return DD_OK;
   }
@@ -992,7 +866,7 @@ namespace dxvk {
 
     // A nullptr lpDDPalette gets the current palette detached
     if (lpDDPalette == nullptr) {
-      HRESULT hr = m_proxy->SetPalette(lpDDPalette);
+      HRESULT hr = GetShadowOrProxied()->SetPalette(lpDDPalette);
       if (unlikely(FAILED(hr)))
         return hr;
 
@@ -1000,7 +874,7 @@ namespace dxvk {
     } else {
       DDrawPalette* ddrawPalette = static_cast<DDrawPalette*>(lpDDPalette);
 
-      HRESULT hr = m_proxy->SetPalette(ddrawPalette->GetProxied());
+      HRESULT hr = GetShadowOrProxied()->SetPalette(ddrawPalette->GetProxied());
       if (unlikely(FAILED(hr)))
         return hr;
 
@@ -1013,16 +887,21 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Surface::Unlock(LPRECT lpSurfaceData) {
     Logger::debug("<<< DDraw7Surface::Unlock: Proxy");
 
-    HRESULT hr = m_proxy->Unlock(lpSurfaceData);
+    HRESULT hr = GetShadowOrProxied()->Unlock(lpSurfaceData);
 
     if (likely(SUCCEEDED(hr))) {
-      // Textures and cubemaps get uploaded during SetTexture calls
-      if (!m_commonSurf->IsTextureOrCubeMap()) {
-        HRESULT hrUpload = InitializeOrUploadD3D9();
-        if (unlikely(FAILED(hrUpload)))
-          Logger::warn("DDraw7Surface::Unlock: Failed upload to d3d9 surface");
-      } else {
-        m_commonSurf->DirtyMipMaps();
+      m_commonSurf->DirtyDDrawSurface();
+
+      d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
+      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                   false : true;
+        if (shouldPresent) {
+          InitializeOrUploadD3D9();
+          d3d9Device->Present(NULL, NULL, NULL, NULL);
+        }
       }
     }
 
@@ -1098,13 +977,7 @@ namespace dxvk {
       Logger::err("DDraw4Surface::SetSurfaceDesc: Failed to retrieve updated surface desc");
 
     // We may need to recreate the d3d9 object based on the new desc
-    m_d3d9 = nullptr;
-
-    if (!m_commonSurf->IsTextureOrCubeMap()) {
-      InitializeOrUploadD3D9();
-    } else {
-      m_commonSurf->DirtyMipMaps();
-    }
+    m_commonSurf->SetD3D9Surface(nullptr);
 
     return hr;
   }
@@ -1147,8 +1020,8 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Surface::SetPriority(DWORD prio) {
     Logger::debug(">>> DDraw7Surface::SetPriority");
 
-    RefreshD3D9Device();
-    if (unlikely(!IsInitialized())) {
+    m_commonSurf->RefreshD3D9Device();
+    if (unlikely(!m_commonSurf->IsInitialized())) {
       Logger::debug("DDraw7Surface::SetPriority: Not yet initialized");
       return m_proxy->SetPriority(prio);
     }
@@ -1160,7 +1033,7 @@ namespace dxvk {
     if (unlikely(FAILED(hr)))
       return hr;
 
-    m_d3d9->SetPriority(prio);
+    m_commonSurf->GetD3D9Surface()->SetPriority(prio);
 
     return DD_OK;
   }
@@ -1168,8 +1041,8 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Surface::GetPriority(LPDWORD prio) {
     Logger::debug(">>> DDraw7Surface::GetPriority");
 
-    RefreshD3D9Device();
-    if (unlikely(!IsInitialized())) {
+    m_commonSurf->RefreshD3D9Device();
+    if (unlikely(!m_commonSurf->IsInitialized())) {
       Logger::debug("DDraw7Surface::GetPriority: Not yet initialized");
       return m_proxy->GetPriority(prio);
     }
@@ -1180,7 +1053,7 @@ namespace dxvk {
     if (unlikely(!m_commonSurf->IsManaged()))
       return DDERR_INVALIDOBJECT;
 
-    *prio = m_d3d9->GetPriority();
+    *prio = m_commonSurf->GetD3D9Surface()->GetPriority();
 
     return DD_OK;
   }
@@ -1188,8 +1061,8 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Surface::SetLOD(DWORD lod) {
     Logger::debug("<<< DDraw7Surface::SetLOD: Proxy");
 
-    RefreshD3D9Device();
-    if (unlikely(!IsInitialized())) {
+    m_commonSurf->RefreshD3D9Device();
+    if (unlikely(!m_commonSurf->IsInitialized())) {
       Logger::debug("DDraw7Surface::SetLOD: Not yet initialized");
       return m_proxy->SetLOD(lod);
     }
@@ -1201,10 +1074,10 @@ namespace dxvk {
     if (unlikely(FAILED(hr)))
       return hr;
 
-    if (m_texture9 != nullptr) {
-      m_texture9->SetLOD(lod);
-    } else if (m_cubeMap9 != nullptr) {
-      m_cubeMap9->SetLOD(lod);
+    if (m_commonSurf->GetD3D9Texture() != nullptr) {
+      m_commonSurf->GetD3D9Texture()->SetLOD(lod);
+    } else if (m_commonSurf->GetD3D9CubeTexture() != nullptr) {
+      m_commonSurf->GetD3D9CubeTexture()->SetLOD(lod);
     } else {
       Logger::warn("DDraw7Surface::SetLOD: Failed to set D3D9 LOD");
       return DDERR_INVALIDOBJECT;
@@ -1216,8 +1089,8 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Surface::GetLOD(LPDWORD lod) {
     Logger::debug(">>> DDraw7Surface::GetLOD");
 
-    RefreshD3D9Device();
-    if (unlikely(!IsInitialized())) {
+    m_commonSurf->RefreshD3D9Device();
+    if (unlikely(!m_commonSurf->IsInitialized())) {
       Logger::debug("DDraw7Surface::GetLOD: Not yet initialized");
       return m_proxy->GetLOD(lod);
     }
@@ -1228,10 +1101,10 @@ namespace dxvk {
     if (unlikely(!m_commonSurf->IsManaged()))
       return DDERR_INVALIDOBJECT;
 
-    if (likely(m_texture9 != nullptr)) {
-      *lod = m_texture9->GetLOD();
-    } else if (m_cubeMap9 != nullptr) {
-      *lod = m_cubeMap9->GetLOD();
+    if (likely(m_commonSurf->GetD3D9Texture() != nullptr)) {
+      *lod = m_commonSurf->GetD3D9Texture()->GetLOD();
+    } else if (m_commonSurf->GetD3D9CubeTexture() != nullptr) {
+      *lod = m_commonSurf->GetD3D9CubeTexture()->GetLOD();
     } else {
       Logger::warn("DDraw7Surface::GetLOD: Failed to get D3D9 LOD");
       return DDERR_INVALIDOBJECT;
@@ -1240,40 +1113,160 @@ namespace dxvk {
     return DD_OK;
   }
 
+  IDirectDrawSurface7* DDraw7Surface::GetShadowOrProxied() {
+    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
+
+    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr))
+      return m_shadowSurf->GetProxied();
+
+    return m_proxy.ptr();
+  }
+
   HRESULT DDraw7Surface::InitializeD3D9RenderTarget() {
-    HRESULT hr = DD_OK;
+    m_commonSurf->RefreshD3D9Device();
 
-    RefreshD3D9Device();
+    m_commonSurf->MarkAsD3D9BackBuffer();
 
-    if (unlikely(!IsInitialized()))
-      hr = InitializeD3D9(true);
+    if (unlikely(!m_commonSurf->IsInitialized())) {
+      if (m_commonSurf->IsTextureOrCubeMap())
+        UpdateMipMapCount();
 
-    return hr;
+      HRESULT hr = m_commonSurf->InitializeD3D9(true);
+      if (unlikely(FAILED(hr)))
+        return hr;
+
+      if (unlikely(m_commonSurf->IsCubeMap()))
+        InitializeAllCubeMapSurfaces();
+
+      Logger::debug(str::format("DDraw7Surface::InitializeD3D9RenderTarget: Initialized surface nr. [[7-", m_surfCount, "]]"));
+
+      return UploadSurfaceData();
+    }
+
+    return D3D_OK;
   }
 
   HRESULT DDraw7Surface::InitializeD3D9DepthStencil() {
-    HRESULT hr = DD_OK;
+    m_commonSurf->RefreshD3D9Device();
 
-    RefreshD3D9Device();
+    m_commonSurf->MarkAsD3D9DepthStencil();
 
-    if (unlikely(!IsInitialized()))
-      hr = InitializeD3D9(false);
+    if (unlikely(!m_commonSurf->IsInitialized())) {
+      HRESULT hr = m_commonSurf->InitializeD3D9(false);
+      if (unlikely(FAILED(hr)))
+        return hr;
 
-    return hr;
+      Logger::debug(str::format("DDraw7Surface::InitializeD3D9DepthStencil: Initialized surface nr. [[7-", m_surfCount, "]]"));
+
+      return UploadSurfaceData();
+    }
+
+    return DD_OK;
   }
 
   HRESULT DDraw7Surface::InitializeOrUploadD3D9() {
-    HRESULT hr = DD_OK;
+    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
 
-    RefreshD3D9Device();
-
-    if (likely(IsInitialized())) {
-      hr = UploadSurfaceData();
-    } else {
-      hr = InitializeD3D9(false);
+    // Fast skip
+    if (unlikely(d3d9Device == nullptr)) {
+      Logger::debug("DDraw7Surface::InitializeOrUploadD3D9: Null device, can't initialize right now");
+      return D3D_OK;
     }
 
-    return hr;
+    if (unlikely(!m_commonSurf->IsInitialized())) {
+      if (m_commonSurf->IsTextureOrCubeMap())
+        UpdateMipMapCount();
+
+      const bool initRenderTarget = m_commonSurf->GetCommonD3DDevice()->IsCurrentRenderTarget(m_commonSurf.ptr());
+
+      HRESULT hr = m_commonSurf->InitializeD3D9(initRenderTarget);
+      if (unlikely(FAILED(hr)))
+        return hr;
+
+      if (unlikely(m_commonSurf->IsCubeMap()))
+        InitializeAllCubeMapSurfaces();
+
+      Logger::debug(str::format("DDraw7Surface::InitializeOrUploadD3D9: Initialized surface nr. [[7-", m_surfCount, "]]"));
+    }
+
+    if (likely(m_commonSurf->IsInitialized()))
+      return UploadSurfaceData();
+
+    return DD_OK;
+  }
+
+  void DDraw7Surface::DownloadSurfaceData() {
+    // Some games, like The Settlers IV, use multiple devices for rendering, one to handle
+    // terrain and the overall 3D scene, and one to create textures/sprites to overlay on
+    // top of it. Since DXVK's D3D9 backend does not restrict cross-device surface/texture
+    // use, simply skip changing assigned surface devices during downloads. This is essentially
+    // a hack, which by some miracle works well enough in some cases, though may explode in others.
+    if (likely(!m_commonIntf->GetOptions()->deviceResourceSharing))
+      m_commonSurf->RefreshD3D9Device();
+
+    if (unlikely(m_commonSurf->IsD3D9BackBuffer())) {
+      Logger::debug("DDraw7Surface::DownloadSurfaceData: Surface is a bound swapchain surface");
+
+      if (m_commonSurf->IsInitialized() && m_commonSurf->IsD3D9SurfaceDirty()) {
+        Logger::debug(str::format("DDraw7Surface::DownloadSurfaceData: Downloading nr. [[7-", m_surfCount, "]]"));
+        BlitToDDrawSurface<IDirectDrawSurface7, DDSURFACEDESC2>(GetShadowOrProxied(), m_commonSurf->GetD3D9Surface(),
+                                                                m_commonSurf->IsDXTFormat());
+        m_commonSurf->UnDirtyD3D9Surface();
+      }
+    } else if (unlikely(m_commonSurf->IsD3D9DepthStencil())) {
+      Logger::debug("DDraw7Surface::DownloadSurfaceData: Surface is a bound depth stencil");
+
+      if (m_commonSurf->IsInitialized() && m_commonSurf->IsD3D9SurfaceDirty()) {
+        Logger::debug(str::format("DDraw7Surface::DownloadSurfaceData: Downloading nr. [[7-", m_surfCount, "]]"));
+        BlitToDDrawSurface<IDirectDrawSurface7, DDSURFACEDESC2>(m_proxy.ptr(), m_commonSurf->GetD3D9Surface(),
+                                                                m_commonSurf->IsDXTFormat());
+        m_commonSurf->UnDirtyD3D9Surface();
+      }
+    }
+  }
+
+  inline void DDraw7Surface::UpdateMipMapCount() {
+    // We need to count the number of actual mips on initialization by going through
+    // the mip chain, since the dwMipMapCount number may or may not be accurate. I am
+    // guessing it was intended more as a hint, not neceesarily a set number.
+    const DDSURFACEDESC2* desc2  = m_commonSurf->GetDesc2();
+
+    IDirectDrawSurface7* mipMap = m_proxy.ptr();
+    DDSURFACEDESC2 mipDesc2;
+    uint16_t mipCount = 1;
+
+    while (mipMap != nullptr) {
+      IDirectDrawSurface7* parentSurface = mipMap;
+      mipMap = nullptr;
+      parentSurface->EnumAttachedSurfaces(&mipMap, ListMipChainSurfaces7Callback);
+      if (mipMap != nullptr) {
+        mipCount++;
+
+        mipDesc2 = { };
+        mipDesc2.dwSize = sizeof(DDSURFACEDESC2);
+        mipMap->GetSurfaceDesc(&mipDesc2);
+        // Ignore multiple 1x1 mips, which apparently can get generated if the
+        // application gets the dwMipMapCount wrong vs surface dimensions.
+        if (unlikely(mipDesc2.dwWidth == 1 && mipDesc2.dwHeight == 1))
+          break;
+      }
+    }
+
+    // Do not worry about maximum supported mip map levels validation,
+    // because D3D9 will handle this for us and cap them appropriately
+    if (mipCount > 1) {
+      Logger::debug(str::format("DDraw7Surface::UpdateMipMapCount: Found ", mipCount, " mip levels"));
+
+      if (unlikely(mipCount != desc2->dwMipMapCount))
+        Logger::debug(str::format("DDraw7Surface::UpdateMipMapCount: Mismatch with declared ", desc2->dwMipMapCount, " mip levels"));
+    }
+
+    if (unlikely(m_commonIntf->GetOptions()->autoGenMipMaps)) {
+      Logger::debug("DDraw7Surface::UpdateMipMapCount: Using auto mip map generation");
+      mipCount = 0;
+    }
+
+    m_commonSurf->SetMipCount(mipCount);
   }
 
   inline void DDraw7Surface::InitializeAndAttachCubeFace(
@@ -1296,474 +1289,118 @@ namespace dxvk {
     if (likely(face7 != nullptr)) {
       Com<d3d9::IDirect3DSurface9> face9;
       cubeTex9->GetCubeMapSurface(face, 0, &face9);
-      face7->SetD3D9(std::move(face9));
+      face7->GetCommonSurface()->SetD3D9Surface(std::move(face9));
       m_attachedSurfaces.emplace(std::piecewise_construct,
                                 std::forward_as_tuple(face7->GetProxied()),
                                 std::forward_as_tuple(face7.ref()));
     }
   }
 
-  inline HRESULT DDraw7Surface::InitializeD3D9(const bool initRT) {
-    if (unlikely(m_d3d9Device == nullptr)) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Null device, can't initialize right now");
-      return DD_OK;
+  inline void DDraw7Surface::InitializeAllCubeMapSurfaces() {
+    Logger::debug("DDraw7Surface::InitializeAllCubeMapSurfaces: Retrieving cube map faces");
+
+    CubeMapAttachedSurfaces cubeMapAttachedSurfaces;
+    m_proxy->EnumAttachedSurfaces(&cubeMapAttachedSurfaces, EnumAndAttachCubeMapFacesCallback);
+
+    // The positive X surfaces is this surface, so nothing should be retrieved
+    if (unlikely(cubeMapAttachedSurfaces.positiveX != nullptr))
+      Logger::warn("DDraw7Surface::InitializeAllCubeMapSurfaces: Non-null positive X cube map face");
+
+    m_cubeMapSurfaces[0] = m_proxy.ptr();
+
+    // We can't know in advance which faces have been generated,
+    // so check them one by one, initialize and bind as needed
+    if (cubeMapAttachedSurfaces.negativeX != nullptr) {
+      Logger::debug("DDraw7Surface::InitializeAllCubeMapSurfaces: Detected negative X cube map face");
+      m_cubeMapSurfaces[1] = cubeMapAttachedSurfaces.negativeX;
+      InitializeAndAttachCubeFace(cubeMapAttachedSurfaces.negativeX, m_commonSurf->GetD3D9CubeTexture(),
+                                  d3d9::D3DCUBEMAP_FACE_NEGATIVE_X);
     }
-
-    Logger::debug(str::format("DDraw7Surface::InitializeD3D9: Initializing nr. [[7-", m_surfCount, "]]"));
-
-    const DDSURFACEDESC2* desc2  = m_commonSurf->GetDesc2();
-    const d3d9::D3DFORMAT format = m_commonSurf->GetD3D9Format();
-
-    if (unlikely(desc2->dwHeight == 0 || desc2->dwWidth == 0)) {
-      Logger::err("DDraw7Surface::InitializeD3D9: Surface has 0 height or width");
-      return DDERR_GENERIC;
+    if (cubeMapAttachedSurfaces.positiveY != nullptr) {
+      Logger::debug("DDraw7Surface::InitializeAllCubeMapSurfaces: Detected positive Y cube map face");
+      m_cubeMapSurfaces[2] = cubeMapAttachedSurfaces.positiveY;
+      InitializeAndAttachCubeFace(cubeMapAttachedSurfaces.positiveY, m_commonSurf->GetD3D9CubeTexture(),
+                                  d3d9::D3DCUBEMAP_FACE_POSITIVE_Y);
     }
-
-    if (unlikely(format == d3d9::D3DFMT_UNKNOWN)) {
-      Logger::err("DDraw7Surface::InitializeD3D9: Surface has an unknown format");
-      return DDERR_GENERIC;
+    if (cubeMapAttachedSurfaces.negativeY != nullptr) {
+      Logger::debug("DDraw7Surface::InitializeAllCubeMapSurfaces: Detected negative Y cube map face");
+      m_cubeMapSurfaces[3] = cubeMapAttachedSurfaces.negativeY;
+      InitializeAndAttachCubeFace(cubeMapAttachedSurfaces.negativeY, m_commonSurf->GetD3D9CubeTexture(),
+                                  d3d9::D3DCUBEMAP_FACE_NEGATIVE_Y);
     }
-
-    // Don't initialize P8 textures/surfaces since we don't support them.
-    // Some applications do require them to be created by ddraw, otherwise
-    // they will simply fail to start, so just ignore them for now.
-    if (unlikely(format == d3d9::D3DFMT_P8)) {
-      static bool s_formatP8ErrorShown;
-
-      if (!std::exchange(s_formatP8ErrorShown, true))
-        Logger::warn("DDraw7Surface::InitializeD3D9: Unsupported format D3DFMT_P8");
-
-      return DD_OK;
-
-    // Similarly, D3DFMT_R3G3B2 isn't supported by D3D9 dxvk, however some
-    // applications require it to be supported by ddraw, even if they do not
-    // use it. Simply ignore any D3DFMT_R3G3B2 textures/surfaces for now.
-    } else if (unlikely(format == d3d9::D3DFMT_R3G3B2)) {
-      static bool s_formatR3G3B2ErrorShown;
-
-      if (!std::exchange(s_formatR3G3B2ErrorShown, true))
-        Logger::warn("DDraw7Surface::InitializeD3D9: Unsupported format D3DFMT_R3G3B2");
-
-      return DD_OK;
+    if (cubeMapAttachedSurfaces.positiveZ != nullptr) {
+      Logger::debug("DDraw7Surface::InitializeAllCubeMapSurfaces: Detected positive Z cube map face");
+      m_cubeMapSurfaces[4] = cubeMapAttachedSurfaces.positiveZ;
+      InitializeAndAttachCubeFace(cubeMapAttachedSurfaces.positiveZ, m_commonSurf->GetD3D9CubeTexture(),
+                                  d3d9::D3DCUBEMAP_FACE_POSITIVE_Z);
     }
-
-    // We need to count the number of actual mips on initialization by going through
-    // the mip chain, since the dwMipMapCount number may or may not be accurate. I am
-    // guessing it was intended more as a hint, not neceesarily a set number.
-    if (m_commonSurf->IsTextureOrCubeMap()) {
-      IDirectDrawSurface7* mipMap = m_proxy.ptr();
-      DDSURFACEDESC2 mipDesc2;
-      uint16_t mipCount = 1;
-
-      while (mipMap != nullptr) {
-        IDirectDrawSurface7* parentSurface = mipMap;
-        mipMap = nullptr;
-        parentSurface->EnumAttachedSurfaces(&mipMap, ListMipChainSurfaces7Callback);
-        if (mipMap != nullptr) {
-          mipCount++;
-
-          mipDesc2 = { };
-          mipDesc2.dwSize = sizeof(DDSURFACEDESC2);
-          mipMap->GetSurfaceDesc(&mipDesc2);
-          // Ignore multiple 1x1 mips, which apparently can get generated if the
-          // application gets the dwMipMapCount wrong vs surface dimensions.
-          if (unlikely(mipDesc2.dwWidth == 1 && mipDesc2.dwHeight == 1))
-            break;
-        }
-      }
-
-      // Do not worry about maximum supported mip map levels validation,
-      // because D3D9 will handle this for us and cap them appropriately
-      if (mipCount > 1) {
-        Logger::debug(str::format("DDraw7Surface::InitializeD3D9: Found ", mipCount, " mip levels"));
-
-        if (unlikely(mipCount != desc2->dwMipMapCount))
-          Logger::debug(str::format("DDraw7Surface::InitializeD3D9: Mismatch with declared ", desc2->dwMipMapCount, " mip levels"));
-      }
-
-      if (unlikely(m_commonIntf->GetOptions()->autoGenMipMaps)) {
-        Logger::debug("DDraw7Surface::InitializeD3D9: Using auto mip map generation");
-        mipCount = 0;
-      }
-
-      m_commonSurf->SetMipCount(mipCount);
+    if (cubeMapAttachedSurfaces.negativeZ != nullptr) {
+      Logger::debug("DDraw7Surface::InitializeAllCubeMapSurfaces: Detected negative Z cube map face");
+      m_cubeMapSurfaces[5] = cubeMapAttachedSurfaces.negativeZ;
+      InitializeAndAttachCubeFace(cubeMapAttachedSurfaces.negativeZ, m_commonSurf->GetD3D9CubeTexture(),
+                                  d3d9::D3DCUBEMAP_FACE_NEGATIVE_Z);
     }
-
-    d3d9::D3DPOOL pool  = d3d9::D3DPOOL_DEFAULT;
-    DWORD         usage = 0;
-
-    // General surface/texture pool placement
-    if (desc2->ddsCaps.dwCaps & DDSCAPS_LOCALVIDMEM)
-      pool = d3d9::D3DPOOL_DEFAULT;
-    // There's no explicit non-local video memory placement
-    // per se, but D3DPOOL_MANAGED is close enough
-    else if ((desc2->ddsCaps.dwCaps & DDSCAPS_NONLOCALVIDMEM) || (desc2->ddsCaps.dwCaps2 & DDSCAPS2_TEXTUREMANAGE))
-      pool = d3d9::D3DPOOL_MANAGED;
-    else if (desc2->ddsCaps.dwCaps & DDSCAPS_SYSTEMMEMORY)
-      // We can't know beforehand if a texture is or isn't going to be
-      // used in SetTexture() calls, and textures placed in D3DPOOL_SYSTEMMEM
-      // will not work in that context in dxvk, so revert to D3DPOOL_MANAGED.
-      pool = m_commonSurf->IsTextureOrCubeMap() ? d3d9::D3DPOOL_MANAGED : d3d9::D3DPOOL_SYSTEMMEM;
-
-    // Place all possible render targets in DEFAULT
-    //
-    // Note: This is somewhat problematic for textures and cube maps
-    // which will have D3DUSAGE_RENDERTARGET, but also need to have
-    // D3DUSAGE_DYNAMIC for locking/uploads to work. The flag combination
-    // isn't supported in D3D9, but we have a D3D7 exception in place.
-    //
-    if (m_commonSurf->IsRenderTarget() || initRT) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Usage: D3DUSAGE_RENDERTARGET");
-      pool  = d3d9::D3DPOOL_DEFAULT;
-      usage |= D3DUSAGE_RENDERTARGET;
-    }
-    // All depth stencils will be created in DEFAULT
-    if (m_commonSurf->IsDepthStencil()) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Usage: D3DUSAGE_DEPTHSTENCIL");
-      pool  = d3d9::D3DPOOL_DEFAULT;
-      usage |= D3DUSAGE_DEPTHSTENCIL;
-    }
-
-    // General usage flags
-    if (m_commonSurf->IsTextureOrCubeMap()) {
-      if (pool == d3d9::D3DPOOL_DEFAULT) {
-        Logger::debug("DDraw7Surface::InitializeD3D9: Usage: D3DUSAGE_DYNAMIC");
-        usage |= D3DUSAGE_DYNAMIC;
-      }
-      if (unlikely(m_commonIntf->GetOptions()->autoGenMipMaps)) {
-        Logger::debug("DDraw7Surface::InitializeD3D9: Usage: D3DUSAGE_AUTOGENMIPMAP");
-        usage |= D3DUSAGE_AUTOGENMIPMAP;
-      }
-    }
-
-    const char* poolPlacement = pool == d3d9::D3DPOOL_DEFAULT ? "D3DPOOL_DEFAULT" :
-                                pool == d3d9::D3DPOOL_SYSTEMMEM ? "D3DPOOL_SYSTEMMEM" : "D3DPOOL_MANAGED";
-
-    Logger::debug(str::format("DDraw7Surface::InitializeD3D9: Placing in: ", poolPlacement));
-
-    // Use the MSAA type that was determined to be supported during device creation
-    const d3d9::D3DMULTISAMPLE_TYPE multiSampleType = m_commonIntf->GetCommonD3DDevice()->GetMultiSampleType();
-    const uint32_t index = m_commonSurf->GetBackBufferIndex();
-
-    Com<d3d9::IDirect3DSurface9> surf;
-
-    HRESULT hr = DDERR_GENERIC;
-
-    // Front Buffer
-    if (m_commonSurf->IsFrontBuffer()) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Initializing front buffer...");
-
-      m_d3d9Device->GetBackBuffer(0, index, d3d9::D3DBACKBUFFER_TYPE_MONO, &surf);
-
-      if (unlikely(surf == nullptr)) {
-        Logger::err("DDraw7Surface::InitializeD3D9: Failed to retrieve front buffer");
-        m_d3d9 = nullptr;
-        return hr;
-      }
-
-      m_d3d9 = std::move(surf);
-
-    // Back Buffer
-    } else if (m_commonSurf->IsBackBufferOrFlippable()) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Initializing back buffer...");
-
-      m_d3d9Device->GetBackBuffer(0, index, d3d9::D3DBACKBUFFER_TYPE_MONO, &surf);
-
-      if (unlikely(surf == nullptr)) {
-        Logger::err("DDraw7Surface::InitializeD3D9: Failed to retrieve back buffer");
-        m_d3d9 = nullptr;
-        return hr;
-      }
-
-      m_d3d9 = std::move(surf);
-
-    // Cube maps
-    } else if (m_commonSurf->IsCubeMap()) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Initializing cube map...");
-
-      Com<d3d9::IDirect3DCubeTexture9> cubetex;
-
-      hr = m_d3d9Device->CreateCubeTexture(
-        desc2->dwWidth, m_commonSurf->GetMipCount(), usage,
-        format, pool, &cubetex, nullptr);
-
-      if (unlikely(FAILED(hr))) {
-        Logger::err("DDraw7Surface::InitializeD3D9: Failed to create cube map");
-        m_cubeMap9 = nullptr;
-        return hr;
-      }
-
-      if (unlikely(m_commonIntf->GetOptions()->autoGenMipMaps))
-        cubetex->SetAutoGenFilterType(d3d9::D3DTEXF_ANISOTROPIC);
-
-      // Always attach the positive X face to this surface
-      cubetex->GetCubeMapSurface(d3d9::D3DCUBEMAP_FACE_POSITIVE_X, 0, &surf);
-      m_d3d9 = (std::move(surf));
-
-      Logger::debug("DDraw7Surface::InitializeD3D9: Retrieving cube map faces");
-
-      CubeMapAttachedSurfaces cubeMapAttachedSurfaces;
-      m_proxy->EnumAttachedSurfaces(&cubeMapAttachedSurfaces, EnumAndAttachCubeMapFacesCallback);
-
-      // The positive X surfaces is this surface, so nothing should be retrieved
-      if (unlikely(cubeMapAttachedSurfaces.positiveX != nullptr))
-        Logger::warn("DDraw7Surface::InitializeD3D9: Non-null positive X cube map face");
-
-      m_cubeMapSurfaces[0] = m_proxy.ptr();
-
-      // We can't know in advance which faces have been generated,
-      // so check them one by one, initialize and bind as needed
-      if (cubeMapAttachedSurfaces.negativeX != nullptr) {
-        Logger::debug("DDraw7Surface::InitializeD3D9: Detected negative X cube map face");
-        m_cubeMapSurfaces[1] = cubeMapAttachedSurfaces.negativeX;
-        InitializeAndAttachCubeFace(cubeMapAttachedSurfaces.negativeX, cubetex.ptr(),
-                                    d3d9::D3DCUBEMAP_FACE_NEGATIVE_X);
-      }
-      if (cubeMapAttachedSurfaces.positiveY != nullptr) {
-        Logger::debug("DDraw7Surface::InitializeD3D9: Detected positive Y cube map face");
-        m_cubeMapSurfaces[2] = cubeMapAttachedSurfaces.positiveY;
-        InitializeAndAttachCubeFace(cubeMapAttachedSurfaces.positiveY, cubetex.ptr(),
-                                    d3d9::D3DCUBEMAP_FACE_POSITIVE_Y);
-      }
-      if (cubeMapAttachedSurfaces.negativeY != nullptr) {
-        Logger::debug("DDraw7Surface::InitializeD3D9: Detected negative Y cube map face");
-        m_cubeMapSurfaces[3] = cubeMapAttachedSurfaces.negativeY;
-        InitializeAndAttachCubeFace(cubeMapAttachedSurfaces.negativeY, cubetex.ptr(),
-                                    d3d9::D3DCUBEMAP_FACE_NEGATIVE_Y);
-      }
-      if (cubeMapAttachedSurfaces.positiveZ != nullptr) {
-        Logger::debug("DDraw7Surface::InitializeD3D9: Detected positive Z cube map face");
-        m_cubeMapSurfaces[4] = cubeMapAttachedSurfaces.positiveZ;
-        InitializeAndAttachCubeFace(cubeMapAttachedSurfaces.positiveZ, cubetex.ptr(),
-                                    d3d9::D3DCUBEMAP_FACE_POSITIVE_Z);
-      }
-      if (cubeMapAttachedSurfaces.negativeZ != nullptr) {
-        Logger::debug("DDraw7Surface::InitializeD3D9: Detected negative Z cube map face");
-        m_cubeMapSurfaces[5] = cubeMapAttachedSurfaces.negativeZ;
-        InitializeAndAttachCubeFace(cubeMapAttachedSurfaces.negativeZ, cubetex.ptr(),
-                                    d3d9::D3DCUBEMAP_FACE_NEGATIVE_Z);
-      }
-
-      Logger::debug("DDraw7Surface::InitializeD3D9: Created cube map");
-      m_cubeMap9 = std::move(cubetex);
-
-    // Textures
-    } else if (m_commonSurf->IsTexture()) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Initializing texture...");
-
-      Com<d3d9::IDirect3DTexture9> tex;
-
-      hr = m_d3d9Device->CreateTexture(
-        desc2->dwWidth, desc2->dwHeight, m_commonSurf->GetMipCount(), usage,
-        format, pool, &tex, nullptr);
-
-      if (unlikely(FAILED(hr))) {
-        Logger::err("DDraw7Surface::InitializeD3D9: Failed to create texture");
-        m_texture9 = nullptr;
-        return hr;
-      }
-
-      if (unlikely(m_commonIntf->GetOptions()->autoGenMipMaps))
-        tex->SetAutoGenFilterType(d3d9::D3DTEXF_ANISOTROPIC);
-
-      // Attach level 0 to this surface
-      tex->GetSurfaceLevel(0, &surf);
-      m_d3d9 = (std::move(surf));
-
-      Logger::debug("DDraw7Surface::InitializeD3D9: Created texture");
-      m_texture9 = std::move(tex);
-
-    // Depth Stencil
-    } else if (m_commonSurf->IsDepthStencil()) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Initializing depth stencil...");
-
-      hr = m_d3d9Device->CreateDepthStencilSurface(
-        desc2->dwWidth, desc2->dwHeight, format,
-        multiSampleType, 0, FALSE, &surf, nullptr);
-
-      if (unlikely(FAILED(hr))) {
-        Logger::err("DDraw7Surface::InitializeD3D9: Failed to create DS");
-        m_d3d9 = nullptr;
-        return hr;
-      }
-
-      Logger::debug("DDraw7Surface::InitializeD3D9: Created depth stencil surface");
-
-      m_d3d9 = std::move(surf);
-
-    // Offscreen Plain Surfaces
-    } else if (m_commonSurf->IsOffScreenPlainSurface()) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Initializing offscreen plain surface...");
-
-      // Sometimes we get passed offscreen plain surfaces which should be tied to the back buffer,
-      // either as existing RTs or during SetRenderTarget() calls, which are tracked with initRT
-      if (unlikely(m_commonIntf->GetCommonD3DDevice()->IsCurrentRenderTarget(this) || initRT)) {
-        Logger::debug("DDraw7Surface::InitializeD3D9: Offscreen plain surface is the RT");
-
-        m_d3d9Device->GetBackBuffer(0, index, d3d9::D3DBACKBUFFER_TYPE_MONO, &surf);
-
-        if (unlikely(surf == nullptr)) {
-          Logger::err("DDraw7Surface::InitializeD3D9: Failed to retrieve offscreen plain surface");
-          m_d3d9 = nullptr;
-          return hr;
-        }
-      } else {
-        hr = m_d3d9Device->CreateOffscreenPlainSurface(
-          desc2->dwWidth, desc2->dwHeight, format,
-          pool, &surf, nullptr);
-
-        if (unlikely(FAILED(hr))) {
-          Logger::err("DDraw7Surface::InitializeD3D9: Failed to create offscreen plain surface");
-          m_d3d9 = nullptr;
-          return hr;
-        }
-      }
-
-      m_d3d9 = std::move(surf);
-
-    // Overlays (haven't seen any actual use of overlays in the wild)
-    } else if (m_commonSurf->IsOverlay()) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Initializing overlay...");
-
-      // Always link overlays to the back buffer
-      m_d3d9Device->GetBackBuffer(0, index, d3d9::D3DBACKBUFFER_TYPE_MONO, &surf);
-
-      if (unlikely(surf == nullptr)) {
-        Logger::err("DDraw7Surface::InitializeD3D9: Failed to retrieve overlay surface");
-        m_d3d9 = nullptr;
-        return hr;
-      }
-
-      m_d3d9 = std::move(surf);
-
-    // Generic render target
-    } else if (m_commonSurf->IsRenderTarget()) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Initializing render target...");
-
-      // Must be lockable for blitting to work. Note that
-      // D3D9 does not allow the creation of lockable RTs when
-      // using MSAA, but we have a D3D7 exception in place.
-      hr = m_d3d9Device->CreateRenderTarget(
-        desc2->dwWidth, desc2->dwHeight, format,
-        multiSampleType, usage, TRUE, &surf, nullptr);
-
-      if (unlikely(FAILED(hr))) {
-        Logger::err("DDraw7Surface::InitializeD3D9: Failed to create render target");
-        m_d3d9 = nullptr;
-        return hr;
-      }
-
-      m_d3d9 = std::move(surf);
-
-    // We sometimes get generic surfaces, with only dimensions, format and placement info
-    } else if (!m_commonSurf->IsNotKnown()) {
-      Logger::debug("DDraw7Surface::InitializeD3D9: Initializing generic surface...");
-
-      hr = m_d3d9Device->CreateOffscreenPlainSurface(
-          desc2->dwWidth, desc2->dwHeight, format,
-          pool, &surf, nullptr);
-
-      if (unlikely(FAILED(hr))) {
-        Logger::err("DDraw7Surface::InitializeD3D9: Failed to create offscreen plain surface");
-        m_d3d9 = nullptr;
-        return hr;
-      }
-
-      Logger::debug("DDraw7Surface::InitializeD3D9: Created offscreen plain surface");
-
-      m_d3d9 = std::move(surf);
-    } else {
-      Logger::warn("DDraw7Surface::InitializeD3D9: Skipping initialization of unknown surface");
-    }
-
-    // Depth stencils will not need uploads post initialization
-    if (likely(!m_commonSurf->IsDepthStencil()))
-      UploadSurfaceData();
-
-    return DD_OK;
   }
 
   inline HRESULT DDraw7Surface::UploadSurfaceData() {
-    Logger::debug(str::format("DDraw7Surface::UploadSurfaceData: Uploading nr. [[7-", m_surfCount, "]]"));
-
-    if (unlikely(m_commonIntf->HasDrawn() && m_commonSurf->IsGuardableSurface())) {
-      Logger::debug("DDraw7Surface::UploadSurfaceData: Skipping upload");
+    //Fast skip
+    if (!m_commonSurf->IsDDrawSurfaceDirty())
       return DD_OK;
-    }
 
-    const d3d9::D3DFORMAT format = m_commonSurf->GetD3D9Format();
+    Logger::debug(str::format("DDraw7Surface::UploadSurfaceData: Uploading nr. [[7-", m_surfCount, "]]"));
 
     // Cube maps will also get marked as textures, so need to be handled first
     if (unlikely(m_commonSurf->IsCubeMap())) {
       // In theory we won't know which faces have been generated,
       // so check them one by one, and upload as needed
-      const uint16_t mipCount = m_commonSurf->GetMipCount();
+      const uint16_t mipCount    = m_commonSurf->GetMipCount();
+      const bool     isDXTFormat = m_commonSurf->IsDXTFormat();
       if (likely(m_cubeMapSurfaces[0] != nullptr)) {
-        BlitToD3D9CubeMap(m_cubeMap9.ptr(), format, m_cubeMapSurfaces[0], mipCount);
+        BlitToD3D9CubeMap(m_commonSurf->GetD3D9CubeTexture(), m_cubeMapSurfaces[0], mipCount, isDXTFormat);
       } else {
         Logger::debug("DDraw7Surface::UploadSurfaceData: Positive X face is null, skpping");
       }
       if (likely(m_cubeMapSurfaces[1] != nullptr)) {
-        BlitToD3D9CubeMap(m_cubeMap9.ptr(), format, m_cubeMapSurfaces[1], mipCount);
+        BlitToD3D9CubeMap(m_commonSurf->GetD3D9CubeTexture(), m_cubeMapSurfaces[1], mipCount, isDXTFormat);
       } else {
         Logger::debug("DDraw7Surface::UploadSurfaceData: Negative X face is null, skpping");
       }
       if (likely(m_cubeMapSurfaces[2] != nullptr)) {
-        BlitToD3D9CubeMap(m_cubeMap9.ptr(), format, m_cubeMapSurfaces[2], mipCount);
+        BlitToD3D9CubeMap(m_commonSurf->GetD3D9CubeTexture(), m_cubeMapSurfaces[2], mipCount, isDXTFormat);
       } else {
         Logger::debug("DDraw7Surface::UploadSurfaceData: Positive Y face is null, skpping");
       }
       if (likely(m_cubeMapSurfaces[3] != nullptr)) {
-        BlitToD3D9CubeMap(m_cubeMap9.ptr(), format, m_cubeMapSurfaces[3], mipCount);
+        BlitToD3D9CubeMap(m_commonSurf->GetD3D9CubeTexture(), m_cubeMapSurfaces[3], mipCount, isDXTFormat);
       } else {
         Logger::debug("DDraw7Surface::UploadSurfaceData: Negative Y face is null, skpping");
       }
       if (likely(m_cubeMapSurfaces[4] != nullptr)) {
-        BlitToD3D9CubeMap(m_cubeMap9.ptr(), format, m_cubeMapSurfaces[4], mipCount);
+        BlitToD3D9CubeMap(m_commonSurf->GetD3D9CubeTexture(), m_cubeMapSurfaces[4], mipCount, isDXTFormat);
       } else {
         Logger::debug("DDraw7Surface::UploadSurfaceData: Positive Z face is null, skpping");
       }
       if (likely(m_cubeMapSurfaces[5] != nullptr)) {
-        BlitToD3D9CubeMap(m_cubeMap9.ptr(), format, m_cubeMapSurfaces[5], mipCount);
+        BlitToD3D9CubeMap(m_commonSurf->GetD3D9CubeTexture(), m_cubeMapSurfaces[5], mipCount, isDXTFormat);
       } else {
         Logger::debug("DDraw7Surface::UploadSurfaceData: Negative Z face is null, skpping");
       }
     // Blit all the mips for textures
     } else if (m_commonSurf->IsTexture()) {
-      BlitToD3D9Texture<IDirectDrawSurface7, DDSURFACEDESC2>(m_texture9.ptr(), format,
-                                                             m_proxy.ptr(), m_commonSurf->GetMipCount());
+      BlitToD3D9Texture<IDirectDrawSurface7, DDSURFACEDESC2>(m_commonSurf->GetD3D9Texture(), m_proxy.ptr(),
+                                                             m_commonSurf->GetMipCount(), m_commonSurf->IsDXTFormat());
     // Blit surfaces directly
     } else {
-      if (unlikely(m_commonSurf->IsDepthStencil())) {
-        if (likely(m_commonIntf->GetOptions()->uploadDepthStencils)) {
-          Logger::debug("DDraw7Surface::UploadSurfaceData: Uploading depth stencil");
-        } else {
-          Logger::debug("DDraw7Surface::UploadSurfaceData: Skipping upload of depth stencil");
-          return DD_OK;
-        }
-      }
+      if (unlikely(m_commonSurf->IsDepthStencil()))
+        Logger::debug("DDrawSurface::UploadSurfaceData: Uploading depth stencil");
 
-      BlitToD3D9Surface<IDirectDrawSurface7, DDSURFACEDESC2>(m_d3d9.ptr(), format, m_proxy.ptr());
+      BlitToD3D9Surface<IDirectDrawSurface7, DDSURFACEDESC2>(m_commonSurf->GetD3D9Surface(), GetShadowOrProxied(),
+                                                             m_commonSurf->IsDXTFormat());
     }
+
+    m_commonSurf->UnDirtyDDrawSurface();
 
     return DD_OK;
-  }
-
-  inline void DDraw7Surface::RefreshD3D9Device() {
-    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
-
-    d3d9::IDirect3DDevice9* d3d9Device = commonDevice != nullptr ? commonDevice->GetD3D9Device() : nullptr;
-    if (unlikely(m_d3d9Device != d3d9Device)) {
-      // Check if the device has been recreated and reset all D3D9 resources
-      if (m_d3d9Device != nullptr) {
-        Logger::debug("DDraw7Surface: Device context has changed, clearing all D3D9 resources");
-        m_cubeMap9 = nullptr;
-        m_texture9 = nullptr;
-        m_d3d9 = nullptr;
-      }
-
-      m_d3d9Device = d3d9Device;
-    }
   }
 
 }

@@ -7,6 +7,7 @@
 #include "../ddraw_caps.h"
 
 #include "../d3d_common_device.h"
+#include "../d3d_light.h"
 
 #include "../d3d_multithread.h"
 
@@ -27,7 +28,7 @@ namespace dxvk {
   /**
   * \brief D3D7 device implementation
   */
-  class D3D7Device final : public DDrawWrappedObject<D3D7Interface, IDirect3DDevice7, d3d9::IDirect3DDevice9> {
+  class D3D7Device final : public DDrawWrappedObject<D3D7Interface, IDirect3DDevice7> {
 
   friend class D3D7StateBlock;
 
@@ -37,12 +38,15 @@ namespace dxvk {
           Com<IDirect3DDevice7>&& d3d7DeviceProxy,
           D3D7Interface* pParent,
           D3DDEVICEDESC7 Desc,
+          GUID deviceGUID,
           d3d9::D3DPRESENT_PARAMETERS Params9,
           Com<d3d9::IDirect3DDevice9>&& pDevice9,
           DDraw7Surface* pRT,
           DWORD CreationFlags9);
 
     ~D3D7Device();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject);
 
     HRESULT STDMETHODCALLTYPE GetCaps(D3DDEVICEDESC7 *desc);
 
@@ -138,6 +142,8 @@ namespace dxvk {
 
     void InitializeDS();
 
+    void UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface);
+
     HRESULT ResetD3D9Swapchain(d3d9::D3DPRESENT_PARAMETERS* params);
 
     D3DCommonDevice* GetCommonD3DDevice() {
@@ -148,20 +154,23 @@ namespace dxvk {
       return m_multithread.AcquireLock();
     }
 
-    d3d9::D3DPRESENT_PARAMETERS GetPresentParameters() const {
-      return m_params9;
-    }
-
-    d3d9::D3DMULTISAMPLE_TYPE GetMultiSampleType() const {
-      return m_params9.MultiSampleType;
-    }
-
     DDraw7Surface* GetRenderTarget() const {
       return m_rt.ptr();
     }
 
     DDraw7Surface* GetDepthStencil() const {
       return m_ds.ptr();
+    }
+
+    std::vector<d3d9::D3DLIGHT9> GetLights() {
+      std::vector<d3d9::D3DLIGHT9> lights;
+
+      for (const auto &[idx, light9] : m_lights) {
+        if (m_lightsStates[idx])
+          lights.push_back(light9);
+      }
+
+      return lights;
     }
 
   private:
@@ -185,8 +194,6 @@ namespace dxvk {
         m_commonIntf->SetCommonD3DDevice(m_commonD3DDevice.ptr());
     }
 
-    bool                        m_inScene     = false;
-
     static uint32_t             s_deviceCount;
     uint32_t                    m_deviceCount = 0;
 
@@ -198,29 +205,20 @@ namespace dxvk {
 
     D3DMultithread              m_multithread;
 
-    d3d9::D3DPRESENT_PARAMETERS m_params9;
-
     D3DDEVICEDESC7              m_desc;
+
     Com<DDraw7Surface>          m_rt;
     Com<DDraw7Surface, false>   m_ds;
 
     std::array<Com<DDraw7Surface, false>, ddrawCaps::TextureStageCount> m_textures;
 
+    std::unordered_map<DWORD, d3d9::D3DLIGHT9> m_lights;
+    std::unordered_map<DWORD, BOOL>            m_lightsStates;
+
     D3D7StateBlock* m_recorder       = nullptr;
     DWORD           m_recorderHandle = 0;
     DWORD           m_handle         = 0;
     std::unordered_map<DWORD, D3D7StateBlock> m_stateBlocks;
-
-    // Value of D3DRENDERSTATE_COLORKEYENABLE
-    DWORD           m_colorKeyEnabled      = 0;
-    // Value of D3DRENDERSTATE_COLORKEYBLENDENABLE
-    DWORD           m_colorKeyBlendEnabled = 0;
-    // Value of D3DRENDERSTATE_ANTIALIAS
-    DWORD           m_antialias            = D3DANTIALIAS_NONE;
-    // Value of D3DRENDERSTATE_LINEPATTERN
-    D3DLINEPATTERN  m_linePattern          = { };
-    // Value of D3DCLIPSTATUS
-    D3DCLIPSTATUS   m_clipStatus           = { };
 
     // Common index buffers used for indexed draws, split up into five sizes:
     // XS, S, M, L and XL, corresponding to 0.5 kb, 2 kb, 8 kb, 32 kb and 128 kb

@@ -5,7 +5,7 @@
 
 namespace dxvk {
 
-  class DDrawClipper final : public DDrawWrappedObject<IUnknown, IDirectDrawClipper, IUnknown> {
+  class DDrawClipper final : public DDrawWrappedObject<IUnknown, IDirectDrawClipper> {
 
   public:
 
@@ -14,6 +14,8 @@ namespace dxvk {
           IUnknown* pParent);
 
     ~DDrawClipper();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject);
 
     HRESULT STDMETHODCALLTYPE Initialize(LPDIRECTDRAW lpDD, DWORD dwFlags);
 

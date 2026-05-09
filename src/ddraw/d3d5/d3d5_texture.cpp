@@ -12,7 +12,7 @@ namespace dxvk {
         Com<IDirect3DTexture2>&& proxyTexture,
         DDrawSurface* pParent,
         D3DTEXTUREHANDLE handle)
-    : DDrawWrappedObject<DDrawSurface, IDirect3DTexture2, IUnknown>(pParent, std::move(proxyTexture), nullptr) {
+    : DDrawWrappedObject<DDrawSurface, IDirect3DTexture2>(pParent, std::move(proxyTexture)) {
     m_commonTex = new D3DCommonTexture(m_parent->GetCommonSurface(), handle);
 
     m_texCount = ++s_texCount;
@@ -69,6 +69,14 @@ namespace dxvk {
       Logger::debug("D3D5Texture::QueryInterface: Query for IDirectDrawSurface3");
       return m_parent->QueryInterface(riid, ppvObject);
     }
+    if (unlikely(riid == __uuidof(IDirectDrawSurface4))) {
+      Logger::debug("D3D5Texture::QueryInterface: Query for IDirectDrawSurface4");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
+    if (unlikely(riid == __uuidof(IDirectDrawSurface7))) {
+      Logger::debug("D3D5Texture::QueryInterface: Query for IDirectDrawSurface7");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
 
     try {
       *ppvObject = ref(this->GetInterface(riid));
@@ -91,9 +99,11 @@ namespace dxvk {
     return D3D_OK;
   }
 
+  // Docs state: "This method only affects the legacy ramp device.
+  // For all other devices, this method takes no action and returns D3D_OK."
   HRESULT STDMETHODCALLTYPE D3D5Texture::PaletteChanged(DWORD dwStart, DWORD dwCount) {
-    Logger::warn("<<< D3D5Texture::PaletteChanged: Proxy");
-    return m_proxy->PaletteChanged(dwStart, dwCount);
+    Logger::debug(">>> D3D5Texture::PaletteChanged");
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Texture::Load(LPDIRECT3DTEXTURE2 lpD3DTexture2) {
@@ -116,7 +126,7 @@ namespace dxvk {
       m_parent->GetCommonSurface()->SetDesc(desc);
     }
 
-    m_parent->GetCommonSurface()->DirtyMipMaps();
+    m_parent->GetCommonSurface()->DirtyDDrawSurface();
 
     return hr;
   }

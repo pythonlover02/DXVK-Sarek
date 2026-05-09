@@ -21,7 +21,7 @@ namespace dxvk {
   /**
   * \brief IDirectDrawSurface interface implementation
   */
-  class DDrawSurface final : public DDrawWrappedObject<DDrawInterface, IDirectDrawSurface, d3d9::IDirect3DSurface9> {
+  class DDrawSurface final : public DDrawWrappedObject<DDrawInterface, IDirectDrawSurface> {
 
   public:
 
@@ -102,6 +102,26 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE UpdateOverlayZOrder(DWORD dwFlags, LPDIRECTDRAWSURFACE lpDDSReference);
 
+    IDirectDrawSurface* GetShadowOrProxied();
+
+    HRESULT InitializeD3D9RenderTarget();
+
+    HRESULT InitializeD3D9DepthStencil();
+
+    HRESULT InitializeOrUploadD3D9();
+
+    void DownloadSurfaceData();
+
+    void UpdateMipMapCount();
+
+    void SetShadowSurface(Com<DDrawSurface>&& shadowSurf) {
+      m_shadowSurf = shadowSurf;
+    }
+
+    DDrawSurface* GetShadowSurface() const {
+      return m_shadowSurf.ptr();
+    }
+
     DDrawCommonSurface* GetCommonSurface() const {
       return m_commonSurf.ptr();
     }
@@ -110,12 +130,8 @@ namespace dxvk {
       return m_commonIntf;
     }
 
-    d3d9::IDirect3DDevice9* GetD3D9Device() const {
-      return m_d3d9Device;
-    }
-
-    d3d9::IDirect3DTexture9* GetD3D9Texture() const {
-      return m_texture9.ptr();
+    DDrawSurface* GetNextFlippable() const {
+      return m_nextFlippable;
     }
 
     D3D3Texture* GetD3D3Texture() const {
@@ -132,6 +148,10 @@ namespace dxvk {
 
     void SetD3D5Texture(D3D5Texture* texture5) {
       m_texture5 = texture5;
+    }
+
+    void SetAttachedDepthStencil(Com<DDrawSurface>&& depthStencil) {
+      m_depthStencil = depthStencil;
     }
 
     DDrawSurface* GetAttachedDepthStencil() {
@@ -165,42 +185,36 @@ namespace dxvk {
       m_commonSurf->SetIsAttached(false);
     }
 
-    HRESULT InitializeD3D9RenderTarget();
-
-    HRESULT InitializeD3D9DepthStencil();
-
-    HRESULT InitializeOrUploadD3D9();
-
-    HRESULT InitializeD3D9(const bool initRT);
-
   private:
 
     inline HRESULT UploadSurfaceData();
 
     inline HRESULT CreateDeviceInternal(REFIID riid, void** ppvObject);
 
-    inline void RefreshD3D9Device();
+    inline DWORD DetermineBackBufferCount(IDirectDrawSurface* renderTarget);
 
-    bool             m_isChildObject   = true;
+    bool             m_isChildObject = true;
 
     static uint32_t  s_surfCount;
-    uint32_t         m_surfCount       = 0;
+    uint32_t         m_surfCount     = 0;
 
-    Com<DDrawCommonSurface>             m_commonSurf;
-    DDrawCommonInterface*               m_commonIntf = nullptr;
+    Com<DDrawCommonSurface> m_commonSurf;
+    DDrawCommonInterface*   m_commonIntf    = nullptr;
 
-    DDrawSurface*                       m_parentSurf = nullptr;
+    DDrawSurface*           m_parentSurf    = nullptr;
 
-    d3d9::IDirect3DDevice9*             m_d3d9Device = nullptr;
+    Com<D3D3Texture, false> m_texture3;
+    Com<D3D5Texture, false> m_texture5;
 
-    Com<D3D3Texture, false>             m_texture3;
-    Com<D3D5Texture, false>             m_texture5;
+    DDrawSurface*           m_nextFlippable = nullptr;
 
-    Com<d3d9::IDirect3DTexture9>        m_texture9;
+    // Offscreen plain surface we use to mask unwanted DDraw interactions, such
+    // as forced swapchain presents caused by blits/locks on primary surfaces
+    Com<DDrawSurface>       m_shadowSurf;
 
     // Back buffers will have depth stencil surfaces as attachments (in practice
     // I have never seen more than one depth stencil being attached at a time)
-    Com<DDrawSurface>                   m_depthStencil;
+    Com<DDrawSurface>       m_depthStencil;
 
     // These are attached surfaces, which are typically mips or other types of generated
     // surfaces, which need to exist for the entire lifecycle of their parent surface.
