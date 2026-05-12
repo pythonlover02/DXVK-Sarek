@@ -49,14 +49,13 @@ ddraw_src = [
 
 ddraw_dll = shared_library('ddraw'+dll_ext, ddraw_src, ddraw_res,
   name_prefix         : '',
-  dependencies        : [ util_dep, dxso_dep, dxvk_dep ],
+  dependencies        : [ lib_d3d9, util_dep, dxso_dep, dxvk_dep ],
   include_directories : dxvk_include_path,
   install             : true,
   vs_module_defs      : 'ddraw'+def_spec_ext,
-  link_with           : [ d3d9_dll ],
 )
 
 ddraw_dep = declare_dependency(
-  link_with           : [ ddraw_dll, d3d9_dll ],
+  link_with           : [ ddraw_dll ],
   include_directories : [ dxvk_include_path ],
 )

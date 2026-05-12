@@ -6,7 +6,7 @@ fs = import('fs')
 
 cpp = meson.get_compiler('cpp')
 cc = meson.get_compiler('c')
-dxvk_is_msvc = cpp.get_id() == 'msvc'
+dxvk_is_msvc = cpp.get_argument_syntax() == 'msvc'
 
 compiler_args = [
   '-msse',
@@ -112,7 +112,6 @@ if platform == 'windows'
     )
   endif
 
-  dxvk_wsi = 'win32'
   compiler_args += ['-DDXVK_WSI_WIN32']
 endif
 
