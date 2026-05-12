@@ -4,6 +4,7 @@
 
 #include "../ddraw_util.h"
 
+#include "../d3d_process_vertices.h"
 #include "../d3d_multithread.h"
 
 #include "../ddraw4/ddraw4_interface.h"
@@ -13,12 +14,10 @@ namespace dxvk {
   uint32_t D3D6VertexBuffer::s_buffCount = 0;
 
   D3D6VertexBuffer::D3D6VertexBuffer(
-        Com<IDirect3DVertexBuffer>&& buffProxy,
-        Com<d3d9::IDirect3DVertexBuffer9>&& pBuffer9,
         D3D6Interface* pParent,
         DWORD creationFlags,
         D3DVERTEXBUFFERDESC desc)
-    : DDrawWrappedObject<D3D6Interface, IDirect3DVertexBuffer, d3d9::IDirect3DVertexBuffer9>(pParent, std::move(buffProxy), std::move(pBuffer9))
+    : DDrawWrappedObject<D3D6Interface, IDirect3DVertexBuffer>(pParent, nullptr)
     , m_commonIntf ( pParent->GetCommonInterface() )
     , m_creationFlags ( creationFlags )
     , m_desc ( desc )
@@ -31,6 +30,24 @@ namespace dxvk {
 
   D3D6VertexBuffer::~D3D6VertexBuffer() {
     Logger::debug(str::format("D3D6VertexBuffer: Buffer nr. {{1-", m_buffCount, "}} bites the dust"));
+  }
+
+  HRESULT STDMETHODCALLTYPE D3D6VertexBuffer::QueryInterface(REFIID riid, void** ppvObject) {
+    Logger::debug(">>> D3D6VertexBuffer::QueryInterface");
+
+    if (unlikely(ppvObject == nullptr))
+      return E_POINTER;
+
+    InitReturnPtr(ppvObject);
+
+    try {
+      *ppvObject = ref(this->GetInterface(riid));
+      return S_OK;
+    } catch (const DxvkError& e) {
+      Logger::warn(e.message());
+      Logger::warn(str::format(riid));
+      return E_NOINTERFACE;
+    }
   }
 
   HRESULT STDMETHODCALLTYPE D3D6VertexBuffer::GetVertexBufferDesc(LPD3DVERTEXBUFFERDESC lpVBDesc) {
@@ -55,7 +72,7 @@ namespace dxvk {
     if (unlikely(IsOptimized()))
       return D3DERR_VERTEXBUFFEROPTIMIZED;
 
-    RefreshD3D6Device();
+    RefreshD3DDevice();
     if (unlikely(!IsInitialized())) {
       HRESULT hrInit = InitializeD3D9();
       if (unlikely(FAILED(hrInit)))
@@ -65,7 +82,7 @@ namespace dxvk {
     if (data_size != nullptr)
       *data_size = m_size;
 
-    HRESULT hr = m_d3d9->Lock(0, 0, data, ConvertD3D6LockFlags(flags, false));
+    HRESULT hr = m_vb9->Lock(0, 0, data, ConvertD3D6LockFlags(flags, false));
 
     if (likely(SUCCEEDED(hr)))
       m_locked = true;
@@ -76,14 +93,14 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D6VertexBuffer::Unlock() {
     Logger::debug(">>> D3D6VertexBuffer::Unlock");
 
-    RefreshD3D6Device();
+    RefreshD3DDevice();
     if (unlikely(!IsInitialized())) {
       HRESULT hrInit = InitializeD3D9();
       if (unlikely(FAILED(hrInit)))
         return hrInit;
     }
 
-    HRESULT hr = m_d3d9->Unlock();
+    HRESULT hr = m_vb9->Unlock();
 
     if (likely(SUCCEEDED(hr)))
       m_locked = false;
@@ -105,11 +122,11 @@ namespace dxvk {
     if (unlikely(!(dwVertexOp & D3DVOP_TRANSFORM)))
       return DDERR_INVALIDPARAMS;
 
-    D3D6Device* device = static_cast<D3D6Device*>(lpD3DDevice);
+    D3D6Device* device6 = static_cast<D3D6Device*>(lpD3DDevice);
     D3D6VertexBuffer* vb = static_cast<D3D6VertexBuffer*>(lpSrcBuffer);
 
-    vb->RefreshD3D6Device();
-    if (unlikely(vb->GetDevice() == nullptr || device != vb->GetDevice())) {
+    vb->RefreshD3DDevice();
+    if (unlikely(vb->GetDevice() == nullptr || device6 != vb->GetDevice())) {
       Logger::err("D3D6VertexBuffer::ProcessVertices: Incompatible or null device");
       return DDERR_GENERIC;
     }
@@ -124,25 +141,86 @@ namespace dxvk {
     }
 
     // Check and initialize the destination buffer (this buffer)
-    RefreshD3D6Device();
+    d3d9::IDirect3DDevice9* device9 = RefreshD3DDevice();
     if (unlikely(!IsInitialized())) {
       hrInit = InitializeD3D9();
       if (unlikely(FAILED(hrInit)))
         return hrInit;
     }
 
-    D3DDeviceLock lock = device->LockDevice();
+    D3DDeviceLock lock = device6->LockDevice();
 
-    HandlePreProcessVerticesFlags(dwVertexOp);
+    HRESULT hr = D3D_OK;
 
-    device->GetD3D9()->SetFVF(m_desc.dwFVF);
-    device->GetD3D9()->SetStreamSource(0, vb->GetD3D9(), 0, vb->GetStride());
-    HRESULT hr = device->GetD3D9()->ProcessVertices(dwSrcIndex, dwDestIndex, dwCount, m_d3d9.ptr(), nullptr, dwFlags);
-    if (unlikely(FAILED(hr))) {
-      Logger::err("D3D6VertexBuffer::ProcessVertices: Failed call to D3D9 ProcessVertices");
+    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+
+    if (likely(d3dOptions->cpuProcessVertices)) {
+      uint8_t *inData = nullptr;
+      uint8_t *outData = nullptr;
+
+      HRESULT hr = vb->GetD3D9VertexBuffer()->Lock(dwSrcIndex * vb->GetStride(), dwCount * vb->GetStride(),
+                                                   reinterpret_cast<void**>(&inData), D3DLOCK_READONLY|D3DLOCK_NOSYSLOCK);
+      if (unlikely(FAILED(hr))) {
+        Logger::err("D3D6VertexBuffer::ProcessVertices: Failed to lock source buffer");
+        return D3DERR_VERTEXBUFFERLOCKED;
+      }
+
+      hr = m_vb9->Lock(dwDestIndex * m_stride, dwCount * m_stride, reinterpret_cast<void**>(&outData), D3DLOCK_NOSYSLOCK);
+      if (unlikely(FAILED(hr))) {
+        Logger::err("D3D6VertexBuffer::ProcessVertices: Failed to lock destination buffer");
+        vb->Unlock();
+        return D3DERR_VERTEXBUFFERLOCKED;
+      }
+
+      D3DCommonViewport* commonViewport = device6->GetCurrentViewportInternal()->GetCommonViewport();
+
+      ProcessVerticesData pvData;
+      pvData.inData = inData;
+      pvData.inFVF = vb->GetFVF();
+      pvData.inStride = vb->GetStride();
+      pvData.outData = outData;
+      pvData.outFVF = m_desc.dwFVF;
+      pvData.outStride = m_stride;
+      pvData.vertexCount = dwCount;
+      pvData.correction = commonViewport->GetLegacyProjectionMatrix(0);
+      pvData.dsStatus = nullptr;
+      pvData.doLighting = dwVertexOp & D3DVOP_LIGHT;
+      pvData.doClipping = dwVertexOp & D3DVOP_CLIP;
+      pvData.doNotCopyData = dwFlags & D3DPV_DONOTCOPYDATA;
+      pvData.doExtents = true;
+      pvData.isLegacy = true;
+
+      std::vector<Com<D3DLight>> lights = commonViewport->GetLights();
+      std::vector<d3d9::D3DLIGHT9> lights9;
+
+      for (auto light: lights) {
+        if (!light->IsActive())
+          continue;
+
+        const d3d9::D3DLIGHT9* light9 = light->GetD3D9Light();
+        if (light9 != nullptr)
+          lights9.push_back(*light9);
+      }
+
+      pvData.lights = &lights9;
+
+      ProcessVerticesSW(device9, m_commonIntf->GetOptions(), &pvData);
+
+      m_vb9->Unlock();
+      vb->Unlock();
+
+    } else {
+      HandlePreProcessVerticesFlags(dwVertexOp);
+
+      device9->SetFVF(vb->GetFVF());
+      device9->SetStreamSource(0, vb->GetD3D9VertexBuffer(), 0, vb->GetStride());
+      hr = device9->ProcessVertices(dwSrcIndex, dwDestIndex, dwCount, m_vb9.ptr(), nullptr, dwFlags);
+      if (unlikely(FAILED(hr))) {
+        Logger::err("D3D6VertexBuffer::ProcessVertices: Failed call to D3D9 ProcessVertices");
+      }
+
+      HandlePostProcessVerticesFlags(dwVertexOp);
     }
-
-    HandlePostProcessVerticesFlags(dwVertexOp);
 
     return hr;
   }
@@ -171,6 +249,8 @@ namespace dxvk {
       return DDERR_GENERIC;
     }
 
+    d3d9::IDirect3DDevice9* device9 = m_d3d6Device->GetCommonD3DDevice()->GetD3D9Device();
+
     d3d9::D3DPOOL pool = d3d9::D3DPOOL_DEFAULT;
 
     if (m_desc.dwCaps & D3DVBCAPS_SYSTEMMEMORY)
@@ -181,7 +261,7 @@ namespace dxvk {
     Logger::debug(str::format("D3D6VertexBuffer::InitializeD3D9: Placing in: ", poolPlacement));
 
     const DWORD usage = ConvertD3D6UsageFlags(m_desc.dwCaps, m_creationFlags);
-    HRESULT hr = m_d3d6Device->GetD3D9()->CreateVertexBuffer(m_size, usage, m_desc.dwFVF, pool, &m_d3d9, nullptr);
+    HRESULT hr = device9->CreateVertexBuffer(m_size, usage, m_desc.dwFVF, pool, &m_vb9, nullptr);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6VertexBuffer::InitializeD3D9: Failed to create D3D9 vertex buffer");
@@ -193,18 +273,44 @@ namespace dxvk {
     return DD_OK;
   }
 
-  void D3D6VertexBuffer::RefreshD3D6Device() {
-    D3DCommonDevice* commonDevice = m_commonIntf->GetCommonD3DDevice();
+  d3d9::IDirect3DDevice9* D3D6VertexBuffer::RefreshD3DDevice() {
+    D3DCommonDevice* commonD3DDevice = m_commonIntf->GetCommonD3DDevice();
 
-    D3D6Device* d3d6Device = commonDevice != nullptr ? commonDevice->GetD3D6Device() : nullptr;
+    D3D6Device* d3d6Device = commonD3DDevice != nullptr ? commonD3DDevice->GetD3D6Device() : nullptr;
     if (unlikely(m_d3d6Device != d3d6Device)) {
       // Check if the device has been recreated and reset all D3D9 resources
       if (unlikely(m_d3d6Device != nullptr)) {
-        Logger::debug("D3D6VertexBuffer::RefreshD3D6Device: Device context has changed, clearing D3D9 buffers");
-        m_d3d9 = nullptr;
+        Logger::debug("D3D6VertexBuffer::RefreshD3DDevice: Device context has changed, clearing D3D9 buffers");
+        m_vb9 = nullptr;
       }
       m_d3d6Device = d3d6Device;
     }
+
+    return commonD3DDevice != nullptr ? commonD3DDevice->GetD3D9Device() : nullptr;
+  }
+
+  inline void D3D6VertexBuffer::HandlePreProcessVerticesFlags(DWORD pvFlags) {
+    // Disable lighting if the D3DVOP_LIGHT isn't specified
+    if (!(pvFlags & D3DVOP_LIGHT)) {
+      d3d9::IDirect3DDevice9* device9 = m_d3d6Device->GetCommonD3DDevice()->GetD3D9Device();
+
+      device9->GetRenderState(d3d9::D3DRS_LIGHTING, &m_lighting);
+      if (m_lighting) {
+        //Logger::debug("D3D6VertexBuffer: Disabling lighting");
+        device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
+      }
+    }
+    m_d3d6Device->HandlePreDrawLegacyProjection(0);
+  }
+
+  inline void D3D6VertexBuffer::HandlePostProcessVerticesFlags(DWORD pvFlags) {
+    if (!(pvFlags & D3DVOP_LIGHT) && m_lighting) {
+      d3d9::IDirect3DDevice9* device9 = m_d3d6Device->GetCommonD3DDevice()->GetD3D9Device();
+
+      //Logger::debug("D3D6VertexBuffer: Enabling lighting");
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
+    }
+    m_d3d6Device->HandlePostDrawLegacyProjection();
   }
 
 }

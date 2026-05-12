@@ -25,7 +25,7 @@ namespace dxvk {
   /**
   * \brief D3D3 device implementation
   */
-  class D3D3Device final : public DDrawWrappedObject<DDrawSurface, IDirect3DDevice, d3d9::IDirect3DDevice9> {
+  class D3D3Device final : public DDrawWrappedObject<DDrawSurface, IDirect3DDevice> {
 
   public:
     D3D3Device(
@@ -86,6 +86,8 @@ namespace dxvk {
 
     void InitializeDS();
 
+    void UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface);
+
     D3DCommonDevice* GetCommonD3DDevice() {
       return m_commonD3DDevice.ptr();
     }
@@ -94,20 +96,8 @@ namespace dxvk {
       return m_multithread.AcquireLock();
     }
 
-    void EnableLegacyLights(bool isD3DLight2) {
-      m_bridge->SetLegacyLightsState(true, isD3DLight2);
-    }
-
     D3DSTATS GetStatsInternal() const {
       return m_stats;
-    }
-
-    d3d9::D3DPRESENT_PARAMETERS GetPresentParameters() const {
-      return m_params9;
-    }
-
-    d3d9::D3DMULTISAMPLE_TYPE GetMultiSampleType() const {
-      return m_params9.MultiSampleType;
     }
 
     DDrawSurface* GetRenderTarget() const {
@@ -122,16 +112,7 @@ namespace dxvk {
       return m_currentViewport.ptr();
     }
 
-    D3DMATERIALHANDLE GetCurrentMaterialHandle() const {
-      return m_materialHandle;
-    }
-
   private:
-
-    inline void RefreshLastUsedDevice() {
-      if (unlikely(m_commonIntf->GetCommonD3DDevice() != m_commonD3DDevice.ptr()))
-        m_commonIntf->SetCommonD3DDevice(m_commonD3DDevice.ptr());
-    }
 
     inline void AddViewportInternal(IDirect3DViewport* viewport);
 
@@ -153,7 +134,10 @@ namespace dxvk {
 
     inline void TextureLoadInternal(D3DTEXTURELOAD* textureLoad, uint16_t count);
 
-    bool                           m_inScene     = false;
+    inline void RefreshLastUsedDevice() {
+      if (unlikely(m_commonIntf->GetCommonD3DDevice() != m_commonD3DDevice.ptr()))
+        m_commonIntf->SetCommonD3DDevice(m_commonD3DDevice.ptr());
+    }
 
     static uint32_t                s_deviceCount;
     uint32_t                       m_deviceCount = 0;
@@ -166,25 +150,13 @@ namespace dxvk {
 
     D3DMultithread                 m_multithread;
 
-    d3d9::D3DPRESENT_PARAMETERS    m_params9;
-
-    D3DMATERIALHANDLE              m_materialHandle = 0;
-    D3DTEXTUREHANDLE               m_textureHandle  = 0;
-
     D3DDEVICEDESC3                 m_desc;
-    GUID                           m_deviceGUID;
 
     Com<DDrawSurface>              m_rt;
     Com<DDrawSurface, false>       m_ds;
 
     Com<D3D3Viewport>              m_currentViewport;
     std::vector<Com<D3D3Viewport>> m_viewports;
-
-    // Value of D3DRENDERSTATE_TEXTUREMAPBLEND
-    DWORD                          m_textureMapBlend  = D3DTBLEND_MODULATE;
-
-    D3DMATRIX                      m_projectionMatrix = { };
-    const D3DMATRIX*               m_legacyProjection = nullptr;
 
     D3DSTATS                       m_stats            = { };
 

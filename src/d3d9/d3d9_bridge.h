@@ -36,7 +36,7 @@ IDxvkD3D8Bridge : public IUnknown {
   virtual HRESULT ResetSwapChain(D3DPRESENT_PARAMETERS* Params) = 0;
   virtual HRESULT SetColorKeyState(bool colorKeyState) = 0;
   virtual HRESULT SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh) = 0;
-  virtual HRESULT SetLegacyLightsState(bool legacyLightsState, bool isD3DLight2) = 0;
+  virtual HRESULT SetLegacyLightsState(bool legacyLightsState) = 0;
 
   virtual HRESULT UpdateTextureFromBuffer(
       IDirect3DSurface9*        pDestSurface,
@@ -102,7 +102,7 @@ namespace dxvk {
     HRESULT ResetSwapChain(D3DPRESENT_PARAMETERS* Params);
     HRESULT SetColorKeyState(bool colorKeyState);
     HRESULT SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh);
-    HRESULT SetLegacyLightsState(bool legacyLightsState, bool isD3DLight2);
+    HRESULT SetLegacyLightsState(bool legacyLightsState);
 
     HRESULT UpdateTextureFromBuffer(
         IDirect3DSurface9*        pDestSurface,

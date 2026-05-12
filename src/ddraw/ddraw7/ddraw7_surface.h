@@ -13,10 +13,12 @@
 
 namespace dxvk {
 
+  class D3DCommonDevice;
+
   /**
   * \brief IDirectDrawSurface7 interface implementation
   */
-  class DDraw7Surface final : public DDrawWrappedObject<DDraw7Interface, IDirectDrawSurface7, d3d9::IDirect3DSurface9> {
+  class DDraw7Surface final : public DDrawWrappedObject<DDraw7Interface, IDirectDrawSurface7> {
 
   public:
 
@@ -123,6 +125,24 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE GetLOD(LPDWORD lod);
 
+    IDirectDrawSurface7* GetShadowOrProxied();
+
+    HRESULT InitializeD3D9RenderTarget();
+
+    HRESULT InitializeD3D9DepthStencil();
+
+    HRESULT InitializeOrUploadD3D9();
+
+    void DownloadSurfaceData();
+
+    void SetShadowSurface(Com<DDraw7Surface>&& shadowSurf) {
+      m_shadowSurf = shadowSurf;
+    }
+
+    DDraw7Surface* GetShadowSurface() const {
+      return m_shadowSurf.ptr();
+    }
+
     DDrawCommonSurface* GetCommonSurface() const {
       return m_commonSurf.ptr();
     }
@@ -131,16 +151,8 @@ namespace dxvk {
       return m_commonIntf;
     }
 
-    d3d9::IDirect3DDevice9* GetD3D9Device() const {
-      return m_d3d9Device;
-    }
-
-    d3d9::IDirect3DTexture9* GetD3D9Texture() const {
-      return m_texture9.ptr();
-    }
-
-    d3d9::IDirect3DCubeTexture9* GetD3D9CubeTexture() const {
-      return m_cubeMap9.ptr();
+    void SetAttachedDepthStencil(Com<DDraw7Surface>&& depthStencil) {
+      m_depthStencil = depthStencil;
     }
 
     DDraw7Surface* GetAttachedDepthStencil() {
@@ -174,24 +186,18 @@ namespace dxvk {
       m_commonSurf->SetIsAttached(false);
     }
 
-    HRESULT InitializeD3D9RenderTarget();
-
-    HRESULT InitializeD3D9DepthStencil();
-
-    HRESULT InitializeOrUploadD3D9();
-
   private:
+
+    inline void UpdateMipMapCount();
 
     inline void InitializeAndAttachCubeFace(
         IDirectDrawSurface7* surf,
         d3d9::IDirect3DCubeTexture9* cubeTex9,
         d3d9::D3DCUBEMAP_FACES face);
 
-    inline HRESULT InitializeD3D9(const bool initRT);
+    inline void InitializeAllCubeMapSurfaces();
 
     inline HRESULT UploadSurfaceData();
-
-    inline void RefreshD3D9Device();
 
     bool             m_isChildObject = false;
 
@@ -199,16 +205,17 @@ namespace dxvk {
     uint32_t         m_surfCount     = 0;
 
     Com<DDrawCommonSurface>             m_commonSurf;
-    DDrawCommonInterface*               m_commonIntf = nullptr;
+    DDrawCommonInterface*               m_commonIntf      = nullptr;
 
-    DDraw7Surface*                      m_parentSurf = nullptr;
+    DDraw7Surface*                      m_parentSurf      = nullptr;
 
-    d3d9::IDirect3DDevice9*             m_d3d9Device = nullptr;
-
-    Com<d3d9::IDirect3DCubeTexture9>    m_cubeMap9;
     std::array<IDirectDrawSurface7*, 6> m_cubeMapSurfaces;
 
-    Com<d3d9::IDirect3DTexture9>        m_texture9;
+    DDraw7Surface*                      m_nextFlippable   = nullptr;
+
+    // Offscreen plain surface we use to mask unwanted DDraw interactions, such
+    // as forced swapchain presents caused by blits/locks on primary surfaces
+    Com<DDraw7Surface>                  m_shadowSurf;
 
     // Back buffers will have depth stencil surfaces as attachments (in practice
     // I have never seen more than one depth stencil being attached at a time)

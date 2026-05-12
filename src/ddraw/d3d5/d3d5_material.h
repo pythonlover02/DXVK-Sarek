@@ -9,7 +9,7 @@ namespace dxvk {
 
   class D3D5Interface;
 
-  class D3D5Material final : public DDrawWrappedObject<D3D5Interface, IDirect3DMaterial2, IUnknown> {
+  class D3D5Material final : public DDrawWrappedObject<D3D5Interface, IDirect3DMaterial2> {
 
   public:
 
@@ -19,6 +19,8 @@ namespace dxvk {
           D3DMATERIALHANDLE handle);
 
     ~D3D5Material();
+
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** ppvObject);
 
     HRESULT STDMETHODCALLTYPE SetMaterial(D3DMATERIAL *data);
 

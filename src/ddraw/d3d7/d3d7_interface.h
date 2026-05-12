@@ -15,7 +15,7 @@ namespace dxvk {
   /**
   * \brief D3D7 interface implementation
   */
-  class D3D7Interface final : public DDrawWrappedObject<IUnknown, IDirect3D7, d3d9::IDirect3D9> {
+  class D3D7Interface final : public DDrawWrappedObject<IUnknown, IDirect3D7> {
 
   public:
     D3D7Interface(
@@ -38,7 +38,7 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE CreateVertexBuffer(D3DVERTEXBUFFERDESC *desc, IDirect3DVertexBuffer7 **ppVertexBuffer, DWORD usage);
 
-    HRESULT STDMETHODCALLTYPE EnumZBufferFormats(REFCLSID device_iid, LPD3DENUMPIXELFORMATSCALLBACK cb, LPVOID ctx);
+    HRESULT STDMETHODCALLTYPE EnumZBufferFormats(REFCLSID riidDevice, LPD3DENUMPIXELFORMATSCALLBACK lpEnumCallback, LPVOID lpContext);
 
     HRESULT STDMETHODCALLTYPE EvictManagedTextures();
 
@@ -51,6 +51,8 @@ namespace dxvk {
     }
 
   private:
+
+    inline DWORD DetermineBackBufferCount(IDirectDrawSurface7* renderTarget);
 
     static uint32_t               s_intfCount;
     uint32_t                      m_intfCount  = 0;

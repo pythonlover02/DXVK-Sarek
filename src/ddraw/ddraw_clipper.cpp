@@ -5,7 +5,7 @@ namespace dxvk {
   DDrawClipper::DDrawClipper(
         Com<IDirectDrawClipper>&& clipperProxy,
         IUnknown* pParent)
-    : DDrawWrappedObject<IUnknown, IDirectDrawClipper, IUnknown>(pParent, std::move(clipperProxy), nullptr) {
+    : DDrawWrappedObject<IUnknown, IDirectDrawClipper>(pParent, std::move(clipperProxy)) {
     Logger::debug("DDrawClipper: Created a new clipper");
   }
 
@@ -22,6 +22,24 @@ namespace dxvk {
     m_isInitialized = true;
 
     return DD_OK;
+  }
+
+  HRESULT STDMETHODCALLTYPE DDrawClipper::QueryInterface(REFIID riid, void** ppvObject) {
+    Logger::debug(">>> DDrawClipper::QueryInterface");
+
+    if (unlikely(ppvObject == nullptr))
+      return E_POINTER;
+
+    InitReturnPtr(ppvObject);
+
+    try {
+      *ppvObject = ref(this->GetInterface(riid));
+      return S_OK;
+    } catch (const DxvkError& e) {
+      Logger::warn(e.message());
+      Logger::warn(str::format(riid));
+      return E_NOINTERFACE;
+    }
   }
 
   HRESULT STDMETHODCALLTYPE DDrawClipper::GetClipList(LPRECT lpRect, LPRGNDATA lpClipList, LPDWORD lpdwSize) {

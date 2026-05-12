@@ -11,12 +11,12 @@
 
 namespace dxvk {
 
-  class DDraw7Surface;
+  class D3DCommonDevice;
 
   /**
   * \brief IDirectDrawSurface2 interface implementation
   */
-  class DDraw2Surface final : public DDrawWrappedObject<DDrawSurface, IDirectDrawSurface2, d3d9::IDirect3DSurface9> {
+  class DDraw2Surface final : public DDrawWrappedObject<DDrawSurface, IDirectDrawSurface2> {
 
   public:
 
@@ -102,6 +102,20 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE PageUnlock(DWORD dwFlags);
 
+    IDirectDrawSurface2* GetShadowOrProxied();
+
+    HRESULT InitializeOrUploadD3D9();
+
+    void DownloadSurfaceData();
+
+    void SetShadowSurface(Com<DDraw2Surface>&& shadowSurf) {
+      m_shadowSurf = shadowSurf;
+    }
+
+    DDraw2Surface* GetShadowSurface() const {
+      return m_shadowSurf.ptr();
+    }
+
     DDrawCommonSurface* GetCommonSurface() const {
       return m_commonSurf.ptr();
     }
@@ -110,8 +124,8 @@ namespace dxvk {
       return m_commonIntf;
     }
 
-    d3d9::IDirect3DDevice9* GetD3D9Device() const {
-      return m_d3d9Device;
+    void SetAttachedDepthStencil(Com<DDraw2Surface>&& depthStencil) {
+      m_depthStencil = depthStencil;
     }
 
     DDraw2Surface* GetAttachedDepthStencil() {
@@ -145,17 +159,9 @@ namespace dxvk {
       m_commonSurf->SetIsAttached(false);
     }
 
-    HRESULT InitializeOrUploadD3D9() {
-      return m_parent->InitializeOrUploadD3D9();
-    }
-
-    bool IsInitialized() {
-      return m_parent->IsInitialized();
-    }
-
   private:
 
-    inline void RefreshD3D9Device();
+    inline HRESULT UploadSurfaceData();
 
     static uint32_t  s_surfCount;
     uint32_t         m_surfCount = 0;
@@ -167,7 +173,9 @@ namespace dxvk {
 
     DDraw2Surface*           m_parentSurf = nullptr;
 
-    d3d9::IDirect3DDevice9*  m_d3d9Device = nullptr;
+    // Offscreen plain surface we use to mask unwanted DDraw interactions, such
+    // as forced swapchain presents caused by blits/locks on primary surfaces
+    Com<DDraw2Surface>       m_shadowSurf;
 
     // Back buffers will have depth stencil surfaces as attachments (in practice
     // I have never seen more than one depth stencil being attached at a time)

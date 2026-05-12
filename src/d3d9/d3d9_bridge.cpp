@@ -46,9 +46,8 @@ namespace dxvk {
     return D3D_OK; //m_device->SetColorKey(colorKeyLow, colorKeyHigh);
   }
 
-  HRESULT DxvkD3D8Bridge::SetLegacyLightsState(bool legacyLightsState, bool isD3DLight2) {
-    m_device->SetRenderState(D3DRS_NORMALIZENORMALS, legacyLightsState);
-    return m_device->SetLegacyLightsState(legacyLightsState, isD3DLight2);
+  HRESULT DxvkD3D8Bridge::SetLegacyLightsState(bool legacyLightsState) {
+    return m_device->SetLegacyLightsState(legacyLightsState);
   }
 
   HRESULT DxvkD3D8Bridge::UpdateTextureFromBuffer(

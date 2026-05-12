@@ -1,8 +1,9 @@
 #include "d3d6_material.h"
 
-#include "d3d6_device.h"
 #include "d3d6_interface.h"
 #include "d3d6_viewport.h"
+
+#include "../d3d_common_device.h"
 
 #include "../ddraw4/ddraw4_interface.h"
 
@@ -14,7 +15,7 @@ namespace dxvk {
         Com<IDirect3DMaterial3>&& proxyMaterial,
         D3D6Interface* pParent,
         D3DMATERIALHANDLE handle)
-    : DDrawWrappedObject<D3D6Interface, IDirect3DMaterial3, IUnknown>(pParent, std::move(proxyMaterial), nullptr) {
+    : DDrawWrappedObject<D3D6Interface, IDirect3DMaterial3>(pParent, std::move(proxyMaterial)) {
     m_commonMaterial = new D3DCommonMaterial(handle);
 
     m_commonMaterial->SetD3D6Material(this);
@@ -32,10 +33,31 @@ namespace dxvk {
     Logger::debug(str::format("D3D6Material: Material nr. [[3-", m_materialCount, "]] bites the dust"));
   }
 
+  HRESULT STDMETHODCALLTYPE D3D6Material::QueryInterface(REFIID riid, void** ppvObject) {
+    Logger::debug(">>> D3D6Material::QueryInterface");
+
+    if (unlikely(ppvObject == nullptr))
+      return E_POINTER;
+
+    InitReturnPtr(ppvObject);
+
+    try {
+      *ppvObject = ref(this->GetInterface(riid));
+      return S_OK;
+    } catch (const DxvkError& e) {
+      Logger::warn(e.message());
+      Logger::warn(str::format(riid));
+      return E_NOINTERFACE;
+    }
+  }
+
   HRESULT STDMETHODCALLTYPE D3D6Material::SetMaterial(D3DMATERIAL *data) {
     Logger::debug(">>> D3D6Material::SetMaterial");
 
     if (unlikely(data == nullptr))
+      return DDERR_INVALIDPARAMS;
+
+    if (unlikely(!data->dwSize))
       return DDERR_INVALIDPARAMS;
 
     // This call needs to be forwarded to the proxied material
@@ -52,22 +74,14 @@ namespace dxvk {
     material9->Emissive = data->dcvEmissive;
     material9->Power    = data->dvPower;
 
-    D3DMATERIALHANDLE handle = m_commonMaterial->GetMaterialHandle();
-
-    Logger::debug(str::format(">>> D3D6Material::SetMaterial: Updated material nr. ", handle));
-    Logger::debug(str::format("   Diffuse:  ", material9->Diffuse.r,  " ", material9->Diffuse.g, " ", material9->Diffuse.b));
-    Logger::debug(str::format("   Ambient:  ", material9->Ambient.r,  " ", material9->Ambient.g, " ", material9->Ambient.b));
-    Logger::debug(str::format("   Specular: ", material9->Specular.r, " ", material9->Specular.g, " ", material9->Specular.b));
-    Logger::debug(str::format("   Emissive: ", material9->Emissive.r, " ", material9->Emissive.g, " ", material9->Emissive.b));
-    Logger::debug(str::format("   Power:    ", material9->Power));
-
     // Update the D3D9 material directly if it's actively being used
-    D3D6Device* device6 = m_parent->GetCommonInterface()->GetCommonD3DDevice()->GetD3D6Device();
-    if (likely(device6 != nullptr)) {
-      D3DMATERIALHANDLE currentHandle = device6->GetCurrentMaterialHandle();
+    D3DCommonDevice* commonDevice = m_parent->GetCommonInterface()->GetCommonD3DDevice();
+    if (likely(commonDevice != nullptr)) {
+      const D3DMATERIALHANDLE handle        = m_commonMaterial->GetMaterialHandle();
+      const D3DMATERIALHANDLE currentHandle = commonDevice->GetCurrentMaterialHandle();
       if (currentHandle == handle) {
         Logger::debug(str::format("D3D6Material::SetMaterial: Applying material nr. ", handle, " to D3D9"));
-        device6->GetD3D9()->SetMaterial(material9);
+        commonDevice->GetD3D9Device()->SetMaterial(material9);
       }
     }
 

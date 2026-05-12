@@ -22,7 +22,7 @@ namespace dxvk {
   DDraw4Interface::DDraw4Interface(
         DDrawCommonInterface* commonIntf,
         Com<IDirectDraw4>&& proxyIntf)
-    : DDrawWrappedObject<IUnknown, IDirectDraw4, IUnknown>(nullptr, std::move(proxyIntf), nullptr)
+    : DDrawWrappedObject<IUnknown, IDirectDraw4>(nullptr, std::move(proxyIntf))
     , m_commonIntf ( commonIntf ) {
     // We need a temporary D3D9 interface at this point to retrieve the adapter identifier
     Com<d3d9::IDirect3D9> d3d9Intf = d3d9::Direct3DCreate9(D3D_SDK_VERSION);
@@ -38,12 +38,6 @@ namespace dxvk {
     // Note: IDirectDraw4 can never be the origin interface
 
     m_commonIntf->SetDD4Interface(this);
-
-    static bool s_apitraceModeWarningShown;
-
-    if (unlikely(m_commonIntf->GetOptions()->apitraceMode &&
-                 !std::exchange(s_apitraceModeWarningShown, true)))
-      Logger::warn("DDraw4Interface: Apitrace mode is enabled. Performance will be suboptimal!");
 
     m_intfCount = ++s_intfCount;
 
@@ -266,9 +260,7 @@ namespace dxvk {
     // D3D9, so always strip the DDSCAPS_WRITEONLY flag on creation
     lpDDSurfaceDesc->ddsCaps.dwCaps &= ~DDSCAPS_WRITEONLY;
     // Similarly strip the DDSCAPS2_OPAQUE flag on texture creation
-    if (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_TEXTURE) {
-      lpDDSurfaceDesc->ddsCaps.dwCaps2 &= ~DDSCAPS2_OPAQUE;
-    }
+    lpDDSurfaceDesc->ddsCaps.dwCaps2 &= ~DDSCAPS2_OPAQUE;
 
     if (unlikely((lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_ZBUFFER)
               && (lpDDSurfaceDesc->ddpfPixelFormat.dwZBitMask == 0xFFFFFFFF))) {
@@ -289,8 +281,40 @@ namespace dxvk {
     if (likely(SUCCEEDED(hr))) {
       try{
         Com<DDraw4Surface> surface4 = new DDraw4Surface(nullptr, std::move(ddrawSurface4Proxied), this, nullptr, true);
-        if (unlikely(lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE))
+
+        if (unlikely(lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE)) {
           m_commonIntf->SetPrimarySurface(surface4->GetCommonSurface());
+
+          // Shadow surface creation for the primary surface
+          // (it needs to be based on the same incoming desc)
+          if (unlikely(!surface4->GetCommonSurface()->Is8BitFormat() &&
+                        m_commonIntf->GetOptions()->forceLegacyPresent)) {
+            Logger::debug("DDraw4Interface::CreateSurface: Creating shadow surface");
+
+            DDSURFACEDESC2 shadowDesc = *lpDDSurfaceDesc;
+            const DDSURFACEDESC2* primaryDesc = surface4->GetCommonSurface()->GetDesc2();
+
+            shadowDesc.ddsCaps.dwCaps &= ~DDSCAPS_PRIMARYSURFACE & ~DDSCAPS_COMPLEX & ~DDSCAPS_FLIP;
+            shadowDesc.ddsCaps.dwCaps |= DDSCAPS_OFFSCREENPLAIN;
+            shadowDesc.dwFlags &= ~DDSD_BACKBUFFERCOUNT;
+            // Dimensions aren't specified in the incoming desc,
+            // but are explicitly needed for non-primary surfaces
+            shadowDesc.dwFlags |= DDSD_WIDTH | DDSD_HEIGHT;
+            shadowDesc.dwWidth  = primaryDesc->dwWidth;
+            shadowDesc.dwHeight = primaryDesc->dwHeight;
+
+            Com<IDirectDrawSurface4> ddraw4SurfaceShadow;
+            hr = m_proxy->CreateSurface(&shadowDesc, &ddraw4SurfaceShadow, pUnkOuter);
+            if (unlikely(FAILED(hr))) {
+              Logger::warn("DDraw4Interface::CreateSurface: Failed to create shadow surface");
+            } else {
+              Com<DDraw4Surface> shadowSurf = new DDraw4Surface(nullptr, std::move(ddraw4SurfaceShadow),
+                                                                this, nullptr, false);
+              surface4->SetShadowSurface(std::move(shadowSurf));
+            }
+          }
+        }
+
         *lplpDDSurface = surface4.ref();
       } catch (const DxvkError& e) {
         Logger::err(e.message());
@@ -366,11 +390,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDraw4Interface::FlipToGDISurface() {
-    if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
-      Logger::debug("<<< DDraw4Interface::FlipToGDISurface: Proxy");
-      return m_proxy->FlipToGDISurface();
-    }
-
     Logger::debug("*** DDraw4Interface::FlipToGDISurface: Ignoring");
 
     DDrawCommonSurface* ps = m_commonIntf->GetPrimarySurface();
@@ -387,6 +406,18 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE DDraw4Interface::GetCaps(LPDDCAPS lpDDDriverCaps, LPDDCAPS lpDDHELCaps) {
     Logger::debug("<<< DDraw4Interface::GetCaps: Proxy");
+
+    if (unlikely(lpDDDriverCaps == nullptr && lpDDHELCaps == nullptr))
+      return DDERR_INVALIDPARAMS;
+
+    // Interstate '76 sends invalid dwSizes part of the structs,
+    // and that explodes in Wine, so validate it before proxying
+
+    if (unlikely(lpDDDriverCaps != nullptr && !IsValidDDrawCapsSize(lpDDDriverCaps->dwSize)))
+      return DDERR_INVALIDPARAMS;
+
+    if (unlikely(lpDDHELCaps != nullptr && !IsValidDDrawCapsSize(lpDDHELCaps->dwSize)))
+      return DDERR_INVALIDPARAMS;
 
     HRESULT hr = m_proxy->GetCaps(lpDDDriverCaps, lpDDHELCaps);
     if (unlikely(FAILED(hr)))
@@ -590,8 +621,7 @@ namespace dxvk {
         Logger::warn("DDraw4Interface::SetDisplayMode: Failed to update primary surface desc");
     }
 
-    if (likely(!m_commonIntf->GetOptions()->forceProxiedPresent &&
-                m_commonIntf->GetOptions()->backBufferResize)) {
+    if (likely(m_commonIntf->GetOptions()->backBufferResize)) {
       const bool exclusiveMode = m_commonIntf->GetCooperativeLevel() & DDSCL_EXCLUSIVE;
 
       // Ignore any mode size dimensions when in windowed present mode
@@ -609,11 +639,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDraw4Interface::WaitForVerticalBlank(DWORD dwFlags, HANDLE hEvent) {
-    if (unlikely(m_commonIntf->GetOptions()->forceProxiedPresent)) {
-      Logger::debug("<<< DDraw4Interface::WaitForVerticalBlank: Proxy");
-      m_proxy->WaitForVerticalBlank(dwFlags, hEvent);
-    }
-
     Logger::debug(">>> DDraw4Interface::WaitForVerticalBlank");
 
     if (unlikely(dwFlags & DDWAITVB_BLOCKBEGINEVENT))

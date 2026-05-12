@@ -14,7 +14,7 @@ namespace dxvk {
   class D3D6Viewport;
   class D3D5Viewport;
 
-  class D3D3Viewport final : public DDrawWrappedObject<D3D3Interface, IDirect3DViewport, IUnknown> {
+  class D3D3Viewport final : public DDrawWrappedObject<D3D3Interface, IDirect3DViewport> {
 
   public:
 
@@ -60,6 +60,8 @@ namespace dxvk {
     HRESULT ApplyViewport();
 
     HRESULT ApplyAndActivateLights();
+
+    HRESULT DeactivateLights();
 
     HRESULT ApplyAndActivateLight(DWORD index, D3DLight* light);
 
