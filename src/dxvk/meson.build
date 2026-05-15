@@ -58,7 +58,7 @@ dxvk_shaders = files([
   'hud/shaders/hud_text_vert.vert',
 ])
 
-dxvk_src = files([
+dxvk_src = [
   'dxvk_adapter.cpp',
   'dxvk_barrier.cpp',
   'dxvk_buffer.cpp',
@@ -115,7 +115,7 @@ dxvk_src = files([
   'hud/dxvk_hud_font.cpp',
   'hud/dxvk_hud_item.cpp',
   'hud/dxvk_hud_renderer.cpp',
-])
+]
 
 thread_dep = dependency('threads')
 
