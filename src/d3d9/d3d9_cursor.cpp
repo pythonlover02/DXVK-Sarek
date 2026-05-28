@@ -59,7 +59,7 @@ namespace dxvk {
   }
 
 
-  HRESULT D3D9Cursor::SetHardwareCursor(UINT XHotSpot, UINT YHotSpot, const CursorBitmap& bitmap) {
+  void D3D9Cursor::SetHardwareCursor(UINT XHotSpot, UINT YHotSpot, const CursorBitmap& bitmap) {
     if (m_sCursor.Bitmap != nullptr)
       ResetSoftwareCursor();
 
@@ -82,24 +82,20 @@ namespace dxvk {
     ::DeleteObject(info.hbmColor);
 
     ShowCursor(m_visible);
-
-    return D3D_OK;
   }
 
-  HRESULT D3D9Cursor::SetSoftwareCursor(UINT XHotSpot, UINT YHotSpot, Com<IDirect3DTexture9> pCursorBitmap) {
+  void D3D9Cursor::SetSoftwareCursor(UINT XHotSpot, UINT YHotSpot, Com<IDirect3DTexture9>&& pCursorBitmap) {
     // Make sure to hide the win32 cursor
     ::SetCursor(nullptr);
 
     if (m_hCursor != nullptr)
       ResetHardwareCursor();
 
-    m_sCursor.Bitmap    = pCursorBitmap;
+    m_sCursor.Bitmap    = std::move(pCursorBitmap);
     m_sCursor.XHotSpot  = XHotSpot;
     m_sCursor.YHotSpot  = YHotSpot;
 
     ShowCursor(m_visible);
-
-    return D3D_OK;
   }
 
 }

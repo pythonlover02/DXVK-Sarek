@@ -3481,11 +3481,9 @@ void DxsoCompiler::emitControlFlowGenericLoop(
         mask = DxsoRegMask(true, true, true, true);
 
       std::array<uint32_t, 4> indices = { 0, 1, 2, 3 };
-      uint32_t count = 0;
       for (uint32_t i = 0; i < 4; i++) {
         if (mask[i]) {
           indices[i] = i + 4;
-          count++;
         }
       }
 
