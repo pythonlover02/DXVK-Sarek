@@ -430,6 +430,28 @@ namespace dxvk {
     return 0;
   }
 
+  inline HRESULT ValidateViewportRT(
+        DWORD dwX, DWORD dwY, DWORD dwWidth,
+        DWORD dwHeight, DWORD rtWidth, DWORD rtHeight) {
+    if (unlikely(dwX + dwWidth  > rtWidth || dwY + dwHeight > rtHeight)) {
+      // On Linux/Wine and in windowed mode, we can get in situations
+      // where the actual render target dimensions are off by one
+      // pixel to what the game sets them to. Allow this corner case
+      // to skip the validation, in order to prevent issues.
+      const bool isOnePixelWider  = dwX + dwWidth  == rtWidth  + 1;
+      const bool isOnePixelTaller = dwY + dwHeight == rtHeight + 1;
+
+      if (unlikely(isOnePixelWider || isOnePixelTaller)) {
+        Logger::debug("ValidateViewportRT: Viewport exceeds render target dimensions by one pixel");
+      } else {
+        Logger::debug("ValidateViewportRT: Viewport exceeds render target dimensions");
+        return DDERR_INVALIDPARAMS;
+      }
+    }
+
+    return D3D_OK;
+  }
+
   inline D3DDEVICEDESC3 GetD3D3Caps(const D3DOptions* options) {
     D3DDEVICEDESC3 desc;
 
@@ -626,11 +648,16 @@ namespace dxvk {
                 // | D3DDEVCAPS_SORTDECREASINGZ
                 // | D3DDEVCAPS_SORTEXACT
                 // | D3DDEVCAPS_SORTINCREASINGZ
-                   | D3DDEVCAPS_TEXTURENONLOCALVIDMEM
+                // | D3DDEVCAPS_TEXTURENONLOCALVIDMEM // Exposed though a config option
                 // | D3DDEVCAPS_TEXTURESYSTEMMEMORY
                    | D3DDEVCAPS_TEXTUREVIDEOMEMORY
                    | D3DDEVCAPS_TLVERTEXSYSTEMMEMORY
                    | D3DDEVCAPS_TLVERTEXVIDEOMEMORY;
+
+    // Powerslide uses a broken rendering path if non-local video memory is advertized
+    if (likely(options->nonLocalVideoMemory)) {
+      desc.dwDevCaps |= D3DDEVCAPS_TEXTURENONLOCALVIDMEM;
+    }
 
     if (rclsid == IID_IDirect3DHALDevice) {
       desc.dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
@@ -833,11 +860,16 @@ namespace dxvk {
                 // | D3DDEVCAPS_SORTDECREASINGZ
                 // | D3DDEVCAPS_SORTEXACT
                 // | D3DDEVCAPS_SORTINCREASINGZ
-                   | D3DDEVCAPS_TEXTURENONLOCALVIDMEM
+                // | D3DDEVCAPS_TEXTURENONLOCALVIDMEM // Exposed though a config option
                 // | D3DDEVCAPS_TEXTURESYSTEMMEMORY
                    | D3DDEVCAPS_TEXTUREVIDEOMEMORY
                    | D3DDEVCAPS_TLVERTEXSYSTEMMEMORY
                    | D3DDEVCAPS_TLVERTEXVIDEOMEMORY;
+
+    // Powerslide uses a broken rendering path if non-local video memory is advertized
+    if (likely(options->nonLocalVideoMemory)) {
+      desc.dwDevCaps |= D3DDEVCAPS_TEXTURENONLOCALVIDMEM;
+    }
 
     if (rclsid == IID_IDirect3DHALDevice) {
       desc.dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
@@ -1087,11 +1119,16 @@ namespace dxvk {
                  // | D3DDEVCAPS_SORTEXACT
                  // | D3DDEVCAPS_SORTINCREASINGZ
                  // | D3DDEVCAPS_STRIDEDVERTICES // Mentioned in the docs, but apparently is a ghost
-                    | D3DDEVCAPS_TEXTURENONLOCALVIDMEM
+                 // | D3DDEVCAPS_TEXTURENONLOCALVIDMEM // Exposed though a config option
                  // | D3DDEVCAPS_TEXTURESYSTEMMEMORY
                     | D3DDEVCAPS_TEXTUREVIDEOMEMORY
                     | D3DDEVCAPS_TLVERTEXSYSTEMMEMORY
                     | D3DDEVCAPS_TLVERTEXVIDEOMEMORY;
+
+    // Powerslide uses a broken rendering path if non-local video memory is advertized
+    if (likely(options->nonLocalVideoMemory)) {
+      desc7.dwDevCaps |= D3DDEVCAPS_TEXTURENONLOCALVIDMEM;
+    }
 
     if (rclsid == IID_IDirect3DTnLHalDevice) {
       desc7.dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION

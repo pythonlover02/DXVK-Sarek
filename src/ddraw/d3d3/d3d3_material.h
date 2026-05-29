@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../ddraw_include.h"
-#include "../ddraw_wrapped_object.h"
+#include "../ddraw_child_object.h"
 
 #include "../d3d_common_material.h"
 
@@ -9,12 +9,11 @@ namespace dxvk {
 
   class D3D3Interface;
 
-  class D3D3Material final : public DDrawWrappedObject<D3D3Interface, IDirect3DMaterial> {
+  class D3D3Material final : public DDrawChildObject<D3D3Interface, IDirect3DMaterial> {
 
   public:
 
     D3D3Material(
-          Com<IDirect3DMaterial>&& proxyMaterial,
           D3D3Interface* pParent,
           D3DMATERIALHANDLE handle);
 

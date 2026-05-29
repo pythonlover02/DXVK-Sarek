@@ -88,10 +88,7 @@ namespace dxvk {
     void SetDesc2(const DDSURFACEDESC2& desc2) {
       m_desc2 = desc2;
       m_isDesc2Set = true;
-      m_format9 = ConvertFormat(m_desc2.ddpfPixelFormat);
-      // determine and cache various frequently used flag combinations
-      m_isBackBufferOrFlippable = !IsPrimarySurface() && !IsFrontBuffer() && (IsBackBuffer() || IsFlippable());
-      m_isRenderTarget          = IsFrontBuffer() || IsBackBuffer() || IsFlippable() || Is3DSurface();
+      RefreshStaticDescData();
     }
 
     const DDSURFACEDESC2* GetDesc2() const {
@@ -105,10 +102,7 @@ namespace dxvk {
     void SetDesc(const DDSURFACEDESC& desc) {
       m_desc = desc;
       m_isDescSet = true;
-      m_format9 = ConvertFormat(m_desc.ddpfPixelFormat);
-      // determine and cache various frequently used flag combinations
-      m_isBackBufferOrFlippable = !IsPrimarySurface() && !IsFrontBuffer() && (IsBackBuffer() || IsFlippable());
-      m_isRenderTarget          = IsFrontBuffer() || IsBackBuffer() || IsFlippable() || Is3DSurface();
+      RefreshStaticDescData();
     }
 
     const DDSURFACEDESC* GetDesc() const {
@@ -143,6 +137,25 @@ namespace dxvk {
 
     d3d9::D3DFORMAT GetD3D9Format() const {
       return m_format9;
+    }
+
+    bool IsFullSurfaceLock(RECT* lockRect, RECT* fullSurfaceRect) const {
+      if (lockRect == nullptr) {
+        if (fullSurfaceRect == nullptr)
+          return true;
+
+        lockRect = fullSurfaceRect;
+      }
+
+      const DWORD width  = (m_desc2.dwFlags & DDSD_WIDTH)  ? m_desc2.dwWidth  : m_desc.dwWidth;
+      const DWORD height = (m_desc2.dwFlags & DDSD_HEIGHT) ? m_desc2.dwHeight : m_desc.dwHeight;
+
+      return width  == static_cast<DWORD>(lockRect->right  - lockRect->left) &&
+             height == static_cast<DWORD>(lockRect->bottom - lockRect->top);
+    }
+
+    RECT* GetFullSurfaceRect() {
+      return &m_rect;
     }
 
     float GetNormalizedFloatDepth(DWORD input) const {
@@ -395,24 +408,22 @@ namespace dxvk {
           || m_format9 == d3d9::D3DFMT_P8;
     }
 
-    HRESULT ValidateRTUsage() const {
+    HRESULT ValidateRTUsage(bool isHALOrTNLHALDevice) const {
       // Render targets require the DDSCAPS_3DDEVICE flag
       if (unlikely(!Is3DSurface())) {
         Logger::err("DDrawCommonInterface::ValidateRTUsage: Missing DDSCAPS_3DDEVICE");
         return DDERR_INVALIDCAPS;
       }
-
       // Depth stencil surfaces can't be set as render targets
       if (unlikely(IsDepthStencil())) {
         Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid DDSCAPS_ZBUFFER");
         return DDERR_INVALIDCAPS;
       }
-
-      // TODO: Render targets must not be created in system memory on HAL/HAL T&L devices
-      /*if (unlikely(IsInSystemMemory())) {
+      // Render targets must not be created in system memory on HAL/HAL T&L devices
+      if (unlikely(IsInSystemMemory() && isHALOrTNLHALDevice)) {
         Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid DDSCAPS_SYSTEMMEMORY");
         return D3DERR_SURFACENOTINVIDMEM;
-      }*/
+      }
 
       return DD_OK;
     }
@@ -422,7 +433,7 @@ namespace dxvk {
 
       if (IsPrimarySurface())             type = "primary surface";
       else if (IsFrontBuffer())           type = "front buffer";
-      else if (IsBackBuffer())            type = "back buffer";
+      else if (IsBackBufferOrFlippable()) type = "back buffer";
       else if (IsCubeMap())               type = "cube texture";
       else if (IsTextureMip())            type = "texture mipmap";
       else if (IsTexture())               type = "texture";
@@ -432,10 +443,10 @@ namespace dxvk {
       else if (Is3DSurface())             type = "render target";
       else if (IsNotKnown())              type = "unknown";
 
-      const DWORD width           = IsDesc2Set() ? m_desc2.dwWidth  : m_desc.dwWidth;
-      const DWORD height          = IsDesc2Set() ? m_desc2.dwHeight : m_desc.dwHeight;
-      const DWORD mipMapCount     = IsDesc2Set() ? m_desc2.dwMipMapCount : m_desc.dwMipMapCount;
-      const DWORD backBuferCount  = IsDesc2Set() ? m_desc2.dwBackBufferCount : m_desc.dwBackBufferCount;
+      const DWORD width          = (m_desc2.dwFlags & DDSD_WIDTH)  ? m_desc2.dwWidth  : m_desc.dwWidth;
+      const DWORD height         = (m_desc2.dwFlags & DDSD_HEIGHT) ? m_desc2.dwHeight : m_desc.dwHeight;
+      const DWORD mipMapCount    = (m_desc2.dwFlags & DDSD_MIPMAPCOUNT) ? m_desc2.dwMipMapCount : m_desc.dwMipMapCount;
+      const DWORD backBuferCount = (m_desc2.dwFlags & DDSD_BACKBUFFERCOUNT) ? m_desc2.dwBackBufferCount : m_desc.dwBackBufferCount;
 
       Logger::debug(str::format("   Type:        ", type));
       Logger::debug(str::format("   Dimensions:  ", width, "x", height));
@@ -450,6 +461,15 @@ namespace dxvk {
     }
 
   private:
+
+    inline void RefreshStaticDescData() {
+      m_rect.right  = (m_desc2.dwFlags & DDSD_WIDTH)  ? m_desc2.dwWidth  : m_desc.dwWidth;
+      m_rect.bottom = (m_desc2.dwFlags & DDSD_HEIGHT) ? m_desc2.dwHeight : m_desc.dwHeight;
+      m_format9 = ConvertFormat((m_desc2.dwFlags & DDSD_PIXELFORMAT) ? m_desc2.ddpfPixelFormat : m_desc.ddpfPixelFormat);
+      // determine and cache various frequently used flag combinations
+      m_isBackBufferOrFlippable = !IsPrimarySurface() && !IsFrontBuffer() && (IsBackBuffer() || IsFlippable());
+      m_isRenderTarget          = IsFrontBuffer() || IsBackBuffer() || IsFlippable() || Is3DSurface();
+    }
 
     bool                             m_dirtyDDraw         = false;
     bool                             m_dirtyD3D9          = false;
@@ -469,6 +489,7 @@ namespace dxvk {
 
     DDSURFACEDESC                    m_desc  = { };
     DDSURFACEDESC2                   m_desc2 = { };
+    RECT                             m_rect  = { };
     d3d9::D3DFORMAT                  m_format9 = d3d9::D3DFMT_UNKNOWN;
 
     Com<DDrawClipper>                m_clipper;

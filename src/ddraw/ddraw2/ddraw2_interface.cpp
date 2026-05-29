@@ -27,7 +27,14 @@ namespace dxvk {
     if (likely(commonIntf->GetDDInterface() != nullptr)) {
       m_parentIntf = commonIntf->GetDDInterface();
     } else {
-      Logger::warn("DDraw2Interface: Missing an IDirectDraw parent");
+      // Manually retrieve an IDirectDraw parent object if it doesn't otherwise exist,
+      // which can happen if this interface is created directly from an IDirectDraw4 origin
+      Com<IDirectDraw> ppvProxyObject;
+      HRESULT hr = m_proxy->QueryInterface(__uuidof(IDirectDraw), reinterpret_cast<void**>(&ppvProxyObject));
+      if (unlikely(FAILED(hr)))
+        throw DxvkError("DDraw2Interface: ERROR! Failed to retrieve a parent IDirectDraw interface!");
+
+      m_parentIntf = new DDrawInterface(m_commonIntf.ptr(), std::move(ppvProxyObject));
     }
 
     // Note: IDirectDraw2 can never be the origin interface
@@ -126,12 +133,7 @@ namespace dxvk {
 
       Logger::debug("DDraw2Interface::QueryInterface: Query for IDirect3D");
 
-      Com<IDirect3D> ppvProxyObject;
-      HRESULT hr = m_proxy->QueryInterface(riid, reinterpret_cast<void**>(&ppvProxyObject));
-      if (unlikely(FAILED(hr)))
-        return hr;
-
-      Com<D3D3Interface> d3d3Intf = new D3D3Interface(m_commonIntf.ptr(), nullptr, std::move(ppvProxyObject), this);
+      Com<D3D3Interface> d3d3Intf = new D3D3Interface(m_commonIntf.ptr(), nullptr, this);
       m_commonIntf->SetD3D3Interface(d3d3Intf.ptr());
       *ppvObject = d3d3Intf.ref();
 
@@ -146,12 +148,7 @@ namespace dxvk {
 
       Logger::debug("DDraw2Interface::QueryInterface: Query for IDirect3D2");
 
-      Com<IDirect3D2> ppvProxyObject;
-      HRESULT hr = m_proxy->QueryInterface(riid, reinterpret_cast<void**>(&ppvProxyObject));
-      if (unlikely(FAILED(hr)))
-        return hr;
-
-      Com<D3D5Interface> d3d5Intf = new D3D5Interface(m_commonIntf.ptr(), nullptr, std::move(ppvProxyObject), this);
+      Com<D3D5Interface> d3d5Intf = new D3D5Interface(m_commonIntf.ptr(), nullptr, this);
       *ppvObject = d3d5Intf.ref();
 
       return S_OK;
@@ -181,14 +178,15 @@ namespace dxvk {
       return m_proxy->QueryInterface(riid, ppvObject);
     }
 
-    try {
-      *ppvObject = ref(this->GetInterface(riid));
+    if (likely(riid == __uuidof(IUnknown) ||
+               riid == __uuidof(IDirectDraw2))) {
+      *ppvObject = ref(this);
       return S_OK;
-    } catch (const DxvkError& e) {
-      Logger::warn(e.message());
-      Logger::warn(str::format(riid));
-      return E_NOINTERFACE;
     }
+
+    Logger::warn("DDraw2Interface::QueryInterface: Unknown interface query");
+    Logger::warn(str::format(riid));
+    return E_NOINTERFACE;
   }
 
   // The documentation states: "The IDirectDraw2::Compact method is not currently implemented."
@@ -209,7 +207,7 @@ namespace dxvk {
     HRESULT hr = m_proxy->CreateClipper(dwFlags, &lplpDDClipperProxy, pUnkOuter);
 
     if (likely(SUCCEEDED(hr))) {
-      *lplpDDClipper = ref(new DDrawClipper(std::move(lplpDDClipperProxy), this));
+      *lplpDDClipper = ref(new DDrawClipper(m_commonIntf.ptr(), std::move(lplpDDClipperProxy), this));
     } else {
       Logger::warn("DDraw2Interface::CreateClipper: Failed to create proxy clipper");
       return hr;
@@ -578,6 +576,15 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw2Interface::SetCooperativeLevel(HWND hWnd, DWORD dwFlags) {
     Logger::debug("<<< DDraw2Interface::SetCooperativeLevel: Proxy");
 
+    // DDSCL_CREATEDEVICEWINDOW doesn't appear to behave properly in
+    // Wine, so use the cached hWnd to set the device window instead
+    if (unlikely((dwFlags & DDSCL_CREATEDEVICEWINDOW) && hWnd == nullptr
+               && m_commonIntf->GetHWND() != nullptr)) {
+      dwFlags &= ~DDSCL_CREATEDEVICEWINDOW;
+      dwFlags |= DDSCL_SETDEVICEWINDOW;
+      hWnd = m_commonIntf->GetHWND();
+    }
+
     HRESULT hr = m_proxy->SetCooperativeLevel(hWnd, dwFlags);
     if (unlikely(FAILED(hr)))
       return hr;
@@ -633,7 +640,7 @@ namespace dxvk {
     if (unlikely(commonDevice != nullptr && !m_commonIntf->GetWaitForVBlank())) {
       Logger::info("DDraw2Interface::WaitForVerticalBlank: Switching to D3DPRESENT_INTERVAL_DEFAULT for presentation");
 
-      d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
+      d3d9::D3DPRESENT_PARAMETERS resetParams = *commonDevice->GetPresentParameters();
       resetParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
       HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
       if (likely(SUCCEEDED(hrReset)))

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../ddraw_include.h"
-#include "../ddraw_wrapped_object.h"
+#include "../ddraw_child_object.h"
 #include "../ddraw_options.h"
 #include "../ddraw_util.h"
 #include "../ddraw_format.h"
@@ -16,13 +16,12 @@ namespace dxvk {
   /**
   * \brief D3D3 interface implementation
   */
-  class D3D3Interface final : public DDrawWrappedObject<IUnknown, IDirect3D> {
+  class D3D3Interface final : public DDrawChildObject<IUnknown, IDirect3D> {
 
   public:
     D3D3Interface(
           DDrawCommonInterface* commonIntf,
           D3DCommonInterface* commonD3DIntf,
-          Com<IDirect3D>&& d3d3Intf,
           IUnknown* pParent);
 
     ~D3D3Interface();

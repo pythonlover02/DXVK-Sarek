@@ -53,14 +53,14 @@ namespace dxvk {
     /// Correction offset for X/Y vertex position
     float vertexOffset;
 
-    /// Map all back buffers onto a single D3D9 back buffer
-    bool forceSingleBackBuffer;
-
     /// Resize the back buffer size to screen size when needed
     bool backBufferResize;
 
     /// Blits back to the proxied flippable surface and back again for presentation
     bool forceLegacyPresent;
+
+    /// Emulate an explicit D3D9 front buffer by uploading its content from DDraw
+    bool emulateFrontBuffer;
 
     /// Ignore any application set gamma ramp
     bool ignoreGammaRamp;
@@ -80,11 +80,14 @@ namespace dxvk {
     /// Uses a tolerance interval for color key inverval matching
     bool colorKeyTolerance;
 
-    /// Extends features and relaxes validations to enable apitrace debugging
-    bool apitraceMode;
-
     /// Enumerate with legacy/official implementation device names
     bool legacyDeviceNames;
+
+    /// Expose the D3DDEVCAPS_TEXTURENONLOCALVIDMEM device cap
+    bool nonLocalVideoMemory;
+
+    /// Extends features and relaxes validations to enable apitrace debugging
+    bool apitraceMode;
 
     /// By default guards against legacy presents while inside of a scene
     D3DLegacyPresentGuard legacyPresentGuard;
@@ -107,9 +110,9 @@ namespace dxvk {
       this->forceLegacyDiscard    = config.getOption<bool>   ("ddraw.forceLegacyDiscard",    false);
       this->cpuProcessVertices    = config.getOption<bool>   ("ddraw.cpuProcessVertices",     true);
       this->vertexOffset          = config.getOption<float>  ("ddraw.vertexOffset",           0.0f);
-      this->forceSingleBackBuffer = config.getOption<bool>   ("ddraw.forceSingleBackBuffer", false);
       this->backBufferResize      = config.getOption<bool>   ("ddraw.backBufferResize",       true);
       this->forceLegacyPresent    = config.getOption<bool>   ("ddraw.forceLegacyPresent",    false);
+      this->emulateFrontBuffer    = config.getOption<bool>   ("ddraw.emulateFrontBuffer",    false);
       this->ignoreGammaRamp       = config.getOption<bool>   ("ddraw.ignoreGammaRamp",       false);
       this->ignoreExclusiveMode   = config.getOption<bool>   ("ddraw.ignoreExclusiveMode",   false);
       this->autoGenMipMaps        = config.getOption<bool>   ("ddraw.autoGenMipMaps",        false);
@@ -117,6 +120,7 @@ namespace dxvk {
       this->colorKeyMasking       = config.getOption<bool>   ("ddraw.colorKeyMasking",       false);
       this->colorKeyTolerance     = config.getOption<bool>   ("ddraw.colorKeyTolerance",     false);
       this->legacyDeviceNames     = config.getOption<bool>   ("ddraw.legacyDeviceNames",     false);
+      this->nonLocalVideoMemory   = config.getOption<bool>   ("ddraw.nonLocalVideoMemory",    true);
       this->apitraceMode          = config.getOption<bool>   ("ddraw.apitraceMode",          false);
 
       // Clamp the vertex offset in the (sensible) -1.0f/1.0f range

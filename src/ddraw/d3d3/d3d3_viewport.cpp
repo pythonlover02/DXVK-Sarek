@@ -2,6 +2,10 @@
 
 #include "d3d3_device.h"
 
+#include "../ddraw_common_interface.h"
+#include "../ddraw_common_surface.h"
+#include "../ddraw_util.h"
+
 #include "../d3d_light.h"
 #include "../d3d_common_material.h"
 
@@ -19,13 +23,12 @@ namespace dxvk {
 
   D3D3Viewport::D3D3Viewport(
         D3DCommonViewport* commonViewport,
-        Com<IDirect3DViewport>&& proxyViewport,
         D3D3Interface* pParent)
-    : DDrawWrappedObject<D3D3Interface, IDirect3DViewport>(pParent, std::move(proxyViewport))
+    : DDrawChildObject<D3D3Interface, IDirect3DViewport>(pParent)
     , m_commonViewport ( commonViewport ) {
 
     if (m_commonViewport == nullptr)
-      m_commonViewport = new D3DCommonViewport(m_parent->GetCommonD3DInterface());
+      m_commonViewport = new D3DCommonViewport(m_parent->GetCommonD3DInterface(), m_parent->GetCommonInterface());
 
     m_commonViewport->SetD3D3Viewport(this);
 
@@ -89,15 +92,8 @@ namespace dxvk {
 
       Logger::debug("D3D3Viewport::QueryInterface: Query for IDirect3DViewport2");
 
-      Com<IDirect3DViewport2> ppvProxyObject;
-      HRESULT hr = m_proxy->QueryInterface(riid, reinterpret_cast<void**>(&ppvProxyObject));
-      if (unlikely(FAILED(hr)))
-        return hr;
-
-      m_viewport5 = new D3D5Viewport(m_commonViewport.ptr(), std::move(ppvProxyObject), nullptr);
-
-      // On native this is the same object, so no need to ref
-      *ppvObject = m_viewport5.ptr();
+      m_viewport5 = new D3D5Viewport(m_commonViewport.ptr(), nullptr);
+      *ppvObject = m_viewport5.ref();
 
       return S_OK;
     }
@@ -109,27 +105,21 @@ namespace dxvk {
 
       Logger::debug("D3D3Viewport::QueryInterface: Query for IDirect3DViewport3");
 
-      Com<IDirect3DViewport3> ppvProxyObject;
-      HRESULT hr = m_proxy->QueryInterface(riid, reinterpret_cast<void**>(&ppvProxyObject));
-      if (unlikely(FAILED(hr)))
-        return hr;
-
-      m_viewport6 = new D3D6Viewport(m_commonViewport.ptr(), std::move(ppvProxyObject), nullptr);
-
-      // On native this is the same object, so no need to ref
-      *ppvObject = m_viewport6.ptr();
+      m_viewport6 = new D3D6Viewport(m_commonViewport.ptr(), nullptr);
+      *ppvObject = m_viewport6.ref();
 
       return S_OK;
     }
 
-    try {
-      *ppvObject = ref(this->GetInterface(riid));
+    if (likely(riid == __uuidof(IUnknown) ||
+               riid == __uuidof(IDirect3DViewport))) {
+      *ppvObject = ref(this);
       return S_OK;
-    } catch (const DxvkError& e) {
-      Logger::warn(e.message());
-      Logger::warn(str::format(riid));
-      return E_NOINTERFACE;
     }
+
+    Logger::warn("D3D3Viewport::QueryInterface: Unknown interface query");
+    Logger::warn(str::format(riid));
+    return E_NOINTERFACE;
   }
 
   // Docs state: "The IDirect3DViewport2::Initialize method is not implemented."
@@ -173,10 +163,6 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D3Viewport::SetViewport(D3DVIEWPORT *data) {
     Logger::debug(">>> D3D3Viewport::SetViewport");
 
-    HRESULT hr = m_proxy->SetViewport(data);
-    if (unlikely(FAILED(hr)))
-      return hr;
-
     if (unlikely(data == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -186,8 +172,17 @@ namespace dxvk {
     if (unlikely(!m_commonViewport->HasDevice()))
       return D3DERR_VIEWPORTHASNODEVICE;
 
-    // TODO: Check viewport dimensions against the currently set RT,
-    // and perform some sanity checks (positive, non-zero dimensions)
+    // These validations aren't performed at all on viewports bound to a D3D3 device
+    if (unlikely(m_commonViewport->GetD3D3Device() == nullptr)) {
+      // Use the full surface rect, since it is surface version agnostic
+      const RECT* surfRect = m_commonViewport->GetCommonRenderTarget()->GetFullSurfaceRect();
+      // D3D3 will fail when setting a viewport that's outside of the
+      // current render target, though that works in D3D9
+      HRESULT hr = ValidateViewportRT(data->dwX, data->dwY, data->dwWidth, data->dwHeight,
+                                      surfRect->right, surfRect->bottom);
+      if (unlikely(FAILED(hr)))
+        return hr;
+    }
 
     d3d9::D3DVIEWPORT9* viewport9 = m_commonViewport->GetD3D9Viewport();
 
@@ -272,18 +267,6 @@ namespace dxvk {
     if (unlikely(commonMaterial == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    // We still need to proxy this call to DDraw for
-    // proxied clear colors to be accurate
-    D3D3Device* device3 = m_commonViewport->GetD3D3Device();
-    if (likely(device3 != nullptr)) {
-      D3DMATERIALHANDLE proxyHandle = commonMaterial->GetProxiedMaterialHandle(device3->GetProxied());
-      HRESULT hr = m_proxy->SetBackground(proxyHandle);
-      if (unlikely(FAILED(hr)))
-        Logger::warn("D3D3Viewport::SetBackground: Failed to set the proxied viewport background");
-    }
-
-    m_commonViewport->MarkMaterialAsSet();
-
     // Cache only the set material handle, as its color can
     // change after it is set (get it on Clear directly)
     m_commonViewport->SetMaterialHandle(hMat);
@@ -303,23 +286,30 @@ namespace dxvk {
     return D3D_OK;
   }
 
-  // One could speculate this was meant to set a z-buffer depth value
-  // to be used during clears, perhaps, similarly to SetBackground(),
-  // however it has not seen any practical use in the wild
   HRESULT STDMETHODCALLTYPE D3D3Viewport::SetBackgroundDepth(IDirectDrawSurface *surface) {
-    Logger::warn("!!! D3D3Viewport::SetBackgroundDepth: Stub");
+    Logger::debug(">>> D3D3Viewport::SetBackgroundDepth");
+
+    if (unlikely(!m_commonViewport->GetCommonInterface()->IsWrappedSurface(surface))) {
+      Logger::warn("D3D3Viewport::SetBackgroundDepth: Received an unwrapped surface");
+      return DDERR_UNSUPPORTED;
+    }
+
+    m_backgroundDepth = reinterpret_cast<DDrawSurface*>(surface);
+    m_isBackgroundDepthSet = true;
+
     return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D3Viewport::GetBackgroundDepth(IDirectDrawSurface **surface, BOOL *valid) {
-    Logger::warn("!!! D3D3Viewport::SetBackgroundDepth: Stub");
+    Logger::debug(">>> D3D3Viewport::GetBackgroundDepth");
 
     if (unlikely(surface == nullptr || valid == nullptr))
       return DDERR_INVALIDPARAMS;
 
     InitReturnPtr(surface);
 
-    *valid = FALSE;
+    *surface = reinterpret_cast<IDirectDrawSurface*>(m_backgroundDepth.ptr());
+    *valid = m_isBackgroundDepthSet;
 
     return D3D_OK;
   }
@@ -330,10 +320,6 @@ namespace dxvk {
     // Fast skip
     if (unlikely(!count && rects))
       return D3D_OK;
-
-    HRESULT hr = m_proxy->Clear(count, rects, flags);
-    if (unlikely(FAILED(hr)))
-      return hr;
 
     if (unlikely(!m_commonViewport->HasDevice()))
       return D3DERR_VIEWPORTHASNODEVICE;
@@ -357,17 +343,33 @@ namespace dxvk {
     D3DCommonMaterial* commonMaterial = m_commonViewport->GetCommonD3DInterface()->GetCommonMaterialFromHandle(handle);
     D3DCOLOR clearColor = commonMaterial != nullptr ? commonMaterial->GetMaterialColor() : defaultColor;
 
-    HRESULT hr9 = d3d9Device->Clear(count, rects, flags, clearColor, 1.0f, 0u);
+    // TODO: Account for any set background depth surface, though in practice
+    // it does not appear to matter even in the one game which uses it (Powerslide)
+    HRESULT hr = d3d9Device->Clear(count, rects, flags, clearColor, 1.0f, 0u);
 
     // Restore the previously active viewport
     if (!m_commonViewport->IsCurrentViewport()) {
       d3d9Device->SetViewport(&currentViewport9);
     }
 
-    if (unlikely(FAILED(hr9))) {
-      Logger::warn("D3D3Viewport::Clear: Failed D3D9 Clear call");
+    if (unlikely(FAILED(hr))) {
+      Logger::debug("D3D3Viewport::Clear: Failed D3D9 Clear call");
     } else {
-      m_commonViewport->UpdateSurfaceDirtyTracking(true, false, false);
+      const bool clearRenderTarget = flags & D3DCLEAR_TARGET;
+      const bool clearDepthStencil = flags & D3DCLEAR_ZBUFFER;
+
+      if (clearRenderTarget) {
+        DDrawCommonSurface* rt = m_commonViewport->GetCommonRenderTarget();
+        if (likely(rt != nullptr))
+          rt->UnDirtyDDrawSurface();
+      }
+      if (clearDepthStencil) {
+        DDrawCommonSurface* ds = m_commonViewport->GetCommonDepthStencil();
+        if (likely(ds != nullptr))
+          ds->UnDirtyDDrawSurface();
+      }
+
+      m_commonViewport->UpdateSurfaceDirtyTracking(clearRenderTarget, clearDepthStencil, false);
     }
 
     return D3D_OK;

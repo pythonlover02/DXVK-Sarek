@@ -96,14 +96,15 @@ namespace dxvk {
       return m_parent->QueryInterface(riid, ppvObject);
     }
 
-    try {
-      *ppvObject = ref(this->GetInterface(riid));
+    if (likely(riid == __uuidof(IUnknown) ||
+               riid == __uuidof(IDirect3D7))) {
+      *ppvObject = ref(this);
       return S_OK;
-    } catch (const DxvkError& e) {
-      Logger::warn(e.message());
-      Logger::warn(str::format(riid));
-      return E_NOINTERFACE;
     }
+
+    Logger::warn("D3D7Interface::QueryInterface: Unknown interface query");
+    Logger::warn(str::format(riid));
+    return E_NOINTERFACE;
   }
 
   HRESULT STDMETHODCALLTYPE D3D7Interface::EnumDevices(LPD3DENUMDEVICESCALLBACK7 cb, void *ctx) {
@@ -268,8 +269,7 @@ namespace dxvk {
     Logger::info(str::format("D3D7Interface::CreateDevice: Back buffer size: ", desc.dwWidth, "x", desc.dwHeight));
 
     const DWORD backBufferCount = DetermineBackBufferCount(rt7->GetProxied());
-    // Consider the front buffer as well when reporting the overall count
-    Logger::info(str::format("D3D7Interface::CreateDevice: Back buffer count: ", backBufferCount + 1));
+    Logger::info(str::format("D3D7Interface::CreateDevice: Back buffer count: ", backBufferCount));
 
     Com<d3d9::IDirect3D9> d3d9Intf = m_commonD3DIntf->GetD3D9Interface();
 
@@ -312,11 +312,9 @@ namespace dxvk {
       return hr;
     }
 
-    D3DDEVICEDESC7 desc7 = GetD3D7Caps(rclsidOverride, d3dOptions);
-
     try{
-      Com<D3D7Device> device7 = new D3D7Device(nullptr, std::move(d3d7DeviceProxy), this, desc7,
-                                               rclsidOverride, params, std::move(device9),
+      Com<D3D7Device> device7 = new D3D7Device(nullptr, std::move(d3d7DeviceProxy), this,
+                                               rclsidOverride, &params, std::move(device9),
                                                rt7.ptr(), deviceCreationFlags9);
 
       // Set the common device on the common interface
@@ -341,7 +339,7 @@ namespace dxvk {
 
     InitReturnPtr(ppVertexBuffer);
 
-    *ppVertexBuffer = ref(new D3D7VertexBuffer(this, *desc));
+    *ppVertexBuffer = ref(new D3D7VertexBuffer(this, desc));
 
     return D3D_OK;
   }
@@ -417,31 +415,28 @@ namespace dxvk {
   inline DWORD D3D7Interface::DetermineBackBufferCount(IDirectDrawSurface7* renderTarget) {
     DWORD backBufferCount = 0;
 
-    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+    IDirectDrawSurface7* backBuffer = renderTarget;
+    HRESULT hr;
 
-    if (likely(!d3dOptions->forceSingleBackBuffer && !d3dOptions->forceLegacyPresent)) {
-      IDirectDrawSurface7* backBuffer = renderTarget;
-      HRESULT hr;
+    while (backBuffer != nullptr) {
+      IDirectDrawSurface7* parentSurface = backBuffer;
+      backBuffer = nullptr;
 
-      while (backBuffer != nullptr) {
-        IDirectDrawSurface7* parentSurface = backBuffer;
-        backBuffer = nullptr;
-
-        hr = parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfaces7Callback);
-        if (unlikely(FAILED(hr))) {
-          Logger::warn("D3D7Interface::DetermineBackBufferCount: Unable to enumerate attached surfaces");
-          break;
-        }
-
-        backBufferCount++;
-
-        // the swapchain will eventually return to its origin
-        if (backBuffer == renderTarget)
-          break;
+      hr = parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfaces7Callback);
+      if (unlikely(FAILED(hr))) {
+        Logger::warn("D3D7Interface::DetermineBackBufferCount: Unable to enumerate attached surfaces");
+        break;
       }
+
+      // The swapchain will eventually return to its origin
+      if (backBuffer == renderTarget)
+        break;
+
+      if (likely(backBuffer != nullptr))
+        backBufferCount++;
     }
 
-    return backBufferCount;
+    return std::max<DWORD>(1u, backBufferCount);
   }
 
 }

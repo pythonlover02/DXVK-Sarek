@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../ddraw_include.h"
-#include "../ddraw_wrapped_object.h"
+#include "../ddraw_child_object.h"
 #include "../ddraw_options.h"
 #include "../ddraw_caps.h"
 
@@ -27,16 +27,14 @@ namespace dxvk {
   /**
   * \brief D3D5 device implementation
   */
-  class D3D5Device final : public DDrawWrappedObject<D3D5Interface, IDirect3DDevice2> {
+  class D3D5Device final : public DDrawChildObject<D3D5Interface, IDirect3DDevice2> {
 
   public:
     D3D5Device(
           D3DCommonDevice* commonD3DDevice,
-          Com<IDirect3DDevice2>&& d3d5DeviceProxy,
           D3D5Interface* pParent,
-          D3DDEVICEDESC2 Desc,
           GUID deviceGUID,
-          d3d9::D3DPRESENT_PARAMETERS Params9,
+          const d3d9::D3DPRESENT_PARAMETERS* pParams9,
           Com<d3d9::IDirect3DDevice9>&& pDevice9,
           DDrawSurface* pRT,
           DWORD CreationFlags9);
@@ -135,6 +133,8 @@ namespace dxvk {
 
   private:
 
+    inline void DDrawDirtySurfaceUpload();
+
     inline void AddViewportInternal(IDirect3DViewport2* viewport);
 
     inline void DeleteViewportInternal(IDirect3DViewport2* viewport);
@@ -207,7 +207,7 @@ namespace dxvk {
 
     Com<DxvkD3D8Bridge>            m_bridge;
 
-    Com<D3D3Device>                m_device3;
+    Com<D3D3Device, false>         m_device3;
 
     D3DMultithread                 m_multithread;
 

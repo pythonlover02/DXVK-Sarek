@@ -25,18 +25,15 @@ namespace dxvk {
 
   D3D5Device::D3D5Device(
         D3DCommonDevice* commonD3DDevice,
-        Com<IDirect3DDevice2>&& d3d5DeviceProxy,
         D3D5Interface* pParent,
-        D3DDEVICEDESC2 Desc,
         GUID deviceGUID,
-        d3d9::D3DPRESENT_PARAMETERS Params9,
+        const d3d9::D3DPRESENT_PARAMETERS* pParams9,
         Com<d3d9::IDirect3DDevice9>&& pDevice9,
         DDrawSurface* pSurface,
         DWORD CreationFlags9)
-    : DDrawWrappedObject<D3D5Interface, IDirect3DDevice2>(pParent, std::move(d3d5DeviceProxy))
+    : DDrawChildObject<D3D5Interface, IDirect3DDevice2>(pParent)
     , m_commonD3DDevice ( commonD3DDevice )
     , m_multithread ( CreationFlags9 & D3DCREATE_MULTITHREADED )
-    , m_desc ( Desc )
     , m_rt ( pSurface ) {
     if (m_parent != nullptr) {
       m_commonIntf = m_parent->GetCommonInterface();
@@ -46,15 +43,17 @@ namespace dxvk {
       throw DxvkError("D3D5Device: ERROR! Failed to retrieve the common interface!");
     }
 
+    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+    // Retrieve and cache the device capabilities
+    m_desc = GetD3D5Caps(deviceGUID, d3dOptions);
+
     d3d9::IDirect3DDevice9* device9;
 
     if (likely(m_commonD3DDevice == nullptr)) {
-      m_commonD3DDevice = new D3DCommonDevice(m_commonIntf, deviceGUID, Params9, CreationFlags9);
+      m_commonD3DDevice = new D3DCommonDevice(m_commonIntf, deviceGUID, pParams9, CreationFlags9);
 
       m_commonD3DDevice->SetD3D9Device(std::move(pDevice9));
       device9 = m_commonD3DDevice->GetD3D9Device();
-
-      const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
       if (unlikely(d3dOptions->emulateFSAA == FSAAEmulation::Forced)) {
         Logger::warn("D3D5Device: Force enabling AA");
@@ -146,23 +145,13 @@ namespace dxvk {
 
       Logger::debug("D3D5Device::QueryInterface: Query for IDirect3DDevice");
 
-      Com<IDirect3DDevice> ppvProxyObject;
-      HRESULT hr = m_proxy->QueryInterface(riid, reinterpret_cast<void**>(&ppvProxyObject));
-      if (unlikely(FAILED(hr)))
-        return hr;
-
-      const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
-
       // Reuse the existing D3D9 device in situations where games want
       // to get access only to D3D3 execute buffers on a D3D5 device
-      m_device3 = new D3D3Device(m_commonD3DDevice.ptr(), std::move(ppvProxyObject),
-                                 m_rt.ptr(), GetD3D3Caps(d3dOptions), m_commonD3DDevice->GetDeviceGUID(),
+      m_device3 = new D3D3Device(m_commonD3DDevice.ptr(), m_rt.ptr(), m_commonD3DDevice->GetDeviceGUID(),
                                  m_commonD3DDevice->GetPresentParameters(), nullptr,
                                  m_commonD3DDevice->GetD3D9CreationFlags());
       m_commonD3DDevice->SetD3D3Device(m_device3.ptr());
-
-      // On native this is the same object, so no need to ref
-      *ppvObject = m_device3.ptr();
+      *ppvObject = m_device3.ref();
 
       return S_OK;
     }
@@ -178,14 +167,15 @@ namespace dxvk {
       return E_NOINTERFACE;
     }
 
-    try {
-      *ppvObject = ref(this->GetInterface(riid));
+    if (likely(riid == __uuidof(IUnknown) ||
+               riid == __uuidof(IDirect3DDevice2))) {
+      *ppvObject = ref(this);
       return S_OK;
-    } catch (const DxvkError& e) {
-      Logger::warn(e.message());
-      Logger::warn(str::format(riid));
-      return E_NOINTERFACE;
     }
+
+    Logger::warn("D3D5Device::QueryInterface: Unknown interface query");
+    Logger::warn(str::format(riid));
+    return E_NOINTERFACE;
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::GetCaps(D3DDEVICEDESC *hal_desc, D3DDEVICEDESC *hel_desc) {
@@ -286,11 +276,6 @@ namespace dxvk {
     if (unlikely(viewport == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    D3D5Viewport* d3d5Viewport = static_cast<D3D5Viewport*>(viewport);
-    HRESULT hr = m_proxy->AddViewport(d3d5Viewport->GetProxied());
-    if (unlikely(FAILED(hr)))
-      return hr;
-
     AddViewportInternal(viewport);
 
     return D3D_OK;
@@ -304,14 +289,10 @@ namespace dxvk {
     if (unlikely(viewport == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    D3D5Viewport* d3d5Viewport = static_cast<D3D5Viewport*>(viewport);
-    HRESULT hr = m_proxy->DeleteViewport(d3d5Viewport->GetProxied());
-    if (unlikely(FAILED(hr)))
-      return hr;
-
     DeleteViewportInternal(viewport);
 
     // Clear the current viewport if it is deleted from the device
+    D3D5Viewport* d3d5Viewport = static_cast<D3D5Viewport*>(viewport);
     if (m_currentViewport.ptr() == d3d5Viewport)
       m_currentViewport = nullptr;
 
@@ -452,6 +433,8 @@ namespace dxvk {
     if (unlikely(d3d == nullptr))
       return DDERR_INVALIDPARAMS;
 
+    InitReturnPtr(d3d);
+
     *d3d = ref(m_parent);
 
     return D3D_OK;
@@ -466,12 +449,6 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
 
     Com<D3D5Viewport> d3d5Viewport = static_cast<D3D5Viewport*>(viewport);
-    HRESULT hr = m_proxy->SetCurrentViewport(d3d5Viewport->GetProxied());
-    if (unlikely(FAILED(hr))) {
-      Logger::debug("D3D5Device::SetCurrentViewport: Failed to set proxied viewport");
-      return hr;
-    }
-
     if (unlikely(m_currentViewport == d3d5Viewport))
       return D3D_OK;
 
@@ -526,12 +503,7 @@ namespace dxvk {
 
     DDrawSurface* rt5 = static_cast<DDrawSurface*>(surface);
 
-    // Needed to ensure proxied Z/Stencil viewport clears will work
-    HRESULT hrRT = m_proxy->SetRenderTarget(rt5->GetShadowOrProxied(), flags);
-    if (unlikely(FAILED(hrRT)))
-      Logger::debug("D3D5Device::SetRenderTarget: Failed to set RT");
-
-    HRESULT hr = rt5->GetCommonSurface()->ValidateRTUsage();
+    HRESULT hr = rt5->GetCommonSurface()->ValidateRTUsage(m_commonD3DDevice->IsHALOrTNLHALDevice());
     if (unlikely(FAILED(hr)))
       return hr;
 
@@ -914,7 +886,7 @@ namespace dxvk {
         if (unlikely(surface == nullptr))
           m_bridge->SetColorKeyState(false);
 
-        break;
+        return D3D_OK;
       }
 
       case D3DRENDERSTATE_ANTIALIAS: {
@@ -1369,9 +1341,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
-    m_rt->InitializeOrUploadD3D9();
-    if (likely(m_ds != nullptr))
-      m_ds->InitializeOrUploadD3D9();
+    DDrawDirtySurfaceUpload();
 
     DWORD vertex_type5 = ConvertVertexType(vertex_type);
 
@@ -1413,9 +1383,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
-    m_rt->InitializeOrUploadD3D9();
-    if (likely(m_ds != nullptr))
-      m_ds->InitializeOrUploadD3D9();
+    DDrawDirtySurfaceUpload();
 
     const DWORD fvf5 = ConvertVertexType(fvf);
 
@@ -1492,10 +1460,8 @@ namespace dxvk {
       } else {
         Logger::info("D3D5Device::InitializeDS: Got depth stencil from RT");
 
-        DDSURFACEDESC descDS;
-        descDS.dwSize = sizeof(DDSURFACEDESC);
-        m_ds->GetProxied()->GetSurfaceDesc(&descDS);
-        Logger::debug(str::format("D3D5Device::InitializeDS: DepthStencil: ", descDS.dwWidth, "x", descDS.dwHeight));
+        const RECT* dsRect = m_ds->GetCommonSurface()->GetFullSurfaceRect();
+        Logger::debug(str::format("D3D5Device::InitializeDS: DepthStencil: ", dsRect->right, "x", dsRect->bottom));
 
         HRESULT hrDS9 = device9->SetDepthStencilSurface(m_ds->GetCommonSurface()->GetD3D9Surface());
         if(unlikely(FAILED(hrDS9))) {
@@ -1527,6 +1493,21 @@ namespace dxvk {
 
     if (likely(dirtyDepthStencil && m_ds != nullptr))
       m_ds->GetCommonSurface()->DirtyD3D9Surface();
+  }
+
+  inline void D3D5Device::DDrawDirtySurfaceUpload() {
+    // Render target
+    m_rt->InitializeOrUploadD3D9();
+    // Depth stencil (if present)
+    if (likely(m_ds != nullptr))
+      m_ds->InitializeOrUploadD3D9();
+    // Bound texture(s)
+    D3DTEXTUREHANDLE texHandle = m_commonD3DDevice->GetCurrentTextureHandle();
+    if (likely(texHandle != 0)) {
+      DDrawSurface* tex = m_commonIntf->GetSurfaceFromTextureHandle(texHandle);
+      if (likely(tex != nullptr))
+        tex->InitializeOrUploadD3D9();
+    }
   }
 
   inline void D3D5Device::AddViewportInternal(IDirect3DViewport2* viewport) {
@@ -1587,7 +1568,7 @@ namespace dxvk {
 
     hr = surface->InitializeOrUploadD3D9();
     if (unlikely(FAILED(hr))) {
-      Logger::err("D3D6Device::D3D5Device: Failed to initialize/upload D3D9 texture");
+      Logger::err("D3D5Device::SetTextureInternal: Failed to initialize/upload D3D9 texture");
       return hr;
     }
 

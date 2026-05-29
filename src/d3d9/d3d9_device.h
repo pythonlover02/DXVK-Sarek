@@ -930,10 +930,7 @@ namespace dxvk {
     HRESULT ResetState(D3DPRESENT_PARAMETERS* pPresentationParameters);
 
     HRESULT SetLegacyLightsState(bool legacyLightState) {
-      if (likely(m_useLegacyLights != legacyLightState)) {
-        m_useLegacyLights = legacyLightState;
-      }
-
+      m_useLegacyLights = legacyLightState;
       return D3D_OK;
     }
 
@@ -1303,11 +1300,11 @@ namespace dxvk {
     bool                            m_isD3D5Compatible;
     bool                            m_isD3D6Compatible;
     bool                            m_isD3D7Compatible;
+    bool                            m_isD3D8Compatible;
 
     // D3D6 and earlier legacy light model state
-    bool                            m_useLegacyLights  = false;
+    bool                            m_useLegacyLights = false;
 
-    bool                            m_isD3D8Compatible;
     bool                            m_amdATOC         = false;
     bool                            m_nvATOC          = false;
     bool                            m_ffZTest         = false;

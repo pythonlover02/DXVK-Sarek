@@ -1090,7 +1090,7 @@ namespace dxvk {
 
         uint32_t atten  = m_module.opFFma  (m_floatType, d, atten2, atten1);
                  atten  = m_module.opFFma  (m_floatType, d, atten,  atten0);
-                 if (m_vsKey.Data.Contents.UseLegacyLights)
+                 if (!m_vsKey.Data.Contents.UseLegacyLights)
                    atten  = m_module.opFDiv  (m_floatType, m_module.constf32(1.0f), atten);
                  atten  = m_module.opNMin  (m_floatType, atten, m_module.constf32(std::numeric_limits<float>::max()));
 

@@ -15,12 +15,12 @@ namespace dxvk {
 
   D3D7VertexBuffer::D3D7VertexBuffer(
         D3D7Interface* pParent,
-        D3DVERTEXBUFFERDESC desc)
-    : DDrawWrappedObject<D3D7Interface, IDirect3DVertexBuffer7>(pParent, nullptr)
+        D3DVERTEXBUFFERDESC* pDesc)
+    : DDrawChildObject<D3D7Interface, IDirect3DVertexBuffer7>(pParent)
     , m_commonIntf ( pParent->GetCommonInterface() )
-    , m_desc ( desc )
-    , m_stride ( GetFVFSize(desc.dwFVF) )
-    , m_size ( m_stride * desc.dwNumVertices ) {
+    , m_desc ( *pDesc )
+    , m_stride ( GetFVFSize(pDesc->dwFVF) )
+    , m_size ( m_stride * pDesc->dwNumVertices ) {
     m_parent->AddRef();
 
     m_buffCount = ++s_buffCount;
@@ -42,14 +42,15 @@ namespace dxvk {
 
     InitReturnPtr(ppvObject);
 
-    try {
-      *ppvObject = ref(this->GetInterface(riid));
+    if (likely(riid == __uuidof(IUnknown) ||
+               riid == __uuidof(IDirect3DVertexBuffer7))) {
+      *ppvObject = ref(this);
       return S_OK;
-    } catch (const DxvkError& e) {
-      Logger::warn(e.message());
-      Logger::warn(str::format(riid));
-      return E_NOINTERFACE;
     }
+
+    Logger::warn("D3D7VertexBuffer::QueryInterface: Unknown interface query");
+    Logger::warn(str::format(riid));
+    return E_NOINTERFACE;
   }
 
   HRESULT STDMETHODCALLTYPE D3D7VertexBuffer::GetVertexBufferDesc(LPD3DVERTEXBUFFERDESC lpVBDesc) {
@@ -84,7 +85,12 @@ namespace dxvk {
     if (data_size != nullptr)
       *data_size = m_size;
 
-    HRESULT hr = m_vb9->Lock(0, 0, data, ConvertD3D7LockFlags(flags, m_legacyDiscard, false));
+    // Cops 2170: The Power of Law relies on us not discarding on any write only lock
+    // to render geometry, and does not mark the affected buffers with D3DVBCAPS_WRITEONLY
+    const bool legacyDiscard = m_legacyDiscard | (m_commonIntf->GetOptions()->forceLegacyDiscard
+                                                  && (flags & DDLOCK_WRITEONLY));
+
+    HRESULT hr = m_vb9->Lock(0, 0, data, ConvertD3D7LockFlags(flags, legacyDiscard, false));
 
     if (likely(SUCCEEDED(hr)))
       m_locked = true;
@@ -275,11 +281,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_d3d7Device->GetCommonD3DDevice()->GetD3D9Device();
 
-    d3d9::D3DPOOL pool = d3d9::D3DPOOL_DEFAULT;
-
-    if (m_desc.dwCaps & D3DVBCAPS_SYSTEMMEMORY)
-      pool = d3d9::D3DPOOL_SYSTEMMEM;
-
+    const d3d9::D3DPOOL pool = (m_desc.dwCaps & D3DVBCAPS_SYSTEMMEMORY) ? d3d9::D3DPOOL_SYSTEMMEM : d3d9::D3DPOOL_DEFAULT;
     const char* poolPlacement = pool == d3d9::D3DPOOL_DEFAULT ? "D3DPOOL_DEFAULT" : "D3DPOOL_SYSTEMMEM";
 
     Logger::debug(str::format("D3D7VertexBuffer::InitializeD3D9: Placing in: ", poolPlacement));

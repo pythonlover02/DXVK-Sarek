@@ -9,7 +9,7 @@
 #include "ddraw4_interface.h"
 
 #include "../d3d3/d3d3_texture.h"
-#include "../d3d6/d3d6_texture.h"
+#include "../d3d5/d3d5_texture.h"
 
 #include <unordered_map>
 
@@ -145,6 +145,10 @@ namespace dxvk {
       return m_commonIntf;
     }
 
+    DDraw4Surface* GetNextFlippable() const {
+      return m_nextFlippable;
+    }
+
     void SetAttachedDepthStencil(Com<DDraw4Surface>&& depthStencil) {
       m_depthStencil = depthStencil;
     }
@@ -168,6 +172,10 @@ namespace dxvk {
 
     void ClearAttachedDepthStencil() {
       m_depthStencil = nullptr;
+    }
+
+    DDraw4Surface* GetParentSurface() const {
+      return m_parentSurf;
     }
 
     void SetParentSurface(DDraw4Surface* surface) {
@@ -196,7 +204,9 @@ namespace dxvk {
 
     DDraw4Surface*          m_parentSurf = nullptr;
 
-    Com<D3D6Texture, false> m_texture6;
+    Com<D3D3Texture, false> m_texture3;
+    // D3D5Texture (aka IDirect3DTexture2) is shared between D3D5 and D3D6
+    Com<D3D5Texture, false> m_texture6;
 
     DDraw4Surface*          m_nextFlippable = nullptr;
 
