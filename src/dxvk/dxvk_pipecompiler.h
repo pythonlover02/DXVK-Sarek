@@ -14,7 +14,7 @@ namespace dxvk {
 
   class DxvkDevice;
   class DxvkGraphicsPipeline;
-  class DxvkGraphicsPipelineStateInfo;
+  struct DxvkGraphicsPipelineStateInfo;
   class DxvkRenderPass;
 
   enum class DxvkPipelinePriority : uint32_t {

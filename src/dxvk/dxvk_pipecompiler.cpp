@@ -104,10 +104,10 @@ namespace dxvk {
     const DxvkRenderPass*                renderPass,
           DxvkPipelinePriority           priority) {
     bool pushed = this->pushEntry(DxvkPipelineEntry {
-      .pipeline   = pipeline,
-      .state      = state,
-      .renderPass = renderPass,
-      .priority   = priority,
+      pipeline,
+      state,
+      renderPass,
+      priority,
     });
 
     this->notifyIfPushed(pushed);
