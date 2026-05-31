@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../ddraw_include.h"
-#include "../ddraw_wrapped_object.h"
+#include "../ddraw_child_object.h"
 #include "../ddraw_util.h"
 
 #include "../d3d_common_viewport.h"
@@ -12,16 +12,18 @@ namespace dxvk {
 
   class D3DLight;
 
+  class DDrawSurface;
+  class DDraw4Surface;
+
   class D3D5Viewport;
   class D3D3Viewport;
 
-  class D3D6Viewport final : public DDrawWrappedObject<D3D6Interface, IDirect3DViewport3> {
+  class D3D6Viewport final : public DDrawChildObject<D3D6Interface, IDirect3DViewport3> {
 
   public:
 
     D3D6Viewport(
           D3DCommonViewport* commonViewport,
-          Com<IDirect3DViewport3>&& proxyViewport,
           D3D6Interface* pParent);
 
     ~D3D6Viewport();
@@ -82,13 +84,19 @@ namespace dxvk {
 
   private:
 
-    static uint32_t        s_viewportCount;
-    uint32_t               m_viewportCount = 0;
+    bool                     m_isBackgroundDepthSet  = false;
+    bool                     m_isBackgroundDepth4Set = false;
 
-    Com<D3DCommonViewport> m_commonViewport;
+    static uint32_t          s_viewportCount;
+    uint32_t                 m_viewportCount = 0;
 
-    Com<D3D5Viewport>      m_viewport5;
-    Com<D3D3Viewport>      m_viewport3;
+    Com<D3DCommonViewport>   m_commonViewport;
+
+    Com<DDrawSurface>        m_backgroundDepth;
+    Com<DDraw4Surface>       m_backgroundDepth4;
+
+    Com<D3D5Viewport, false> m_viewport5;
+    Com<D3D3Viewport, false> m_viewport3;
 
   };
 

@@ -9,6 +9,8 @@
 
 namespace dxvk {
 
+  class DDrawCommonSurface;
+  class DDrawCommonInterface;
   class D3DCommonInterface;
 
   class D3D6Viewport;
@@ -23,7 +25,7 @@ namespace dxvk {
 
   public:
 
-    D3DCommonViewport(D3DCommonInterface* commonD3DIntf);
+    D3DCommonViewport(D3DCommonInterface* commonD3DIntf, DDrawCommonInterface* commonIntf);
 
     ~D3DCommonViewport();
 
@@ -38,6 +40,10 @@ namespace dxvk {
 
     D3D3Viewport* GetCurrentD3D3Viewport();
 
+    DDrawCommonSurface* GetCommonRenderTarget();
+
+    DDrawCommonSurface* GetCommonDepthStencil();
+
     d3d9::IDirect3DDevice9* GetD3D9Device();
 
     void UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface);
@@ -46,6 +52,10 @@ namespace dxvk {
 
     D3DCommonInterface* GetCommonD3DInterface() const {
       return m_commonD3DIntf;
+    }
+
+    DDrawCommonInterface* GetCommonInterface() const {
+      return m_commonIntf;
     }
 
     d3d9::D3DVIEWPORT9* GetD3D9Viewport() {
@@ -66,16 +76,13 @@ namespace dxvk {
       return m_isViewportSet;
     }
 
-    void MarkMaterialAsSet() {
-      m_isMaterialSet = true;
-    }
-
     bool IsMaterialSet() const {
       return m_isMaterialSet;
     }
 
     void SetMaterialHandle(D3DMATERIALHANDLE materialHandle) {
       m_materialHandle = materialHandle;
+      m_isMaterialSet = true;
     }
 
     D3DMATERIALHANDLE GetMaterialHandle() const {
@@ -193,38 +200,40 @@ namespace dxvk {
 
   private:
 
-    bool                m_isViewportSet     = false;
-    bool                m_isCurrentViewport = false;
-    bool                m_isMaterialSet     = false;
+    bool                  m_isViewportSet     = false;
+    bool                  m_isCurrentViewport = false;
+    bool                  m_isMaterialSet     = false;
 
     // Legacy projection state
-    bool                m_isIdentityMatrix  = false;
-    bool                m_needsClipping     = false;
-    bool                m_dirtyProjection   = false;
+    bool                  m_isIdentityMatrix  = false;
+    bool                  m_needsClipping     = false;
+    bool                  m_dirtyProjection   = false;
 
-    D3DCommonInterface* m_commonD3DIntf     = nullptr;
+    D3DCommonInterface*   m_commonD3DIntf     = nullptr;
 
-    D3DMATERIALHANDLE   m_materialHandle    = 0;
+    DDrawCommonInterface* m_commonIntf        = nullptr;
 
-    d3d9::D3DVIEWPORT9  m_viewport9 = { };
+    D3DMATERIALHANDLE     m_materialHandle    = 0;
 
-    D3DVECTOR           m_legacyScale       = { };
-    D3DVECTOR           m_legacyClip        = { };
-    D3DMATRIX           m_legacyProjection  = { };
+    d3d9::D3DVIEWPORT9    m_viewport9 = { };
+
+    D3DVECTOR             m_legacyScale       = { };
+    D3DVECTOR             m_legacyClip        = { };
+    D3DMATRIX             m_legacyProjection  = { };
 
     // Track all possible viewport versions of the same object
-    D3D6Viewport*       m_d3d6Viewport      = nullptr;
-    D3D5Viewport*       m_d3d5Viewport      = nullptr;
-    D3D3Viewport*       m_d3d3Viewport      = nullptr;
+    D3D6Viewport*         m_d3d6Viewport      = nullptr;
+    D3D5Viewport*         m_d3d5Viewport      = nullptr;
+    D3D3Viewport*         m_d3d3Viewport      = nullptr;
 
     // Track the origin viewport, as in the viewport
     // that gets created through a CreateViewport call
-    IUnknown*           m_origin            = nullptr;
+    IUnknown*             m_origin            = nullptr;
 
     // Track all devices this viewport is attached to
-    D3D6Device*         m_device6           = nullptr;
-    D3D5Device*         m_device5           = nullptr;
-    D3D3Device*         m_device3           = nullptr;
+    D3D6Device*           m_device6           = nullptr;
+    D3D5Device*           m_device5           = nullptr;
+    D3D3Device*           m_device3           = nullptr;
 
     std::vector<Com<D3DLight>> m_lights;
 

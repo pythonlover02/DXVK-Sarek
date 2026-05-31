@@ -20,9 +20,8 @@ namespace dxvk {
   D3D5Interface::D3D5Interface(
         DDrawCommonInterface* m_commonIntf,
         D3DCommonInterface* commonD3DIntf,
-        Com<IDirect3D2>&& d3d5IntfProxy,
         IUnknown* pParent)
-    : DDrawWrappedObject<IUnknown, IDirect3D2>(pParent, std::move(d3d5IntfProxy))
+    : DDrawChildObject<IUnknown, IDirect3D2>(pParent)
     , m_commonIntf ( m_commonIntf )
     , m_commonD3DIntf ( commonD3DIntf ) {
     if (m_commonD3DIntf == nullptr) {
@@ -106,26 +105,22 @@ namespace dxvk {
 
       Logger::debug("D3D5Interface::QueryInterface: Query for IDirect3D");
 
-      Com<IDirect3D> ppvProxyObject;
-      HRESULT hr = m_proxy->QueryInterface(riid, reinterpret_cast<void**>(&ppvProxyObject));
-      if (unlikely(FAILED(hr)))
-        return hr;
-
-      Com<D3D3Interface> d3d3Intf = new D3D3Interface(m_commonIntf, m_commonD3DIntf.ptr(), std::move(ppvProxyObject), m_parent);
+      Com<D3D3Interface> d3d3Intf = new D3D3Interface(m_commonIntf, m_commonD3DIntf.ptr(), m_parent);
       m_commonIntf->SetD3D3Interface(d3d3Intf.ptr());
       *ppvObject = d3d3Intf.ref();
 
       return S_OK;
     }
 
-    try {
-      *ppvObject = ref(this->GetInterface(riid));
+    if (likely(riid == __uuidof(IUnknown) ||
+               riid == __uuidof(IDirect3D2))) {
+      *ppvObject = ref(this);
       return S_OK;
-    } catch (const DxvkError& e) {
-      Logger::warn(e.message());
-      Logger::warn(str::format(riid));
-      return E_NOINTERFACE;
     }
+
+    Logger::warn("D3D5Interface::QueryInterface: Unknown interface query");
+    Logger::warn(str::format(riid));
+    return E_NOINTERFACE;
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Interface::EnumDevices(LPD3DENUMDEVICESCALLBACK lpEnumDevicesCallback, LPVOID lpUserArg) {
@@ -251,7 +246,7 @@ namespace dxvk {
 
     InitReturnPtr(lplpDirect3DLight);
 
-    *lplpDirect3DLight = ref(new D3DLight());
+    *lplpDirect3DLight = ref(new D3DLight(this));
 
     return D3D_OK;
   }
@@ -264,15 +259,8 @@ namespace dxvk {
 
     InitReturnPtr(lplpDirect3DMaterial);
 
-    Com<IDirect3DMaterial2> ddrawMaterial2Proxied;
-    HRESULT hr = m_proxy->CreateMaterial(&ddrawMaterial2Proxied, pUnkOuter);
-    if (unlikely(FAILED(hr))) {
-      Logger::err("D3D5Interface::CreateMaterial: Failed to create proxied material");
-      return hr;
-    }
-
     D3DMATERIALHANDLE handle = m_commonD3DIntf->GetNextMaterialHandle();
-    Com<D3D5Material> d3d5Material = new D3D5Material(std::move(ddrawMaterial2Proxied), this, handle);
+    Com<D3D5Material> d3d5Material = new D3D5Material(this, handle);
     m_commonD3DIntf->EmplaceMaterial(d3d5Material->GetCommonMaterial(), handle);
 
     *lplpDirect3DMaterial = d3d5Material.ref();
@@ -283,14 +271,9 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Interface::CreateViewport(LPDIRECT3DVIEWPORT2 *lplpD3DViewport, IUnknown *pUnkOuter) {
     Logger::debug(">>> D3D5Interface::CreateViewport");
 
-    Com<IDirect3DViewport2> lplpD3DViewportProxy;
-    HRESULT hr = m_proxy->CreateViewport(&lplpD3DViewportProxy, pUnkOuter);
-    if (unlikely(FAILED(hr)))
-      return hr;
-
     InitReturnPtr(lplpD3DViewport);
 
-    *lplpD3DViewport = ref(new D3D5Viewport(nullptr, std::move(lplpD3DViewportProxy), this));
+    *lplpD3DViewport = ref(new D3D5Viewport(nullptr, this));
 
     return D3D_OK;
   }
@@ -473,13 +456,6 @@ namespace dxvk {
       rt = static_cast<DDrawSurface*>(lpDDS);
     }
 
-    Com<IDirect3DDevice2> d3d5DeviceProxy;
-    HRESULT hr = m_proxy->CreateDevice(rclsidOverride, rt->GetShadowOrProxied(), &d3d5DeviceProxy);
-    if (unlikely(FAILED(hr))) {
-      Logger::warn("D3D5Interface::CreateDevice: Failed to create the proxy device");
-      return hr;
-    }
-
     DDSURFACEDESC desc;
     desc.dwSize = sizeof(DDSURFACEDESC);
     lpDDS->GetSurfaceDesc(&desc);
@@ -522,8 +498,7 @@ namespace dxvk {
     Logger::info(str::format("D3D5Interface::CreateDevice: Back buffer size: ", desc.dwWidth, "x", desc.dwHeight));
 
     const DWORD backBufferCount = DetermineBackBufferCount(rt->GetProxied());
-    // Consider the front buffer as well when reporting the overall count
-    Logger::info(str::format("D3D5Interface::CreateDevice: Back buffer count: ", backBufferCount + 1));
+    Logger::info(str::format("D3D5Interface::CreateDevice: Back buffer count: ", backBufferCount));
 
     Com<d3d9::IDirect3D9> d3d9Intf = m_commonD3DIntf->GetD3D9Interface();
 
@@ -549,7 +524,7 @@ namespace dxvk {
     params.PresentationInterval       = D3DPRESENT_INTERVAL_DEFAULT; // A D3D5 device always uses VSync
 
     Com<d3d9::IDirect3DDevice9> device9;
-    hr = d3d9Intf->CreateDevice(
+    HRESULT hr = d3d9Intf->CreateDevice(
       D3DADAPTER_DEFAULT,
       d3d9::D3DDEVTYPE_HAL,
       hWnd,
@@ -563,12 +538,9 @@ namespace dxvk {
       return hr;
     }
 
-    D3DDEVICEDESC2 desc5 = GetD3D5Caps(rclsidOverride, d3dOptions);
-
     try{
-      Com<D3D5Device> device5 = new D3D5Device(nullptr, std::move(d3d5DeviceProxy), this, desc5,
-                                               rclsidOverride, params, std::move(device9),
-                                               rt.ptr(), deviceCreationFlags9);
+      Com<D3D5Device> device5 = new D3D5Device(nullptr, this, rclsidOverride, &params,
+                                               std::move(device9), rt.ptr(), deviceCreationFlags9);
 
       // Set the common device on the common interface
       m_commonIntf->SetCommonD3DDevice(device5->GetCommonD3DDevice());
@@ -587,31 +559,28 @@ namespace dxvk {
   inline DWORD D3D5Interface::DetermineBackBufferCount(IDirectDrawSurface* renderTarget) {
     DWORD backBufferCount = 0;
 
-    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+    IDirectDrawSurface* backBuffer = renderTarget;
+    HRESULT hr;
 
-    if (likely(!d3dOptions->forceSingleBackBuffer && !d3dOptions->forceLegacyPresent)) {
-      IDirectDrawSurface* backBuffer = renderTarget;
-      HRESULT hr;
+    while (backBuffer != nullptr) {
+      IDirectDrawSurface* parentSurface = backBuffer;
+      backBuffer = nullptr;
 
-      while (backBuffer != nullptr) {
-        IDirectDrawSurface* parentSurface = backBuffer;
-        backBuffer = nullptr;
-
-        hr = parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfacesCallback);
-        if (unlikely(FAILED(hr))) {
-          Logger::warn("D3D5Interface::DetermineBackBufferCount: Unable to enumerate attached surfaces");
-          break;
-        }
-
-        backBufferCount++;
-
-        // the swapchain will eventually return to its origin
-        if (backBuffer == renderTarget)
-          break;
+      hr = parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfacesCallback);
+      if (unlikely(FAILED(hr))) {
+        Logger::warn("D3D5Interface::DetermineBackBufferCount: Unable to enumerate attached surfaces");
+        break;
       }
+
+      // The swapchain will eventually return to its origin
+      if (backBuffer == renderTarget)
+        break;
+
+      if (likely(backBuffer != nullptr))
+        backBufferCount++;
     }
 
-    return backBufferCount;
+    return std::max<DWORD>(1u, backBufferCount);
   }
 
 }

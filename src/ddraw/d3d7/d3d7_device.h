@@ -37,9 +37,8 @@ namespace dxvk {
           D3DCommonDevice* commonD3DDevice,
           Com<IDirect3DDevice7>&& d3d7DeviceProxy,
           D3D7Interface* pParent,
-          D3DDEVICEDESC7 Desc,
           GUID deviceGUID,
-          d3d9::D3DPRESENT_PARAMETERS Params9,
+          const d3d9::D3DPRESENT_PARAMETERS* pParams9,
           Com<d3d9::IDirect3DDevice9>&& pDevice9,
           DDraw7Surface* pRT,
           DWORD CreationFlags9);
@@ -178,6 +177,8 @@ namespace dxvk {
     inline HRESULT InitializeIndexBuffers();
 
     inline void UploadIndices(d3d9::IDirect3DIndexBuffer9* ib9, WORD* indices, DWORD indexCount);
+
+    inline void DDrawDirtySurfaceUpload();
 
     inline bool LogIndexBufferUsageStats() const {
       for (uint32_t m_ib9_upload : m_ib9_uploads) {

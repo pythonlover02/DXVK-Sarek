@@ -16,13 +16,13 @@ namespace dxvk {
   D3D6VertexBuffer::D3D6VertexBuffer(
         D3D6Interface* pParent,
         DWORD creationFlags,
-        D3DVERTEXBUFFERDESC desc)
-    : DDrawWrappedObject<D3D6Interface, IDirect3DVertexBuffer>(pParent, nullptr)
+        D3DVERTEXBUFFERDESC* pDesc)
+    : DDrawChildObject<D3D6Interface, IDirect3DVertexBuffer>(pParent)
     , m_commonIntf ( pParent->GetCommonInterface() )
     , m_creationFlags ( creationFlags )
-    , m_desc ( desc )
-    , m_stride ( GetFVFSize(desc.dwFVF) )
-    , m_size ( m_stride * desc.dwNumVertices ) {
+    , m_desc ( *pDesc )
+    , m_stride ( GetFVFSize(pDesc->dwFVF) )
+    , m_size ( m_stride * pDesc->dwNumVertices ) {
     m_buffCount = ++s_buffCount;
 
     ListBufferDetails();
@@ -40,14 +40,15 @@ namespace dxvk {
 
     InitReturnPtr(ppvObject);
 
-    try {
-      *ppvObject = ref(this->GetInterface(riid));
+    if (likely(riid == __uuidof(IUnknown) ||
+               riid == __uuidof(IDirect3DVertexBuffer))) {
+      *ppvObject = ref(this);
       return S_OK;
-    } catch (const DxvkError& e) {
-      Logger::warn(e.message());
-      Logger::warn(str::format(riid));
-      return E_NOINTERFACE;
     }
+
+    Logger::warn("D3D6VertexBuffer::QueryInterface: Unknown interface query");
+    Logger::warn(str::format(riid));
+    return E_NOINTERFACE;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6VertexBuffer::GetVertexBufferDesc(LPD3DVERTEXBUFFERDESC lpVBDesc) {
@@ -251,11 +252,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_d3d6Device->GetCommonD3DDevice()->GetD3D9Device();
 
-    d3d9::D3DPOOL pool = d3d9::D3DPOOL_DEFAULT;
-
-    if (m_desc.dwCaps & D3DVBCAPS_SYSTEMMEMORY)
-      pool = d3d9::D3DPOOL_SYSTEMMEM;
-
+    const d3d9::D3DPOOL pool = (m_desc.dwCaps & D3DVBCAPS_SYSTEMMEMORY) ? d3d9::D3DPOOL_SYSTEMMEM : d3d9::D3DPOOL_DEFAULT;
     const char* poolPlacement = pool == d3d9::D3DPOOL_DEFAULT ? "D3DPOOL_DEFAULT" : "D3DPOOL_SYSTEMMEM";
 
     Logger::debug(str::format("D3D6VertexBuffer::InitializeD3D9: Placing in: ", poolPlacement));

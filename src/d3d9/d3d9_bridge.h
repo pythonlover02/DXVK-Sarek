@@ -33,9 +33,33 @@ IDxvkD3D8Bridge : public IUnknown {
    * \param [in] pDestPoint   Destination (top-left) point
    */
   virtual uint32_t DetermineInitialTextureMemory() = 0;
+
+  /**
+   * \brief Resets the D3D9 swapchain, skipping a general device reset
+   *
+   * \param [in] Params D3DPRESENT_PARAMETERS* value to be used
+   */
   virtual HRESULT ResetSwapChain(D3DPRESENT_PARAMETERS* Params) = 0;
+
+  /**
+   * \brief Updates the color key transparency state in D3D9
+   *
+   * \param [in] Params bool value to be used
+   */
   virtual HRESULT SetColorKeyState(bool colorKeyState) = 0;
+
+  /**
+   * \brief Updates the color key transparency value in D3D9
+   *
+   * \param [in] Params DWORD, DWORD low and high values to be used
+   */
   virtual HRESULT SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh) = 0;
+
+  /**
+   * \brief Updates the legacy light state in D3D9
+   *
+   * \param [in] Params bool value to be used
+   */
   virtual HRESULT SetLegacyLightsState(bool legacyLightsState) = 0;
 
   virtual HRESULT UpdateTextureFromBuffer(
@@ -58,12 +82,28 @@ IDxvkD3D8Bridge : public IUnknown {
 MIDL_INTERFACE("D3D9D3D8-A407-773E-18E9-CAFEBEEF3000")
 IDxvkD3D8InterfaceBridge : public IUnknown {
   /**
-   * \brief Enforces D3D8-specific features and validations
+   * \brief Enforces D3D3-specific features and validations
    */
   virtual void EnableD3D3CompatibilityMode() = 0;
+
+  /**
+   * \brief Enforces D3D5-specific features and validations
+   */
   virtual void EnableD3D5CompatibilityMode() = 0;
+
+  /**
+   * \brief Enforces D3D6-specific features and validations
+   */
   virtual void EnableD3D6CompatibilityMode() = 0;
+
+  /**
+   * \brief Enforces D3D7-specific features and validations
+   */
   virtual void EnableD3D7CompatibilityMode() = 0;
+
+  /**
+   * \brief Enforces D3D8-specific features and validations
+   */
   virtual void EnableD3D8CompatibilityMode() = 0;
 
   /**
@@ -99,9 +139,13 @@ namespace dxvk {
             void** ppvObject);
 
     uint32_t DetermineInitialTextureMemory();
+
     HRESULT ResetSwapChain(D3DPRESENT_PARAMETERS* Params);
+
     HRESULT SetColorKeyState(bool colorKeyState);
+
     HRESULT SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh);
+
     HRESULT SetLegacyLightsState(bool legacyLightsState);
 
     HRESULT UpdateTextureFromBuffer(
@@ -133,9 +177,13 @@ namespace dxvk {
             void** ppvObject);
 
     void EnableD3D3CompatibilityMode();
+
     void EnableD3D5CompatibilityMode();
+
     void EnableD3D6CompatibilityMode();
+
     void EnableD3D7CompatibilityMode();
+
     void EnableD3D8CompatibilityMode();
 
     const Config* GetConfig() const;

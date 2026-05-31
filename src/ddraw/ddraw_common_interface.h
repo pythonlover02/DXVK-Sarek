@@ -21,6 +21,7 @@ namespace dxvk {
   class DDrawInterface;
 
   class DDrawSurface;
+  class DDraw4Surface;
 
   class DDrawCommonInterface : public ComObjectClamp<IUnknown> {
 
@@ -34,6 +35,8 @@ namespace dxvk {
       *ppvObject = this;
       return S_OK;
     }
+
+    D3D3Interface* GetOrCreateD3D3Interface();
 
     bool IsWrappedSurface(IDirectDrawSurface* surface) const;
 
@@ -66,6 +69,8 @@ namespace dxvk {
     void RemoveWrappedSurface(IDirectDrawSurface7* surface);
 
     DDrawSurface* GetSurfaceFromTextureHandle(D3DTEXTUREHANDLE handle) const;
+
+    DDraw4Surface* GetSurface4FromTextureHandle(D3DTEXTUREHANDLE handle) const;
 
     void MarkAsInitialized() {
       m_isInitialized = true;

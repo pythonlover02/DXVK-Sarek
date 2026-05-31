@@ -1,7 +1,7 @@
 #pragma once
 
 #include "../ddraw_include.h"
-#include "../ddraw_wrapped_object.h"
+#include "../ddraw_child_object.h"
 #include "../ddraw_options.h"
 
 #include "../d3d_common_device.h"
@@ -25,16 +25,14 @@ namespace dxvk {
   /**
   * \brief D3D3 device implementation
   */
-  class D3D3Device final : public DDrawWrappedObject<DDrawSurface, IDirect3DDevice> {
+  class D3D3Device final : public DDrawChildObject<DDrawSurface, IDirect3DDevice> {
 
   public:
     D3D3Device(
           D3DCommonDevice* commonD3DDevice,
-          Com<IDirect3DDevice>&& d3d3DeviceProxy,
           DDrawSurface* pParent,
-          D3DDEVICEDESC3 Desc,
           GUID deviceGUID,
-          d3d9::D3DPRESENT_PARAMETERS Params9,
+          const d3d9::D3DPRESENT_PARAMETERS* pParams9,
           Com<d3d9::IDirect3DDevice9>&& pDevice9,
           DWORD CreationFlags9);
 
@@ -113,6 +111,8 @@ namespace dxvk {
     }
 
   private:
+
+    inline void DDrawDirtySurfaceUpload();
 
     inline void AddViewportInternal(IDirect3DViewport* viewport);
 

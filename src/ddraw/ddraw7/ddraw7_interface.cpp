@@ -27,18 +27,20 @@ namespace dxvk {
     // adapter identifier, as well as (potentially) the options through a bridge
     Com<d3d9::IDirect3D9> d3d9Intf = d3d9::Direct3DCreate9(D3D_SDK_VERSION);
 
+    if (m_commonIntf == nullptr) {
+      Com<IDxvkD3D8InterfaceBridge> d3d9Bridge;
+
+      if (unlikely(FAILED(d3d9Intf->QueryInterface(__uuidof(IDxvkD3D8InterfaceBridge), reinterpret_cast<void**>(&d3d9Bridge))))) {
+        throw DxvkError("DDraw7Interface: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
+      }
+
+      m_commonIntf = new DDrawCommonInterface(D3DOptions(*d3d9Bridge->GetConfig()));
+    }
+
     d3d9::D3DADAPTER_IDENTIFIER9 adapterIdentifier9;
     HRESULT hr = d3d9Intf->GetAdapterIdentifier(0, 0, &adapterIdentifier9);
     if (unlikely(FAILED(hr))) {
       throw DxvkError("DDraw7Interface: ERROR! Failed to get D3D9 adapter identifier!");
-    }
-
-    if (m_commonIntf == nullptr) {
-      Com<IDxvkD3D8InterfaceBridge> d3d9Bridge;
-      // Can never fail while we statically link the d3d9 module
-      d3d9Intf->QueryInterface(__uuidof(IDxvkD3D8InterfaceBridge), reinterpret_cast<void**>(&d3d9Bridge));
-
-      m_commonIntf = new DDrawCommonInterface(D3DOptions(*d3d9Bridge->GetConfig()));
     }
 
     m_commonIntf->SetAdapterIdentifier(adapterIdentifier9);
@@ -151,14 +153,15 @@ namespace dxvk {
       return m_proxy->QueryInterface(riid, ppvObject);
     }
 
-    try {
-      *ppvObject = ref(this->GetInterface(riid));
+    if (likely(riid == __uuidof(IUnknown) ||
+               riid == __uuidof(IDirectDraw7))) {
+      *ppvObject = ref(this);
       return S_OK;
-    } catch (const DxvkError& e) {
-      Logger::warn(e.message());
-      Logger::warn(str::format(riid));
-      return E_NOINTERFACE;
     }
+
+    Logger::warn("DDraw7Interface::QueryInterface: Unknown interface query");
+    Logger::warn(str::format(riid));
+    return E_NOINTERFACE;
   }
 
   // The documentation states: "The IDirectDraw7::Compact method is not currently implemented."
@@ -179,7 +182,7 @@ namespace dxvk {
     HRESULT hr = m_proxy->CreateClipper(dwFlags, &lplpDDClipperProxy, pUnkOuter);
 
     if (likely(SUCCEEDED(hr))) {
-      *lplpDDClipper = ref(new DDrawClipper(std::move(lplpDDClipperProxy), this));
+      *lplpDDClipper = ref(new DDrawClipper(m_commonIntf.ptr(), std::move(lplpDDClipperProxy), this));
     } else {
       Logger::warn("DDraw7Interface::CreateClipper: Failed to create proxy clipper");
       return hr;
@@ -444,8 +447,8 @@ namespace dxvk {
       Logger::debug(str::format("DDraw7Interface::GetCaps: Free : ", free9));
     }
 
-    // Report all possible flip capabilities as supported
     if (lpDDDriverCaps != nullptr) {
+      lpDDDriverCaps->dwCaps2 &= ~DDCAPS2_CANCALIBRATEGAMMA;
       lpDDDriverCaps->dwCaps2 |= DDCAPS2_FLIPINTERVAL | DDCAPS2_FLIPNOVSYNC;
       lpDDDriverCaps->dwZBufferBitDepths = d3dOptions->supportD16 ? DDBD_16 | DDBD_24 : DDBD_24;
       lpDDDriverCaps->dwVidMemTotal = total9;
@@ -453,6 +456,7 @@ namespace dxvk {
       lpDDDriverCaps->dwNumFourCCCodes = ddrawCaps::NumberOfFOURCCCodes;
     }
     if (lpDDHELCaps != nullptr) {
+      lpDDDriverCaps->dwCaps2 &= ~DDCAPS2_CANCALIBRATEGAMMA;
       lpDDHELCaps->dwCaps2 |= DDCAPS2_FLIPINTERVAL | DDCAPS2_FLIPNOVSYNC;
       lpDDHELCaps->dwZBufferBitDepths = d3dOptions->supportD16 ? DDBD_16 | DDBD_24 : DDBD_24;
       lpDDHELCaps->dwVidMemTotal = total9;
@@ -568,6 +572,15 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw7Interface::SetCooperativeLevel(HWND hWnd, DWORD dwFlags) {
     Logger::debug("<<< DDraw7Interface::SetCooperativeLevel: Proxy");
 
+    // DDSCL_CREATEDEVICEWINDOW doesn't appear to behave properly in
+    // Wine, so use the cached hWnd to set the device window instead
+    if (unlikely((dwFlags & DDSCL_CREATEDEVICEWINDOW) && hWnd == nullptr
+               && m_commonIntf->GetHWND() != nullptr)) {
+      dwFlags &= ~DDSCL_CREATEDEVICEWINDOW;
+      dwFlags |= DDSCL_SETDEVICEWINDOW;
+      hWnd = m_commonIntf->GetHWND();
+    }
+
     HRESULT hr = m_proxy->SetCooperativeLevel(hWnd, dwFlags);
     if (unlikely(FAILED(hr)))
       return hr;
@@ -623,7 +636,7 @@ namespace dxvk {
     if (unlikely(commonDevice != nullptr && !m_commonIntf->GetWaitForVBlank())) {
       Logger::info("DDraw7Interface::WaitForVerticalBlank: Switching to D3DPRESENT_INTERVAL_DEFAULT for presentation");
 
-      d3d9::D3DPRESENT_PARAMETERS resetParams = commonDevice->GetPresentParameters();
+      d3d9::D3DPRESENT_PARAMETERS resetParams = *commonDevice->GetPresentParameters();
       resetParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
       HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
       if (likely(SUCCEEDED(hrReset)))

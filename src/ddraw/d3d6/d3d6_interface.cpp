@@ -108,26 +108,22 @@ namespace dxvk {
 
       Logger::debug("D3D6Interface::QueryInterface: Query for IDirect3D");
 
-      Com<IDirect3D> ppvProxyObject;
-      HRESULT hr = m_proxy->QueryInterface(riid, reinterpret_cast<void**>(&ppvProxyObject));
-      if (unlikely(FAILED(hr)))
-        return hr;
-
-      Com<D3D3Interface> d3d3Intf = new D3D3Interface(m_commonIntf, m_commonD3DIntf.ptr(), std::move(ppvProxyObject), m_parent);
+      Com<D3D3Interface> d3d3Intf = new D3D3Interface(m_commonIntf, m_commonD3DIntf.ptr(), m_parent);
       m_commonIntf->SetD3D3Interface(d3d3Intf.ptr());
       *ppvObject = d3d3Intf.ref();
 
       return S_OK;
     }
 
-    try {
-      *ppvObject = ref(this->GetInterface(riid));
+    if (likely(riid == __uuidof(IUnknown) ||
+               riid == __uuidof(IDirect3D3))) {
+      *ppvObject = ref(this);
       return S_OK;
-    } catch (const DxvkError& e) {
-      Logger::warn(e.message());
-      Logger::warn(str::format(riid));
-      return E_NOINTERFACE;
     }
+
+    Logger::warn("D3D6Interface::QueryInterface: Unknown interface query");
+    Logger::warn(str::format(riid));
+    return E_NOINTERFACE;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Interface::EnumDevices(LPD3DENUMDEVICESCALLBACK lpEnumDevicesCallback, LPVOID lpUserArg) {
@@ -215,7 +211,7 @@ namespace dxvk {
 
     InitReturnPtr(lplpDirect3DLight);
 
-    *lplpDirect3DLight = ref(new D3DLight());
+    *lplpDirect3DLight = ref(new D3DLight(this));
 
     return D3D_OK;
   }
@@ -228,15 +224,8 @@ namespace dxvk {
 
     InitReturnPtr(lplpDirect3DMaterial);
 
-    Com<IDirect3DMaterial3> ddrawMaterial3Proxied;
-    HRESULT hr = m_proxy->CreateMaterial(&ddrawMaterial3Proxied, pUnkOuter);
-    if (unlikely(FAILED(hr))) {
-      Logger::err("D3D6Interface::CreateMaterial: Failed to create proxied material");
-      return hr;
-    }
-
     D3DMATERIALHANDLE handle = m_commonD3DIntf->GetNextMaterialHandle();
-    Com<D3D6Material> d3d6Material = new D3D6Material(std::move(ddrawMaterial3Proxied), this, handle);
+    Com<D3D6Material> d3d6Material = new D3D6Material(this, handle);
     m_commonD3DIntf->EmplaceMaterial(d3d6Material->GetCommonMaterial(), handle);
 
     *lplpDirect3DMaterial = d3d6Material.ref();
@@ -247,14 +236,9 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D6Interface::CreateViewport(LPDIRECT3DVIEWPORT3 *lplpD3DViewport, IUnknown *pUnkOuter) {
     Logger::debug(">>> D3D6Interface::CreateViewport");
 
-    Com<IDirect3DViewport3> lplpD3DViewportProxy;
-    HRESULT hr = m_proxy->CreateViewport(&lplpD3DViewportProxy, pUnkOuter);
-    if (unlikely(FAILED(hr)))
-      return hr;
-
     InitReturnPtr(lplpD3DViewport);
 
-    *lplpD3DViewport = ref(new D3D6Viewport(nullptr, std::move(lplpD3DViewportProxy), this));
+    *lplpD3DViewport = ref(new D3D6Viewport(nullptr, this));
 
     return D3D_OK;
   }
@@ -411,13 +395,6 @@ namespace dxvk {
       rt4 = static_cast<DDraw4Surface*>(lpDDS);
     }
 
-    Com<IDirect3DDevice3> d3d6DeviceProxy;
-    HRESULT hr = m_proxy->CreateDevice(rclsidOverride, rt4->GetShadowOrProxied(), &d3d6DeviceProxy, nullptr);
-    if (unlikely(FAILED(hr))) {
-      Logger::warn("D3D6Interface::CreateDevice: Failed to create the proxy device");
-      return hr;
-    }
-
     DDSURFACEDESC2 desc;
     desc.dwSize = sizeof(DDSURFACEDESC2);
     lpDDS->GetSurfaceDesc(&desc);
@@ -460,8 +437,7 @@ namespace dxvk {
     Logger::info(str::format("D3D6Interface::CreateDevice: Back buffer size: ", desc.dwWidth, "x", desc.dwHeight));
 
     const DWORD backBufferCount = DetermineBackBufferCount(rt4->GetProxied());
-    // Consider the front buffer as well when reporting the overall count
-    Logger::info(str::format("D3D6Interface::CreateDevice: Back buffer count: ", backBufferCount + 1));
+    Logger::info(str::format("D3D6Interface::CreateDevice: Back buffer count: ", backBufferCount));
 
     Com<d3d9::IDirect3D9> d3d9Intf = m_commonD3DIntf->GetD3D9Interface();
 
@@ -490,7 +466,7 @@ namespace dxvk {
     params.PresentationInterval       = vBlankStatus ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;
 
     Com<d3d9::IDirect3DDevice9> device9;
-    hr = d3d9Intf->CreateDevice(
+    HRESULT hr = d3d9Intf->CreateDevice(
       D3DADAPTER_DEFAULT,
       d3d9::D3DDEVTYPE_HAL,
       hWnd,
@@ -504,12 +480,9 @@ namespace dxvk {
       return hr;
     }
 
-    D3DDEVICEDESC desc6 = GetD3D6Caps(rclsidOverride, d3dOptions);
-
     try{
-      Com<D3D6Device> device6 = new D3D6Device(nullptr, std::move(d3d6DeviceProxy), this, desc6,
-                                               rclsidOverride, params, std::move(device9),
-                                               rt4.ptr(), deviceCreationFlags9);
+      Com<D3D6Device> device6 = new D3D6Device(nullptr, this, rclsidOverride, &params,
+                                               std::move(device9), rt4.ptr(), deviceCreationFlags9);
 
       // Set the common device on the common interface
       m_commonIntf->SetCommonD3DDevice(device6->GetCommonD3DDevice());
@@ -533,7 +506,7 @@ namespace dxvk {
 
     InitReturnPtr(lpD3DVertexBuffer);
 
-    *lpD3DVertexBuffer = ref(new D3D6VertexBuffer(this, dwFlags, *lpVBDesc));
+    *lpD3DVertexBuffer = ref(new D3D6VertexBuffer(this, dwFlags, lpVBDesc));
 
     return D3D_OK;
   }
@@ -611,31 +584,28 @@ namespace dxvk {
   inline DWORD D3D6Interface::DetermineBackBufferCount(IDirectDrawSurface4* renderTarget) {
     DWORD backBufferCount = 0;
 
-    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+    IDirectDrawSurface4* backBuffer = renderTarget;
+    HRESULT hr;
 
-    if (likely(!d3dOptions->forceSingleBackBuffer && !d3dOptions->forceLegacyPresent)) {
-      IDirectDrawSurface4* backBuffer = renderTarget;
-      HRESULT hr;
+    while (backBuffer != nullptr) {
+      IDirectDrawSurface4* parentSurface = backBuffer;
+      backBuffer = nullptr;
 
-      while (backBuffer != nullptr) {
-        IDirectDrawSurface4* parentSurface = backBuffer;
-        backBuffer = nullptr;
-
-        hr = parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfaces4Callback);
-        if (unlikely(FAILED(hr))) {
-          Logger::warn("D3D6Interface::DetermineBackBufferCount: Unable to enumerate attached surfaces");
-          break;
-        }
-
-        backBufferCount++;
-
-        // the swapchain will eventually return to its origin
-        if (backBuffer == renderTarget)
-          break;
+      hr = parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfaces4Callback);
+      if (unlikely(FAILED(hr))) {
+        Logger::warn("D3D6Interface::DetermineBackBufferCount: Unable to enumerate attached surfaces");
+        break;
       }
+
+      // The swapchain will eventually return to its origin
+      if (backBuffer == renderTarget)
+        break;
+
+      if (likely(backBuffer != nullptr))
+        backBufferCount++;
     }
 
-    return backBufferCount;
+    return std::max<DWORD>(1u, backBufferCount);
   }
 
 }

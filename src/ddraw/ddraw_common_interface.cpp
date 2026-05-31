@@ -4,6 +4,7 @@
 #include "d3d_common_texture.h"
 
 #include "ddraw/ddraw_surface.h"
+#include "ddraw4/ddraw4_surface.h"
 
 #include <algorithm>
 
@@ -14,6 +15,23 @@ namespace dxvk {
   }
 
   DDrawCommonInterface::~DDrawCommonInterface() {
+  }
+
+  D3D3Interface* DDrawCommonInterface::GetOrCreateD3D3Interface() {
+    if (likely(m_d3d3Intf != nullptr))
+      return m_d3d3Intf;
+
+    // In case a D3D3 interface doesn't exist, query one from the
+    // base DDraw interface, where it will also be cached
+    if (likely(m_intf != nullptr)) {
+      HRESULT hr = m_intf->QueryInterface(__uuidof(IDirect3D), reinterpret_cast<void**>(m_d3d3Intf));
+      if (unlikely(FAILED(hr)))
+        return nullptr;
+
+      return m_d3d3Intf;
+    }
+
+    return nullptr;
   }
 
   bool DDrawCommonInterface::IsWrappedSurface(IDirectDrawSurface* surface) const {
@@ -190,6 +208,17 @@ namespace dxvk {
     }
 
     return texturesIter->second->GetDDSurface();
+  }
+
+  DDraw4Surface* DDrawCommonInterface::GetSurface4FromTextureHandle(D3DTEXTUREHANDLE handle) const {
+    auto texturesIter = m_textures.find(handle);
+
+    if (unlikely(texturesIter == m_textures.end())) {
+      Logger::warn(str::format("DDrawCommonInterface::GetSurface4FromTextureHandle: Invalid handle: ", handle));
+      return nullptr;
+    }
+
+    return texturesIter->second->GetDD4Surface();
   }
 
 }

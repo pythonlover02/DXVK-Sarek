@@ -7535,7 +7535,7 @@ namespace dxvk {
     rs[D3DRS_COLORVERTEX]            = TRUE;
     rs[D3DRS_LOCALVIEWER]            = TRUE;
     rs[D3DRS_RANGEFOGENABLE]         = FALSE;
-    rs[D3DRS_NORMALIZENORMALS]       = FALSE;
+    rs[D3DRS_NORMALIZENORMALS]       = m_isD3D6Compatible ? TRUE : FALSE;
     m_flags.set(D3D9DeviceFlag::DirtyFFVertexShader);
 
     // PS

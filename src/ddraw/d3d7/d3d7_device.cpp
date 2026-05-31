@@ -15,16 +15,14 @@ namespace dxvk {
         D3DCommonDevice* commonD3DDevice,
         Com<IDirect3DDevice7>&& d3d7DeviceProxy,
         D3D7Interface* pParent,
-        D3DDEVICEDESC7 Desc,
         GUID deviceGUID,
-        d3d9::D3DPRESENT_PARAMETERS Params9,
+        const d3d9::D3DPRESENT_PARAMETERS* pParams9,
         Com<d3d9::IDirect3DDevice9>&& pDevice9,
         DDraw7Surface* pSurface,
         DWORD CreationFlags9)
     : DDrawWrappedObject<D3D7Interface, IDirect3DDevice7>(pParent, std::move(d3d7DeviceProxy))
     , m_commonD3DDevice ( commonD3DDevice )
     , m_multithread ( CreationFlags9 & D3DCREATE_MULTITHREADED )
-    , m_desc ( Desc )
     , m_rt ( pSurface ) {
     if (m_parent != nullptr) {
       m_commonIntf = m_parent->GetCommonInterface();
@@ -34,15 +32,17 @@ namespace dxvk {
       throw DxvkError("D3D7Device: ERROR! Failed to retrieve the common interface!");
     }
 
+    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+    // Retrieve and cache the device capabilities
+    m_desc = GetD3D7Caps(deviceGUID, d3dOptions);
+
     d3d9::IDirect3DDevice9* device9;
 
     if (likely(m_commonD3DDevice == nullptr)) {
-      m_commonD3DDevice = new D3DCommonDevice(m_commonIntf, deviceGUID, Params9, CreationFlags9);
+      m_commonD3DDevice = new D3DCommonDevice(m_commonIntf, deviceGUID, pParams9, CreationFlags9);
 
       m_commonD3DDevice->SetD3D9Device(std::move(pDevice9));
       device9 = m_commonD3DDevice->GetD3D9Device();
-
-      const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
       if (unlikely(d3dOptions->emulateFSAA == FSAAEmulation::Forced)) {
         Logger::warn("D3D7Device: Force enabling AA");
@@ -128,14 +128,15 @@ namespace dxvk {
       return E_NOINTERFACE;
     }
 
-    try {
-      *ppvObject = ref(this->GetInterface(riid));
+    if (likely(riid == __uuidof(IUnknown) ||
+               riid == __uuidof(IDirect3DDevice7))) {
+      *ppvObject = ref(this);
       return S_OK;
-    } catch (const DxvkError& e) {
-      Logger::warn(e.message());
-      Logger::warn(str::format(riid));
-      return E_NOINTERFACE;
     }
+
+    Logger::warn("D3D7Device::QueryInterface: Unknown interface query");
+    Logger::warn(str::format(riid));
+    return E_NOINTERFACE;
   }
 
   HRESULT STDMETHODCALLTYPE D3D7Device::GetCaps(D3DDEVICEDESC7 *desc) {
@@ -291,6 +292,8 @@ namespace dxvk {
     if (unlikely(d3d == nullptr))
       return DDERR_INVALIDPARAMS;
 
+    InitReturnPtr(d3d);
+
     *d3d = ref(m_parent);
 
     return D3D_OK;
@@ -313,12 +316,7 @@ namespace dxvk {
 
     DDraw7Surface* rt7 = static_cast<DDraw7Surface*>(surface);
 
-    // Needed to ensure proxied Z/Stencil viewport clears will work
-    HRESULT hrRT = m_proxy->SetRenderTarget(rt7->GetShadowOrProxied(), flags);
-    if (unlikely(FAILED(hrRT)))
-      Logger::debug("D3D7Device::SetRenderTarget: Failed to set RT");
-
-    HRESULT hr = rt7->GetCommonSurface()->ValidateRTUsage();
+    HRESULT hr = rt7->GetCommonSurface()->ValidateRTUsage(m_commonD3DDevice->IsHALOrTNLHALDevice());
     if (unlikely(FAILED(hr)))
       return hr;
 
@@ -331,10 +329,6 @@ namespace dxvk {
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
     hr = device9->SetRenderTarget(0, rt7->GetCommonSurface()->GetD3D9Surface());
-
-    // TODO: Test suggest that the passed surface is saved as the
-    // current RT even if the call fails, or it is an invalid surface...
-    // The current viewport values however must remain unaffected.
 
     if (likely(SUCCEEDED(hr))) {
       Logger::debug("D3D7Device::SetRenderTarget: Set a new D3D9 RT");
@@ -401,18 +395,19 @@ namespace dxvk {
     if (unlikely(!count && rects))
       return D3D_OK;
 
-    // We are now allowing proxy back buffer blits in certain cases, so
-    // we must also ensure the back buffer clear calls are proxied
-    HRESULT hr = m_proxy->Clear(count, rects, flags, color, z, stencil);
-    if (unlikely(FAILED(hr)))
-      Logger::debug("D3D7Device::Clear: Failed proxied call");
-
-    hr = m_commonD3DDevice->GetD3D9Device()->Clear(count, rects, flags, color, static_cast<float>(z), stencil);
-    if (unlikely(FAILED(hr)))
+    HRESULT hr = m_commonD3DDevice->GetD3D9Device()->Clear(count, rects, flags, color, static_cast<float>(z), stencil);
+    if (unlikely(FAILED(hr))) {
+      Logger::debug("D3D7Device::Clear: Failed D3D9 Clear call");
       return hr;
+    }
 
     const bool clearRenderTarget = flags & D3DCLEAR_TARGET;
     const bool clearDepthStencil = (flags & D3DCLEAR_ZBUFFER) || (flags & D3DCLEAR_STENCIL);
+
+    if (clearRenderTarget)
+      m_rt->GetCommonSurface()->UnDirtyDDrawSurface();
+    if (clearDepthStencil && m_ds != nullptr)
+      m_ds->GetCommonSurface()->UnDirtyDDrawSurface();
 
     UpdateSurfaceDirtyTracking(clearRenderTarget, clearDepthStencil, false);
 
@@ -442,32 +437,14 @@ namespace dxvk {
     if (unlikely(data == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    // Clear() calls are affected by the set viewport, so we
-    // must ensure SetViewport() calls are also proxied
-    HRESULT hr = m_proxy->SetViewport(data);
-    if (unlikely(FAILED(hr)))
-      Logger::debug("D3D7Device::SetViewport: Failed proxied call");
-
-    const DDSURFACEDESC2* rtDesc2 = m_rt->GetCommonSurface()->GetDesc2();
-
+    // Use the full surface rect, since it is surface version agnostic
+    const RECT* surfRect = m_rt->GetCommonSurface()->GetFullSurfaceRect();
     // D3D7 will fail when setting a viewport that's outside of the
     // current render target, though that works in D3D9
-    if (unlikely(data->dwX + data->dwWidth  > rtDesc2->dwWidth ||
-                 data->dwY + data->dwHeight > rtDesc2->dwHeight)) {
-      // On Linux/Wine and in windowed mode, we can get in situations
-      // where the actual render target dimensions are off by one
-      // pixel to what the game sets them to. Allow this corner case
-      // to skip the validation, in order to prevent issues.
-      const bool isOnePixelWider  = data->dwX + data->dwWidth  == rtDesc2->dwWidth  + 1;
-      const bool isOnePixelTaller = data->dwY + data->dwHeight == rtDesc2->dwHeight + 1;
-
-      if (unlikely(isOnePixelWider || isOnePixelTaller)) {
-        Logger::debug("D3D7Device::SetViewport: Viewport exceeds render target dimensions by one pixel");
-      } else {
-        Logger::debug("D3D7Device::SetViewport: Viewport exceeds render target dimensions");
-        return DDERR_INVALIDPARAMS;
-      }
-    }
+    HRESULT hr = ValidateViewportRT(data->dwX, data->dwY, data->dwWidth, data->dwHeight,
+                                    surfRect->right, surfRect->bottom);
+    if (unlikely(FAILED(hr)))
+      return hr;
 
     // (The) Summoner sets both to 0.0f and expects to get
     // the behavioral equivalent of setting 0.0f/1.0f, although
@@ -927,9 +904,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
-    m_rt->InitializeOrUploadD3D9();
-    if (likely(m_ds != nullptr))
-      m_ds->InitializeOrUploadD3D9();
+    DDrawDirtySurfaceUpload();
 
     device9->SetFVF(dwVertexTypeDesc);
     HRESULT hr = device9->DrawPrimitiveUP(
@@ -963,9 +938,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
-    m_rt->InitializeOrUploadD3D9();
-    if (likely(m_ds != nullptr))
-      m_ds->InitializeOrUploadD3D9();
+    DDrawDirtySurfaceUpload();
 
     device9->SetFVF(dwVertexTypeDesc);
     HRESULT hr = device9->DrawIndexedPrimitiveUP(
@@ -1033,9 +1006,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
-    m_rt->InitializeOrUploadD3D9();
-    if (likely(m_ds != nullptr))
-      m_ds->InitializeOrUploadD3D9();
+    DDrawDirtySurfaceUpload();
 
     // Transform strided vertex data to a standard vertex buffer stream
     PackedVertexBuffer pvb = TransformStridedtoUP(dwVertexTypeDesc, lpVertexArray, dwVertexCount);
@@ -1072,9 +1043,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
-    m_rt->InitializeOrUploadD3D9();
-    if (likely(m_ds != nullptr))
-      m_ds->InitializeOrUploadD3D9();
+    DDrawDirtySurfaceUpload();
 
     // Transform strided vertex data to a standard vertex buffer stream
     PackedVertexBuffer pvb = TransformStridedtoUP(dwVertexTypeDesc, lpVertexArray, dwVertexCount);
@@ -1122,9 +1091,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
-    m_rt->InitializeOrUploadD3D9();
-    if (likely(m_ds != nullptr))
-      m_ds->InitializeOrUploadD3D9();
+    DDrawDirtySurfaceUpload();
 
     device9->SetFVF(vb->GetFVF());
     device9->SetStreamSource(0, vb->GetD3D9VertexBuffer(), 0, vb->GetStride());
@@ -1175,9 +1142,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
-    m_rt->InitializeOrUploadD3D9();
-    if (likely(m_ds != nullptr))
-      m_ds->InitializeOrUploadD3D9();
+    DDrawDirtySurfaceUpload();
 
     d3d9::IDirect3DIndexBuffer9* ib9 = m_ib9[ibIndex].ptr();
 
@@ -1423,8 +1388,11 @@ namespace dxvk {
     DDraw7Surface* ddraw7SurfaceSrc = nullptr;
     DDraw7Surface* ddraw7SurfaceDst = nullptr;
 
+    RECT* sourceFullSurfaceRect = nullptr;
     if (likely(m_commonIntf->IsWrappedSurface(src_surface))) {
       ddraw7SurfaceSrc = static_cast<DDraw7Surface*>(src_surface);
+      ddraw7SurfaceSrc->DownloadSurfaceData();
+      sourceFullSurfaceRect = ddraw7SurfaceSrc->GetCommonSurface()->GetFullSurfaceRect();
     } else {
       Logger::warn("D3D7Device::Load: Unwrapped surface source");
       return DDERR_UNSUPPORTED;
@@ -1432,6 +1400,12 @@ namespace dxvk {
 
     if (likely(m_commonIntf->IsWrappedSurface(dst_surface))) {
       ddraw7SurfaceDst = static_cast<DDraw7Surface*>(dst_surface);
+      if ((dst_point == nullptr || (dst_point->x == 0 && dst_point->y == 0)) &&
+          ddraw7SurfaceDst->GetCommonSurface()->IsFullSurfaceLock(src_rect, sourceFullSurfaceRect)) {
+        ddraw7SurfaceDst->GetCommonSurface()->UnDirtyD3D9Surface();
+      } else {
+        ddraw7SurfaceDst->DownloadSurfaceData();
+      }
     } else {
       Logger::warn("D3D7Device::Load: Unwrapped surface destination");
       return DDERR_UNSUPPORTED;
@@ -1444,18 +1418,11 @@ namespace dxvk {
       return hr;
     }
 
-    // Update the cached destination surface desc
-    DDSURFACEDESC2 desc2;
-    desc2.dwSize = sizeof(DDSURFACEDESC2);
-    HRESULT hrDesc = ddraw7SurfaceDst->GetProxied()->GetSurfaceDesc(&desc2);
-
-    if (unlikely(FAILED(hrDesc))) {
-      Logger::err("D3D7Device::Load: Failed to retrieve updated destination surface desc");
-    } else {
-      ddraw7SurfaceDst->GetCommonSurface()->SetDesc2(desc2);
-    }
-
-    ddraw7SurfaceDst->GetCommonSurface()->DirtyDDrawSurface();
+    DDrawCommonSurface* dstCommonSurf = ddraw7SurfaceDst->GetCommonSurface();
+    HRESULT hrDesc = dstCommonSurf->RefreshSurfaceDescripton();
+    if (unlikely(FAILED(hrDesc)))
+      Logger::err("D3D7Device::Load: Failed to refresh surface description");
+    dstCommonSurf->DirtyDDrawSurface();
 
     return hr;
   }
@@ -1513,10 +1480,8 @@ namespace dxvk {
       } else {
         Logger::info("D3D7Device::InitializeDS: Got depth stencil from RT");
 
-        DDSURFACEDESC2 descDS;
-        descDS.dwSize = sizeof(DDSURFACEDESC2);
-        m_ds->GetProxied()->GetSurfaceDesc(&descDS);
-        Logger::debug(str::format("D3D7Device::InitializeDS: DepthStencil: ", descDS.dwWidth, "x", descDS.dwHeight));
+        const RECT* dsRect = m_ds->GetCommonSurface()->GetFullSurfaceRect();
+        Logger::debug(str::format("D3D7Device::InitializeDS: DepthStencil: ", dsRect->right, "x", dsRect->bottom));
 
         HRESULT hrDS9 = device9->SetDepthStencilSurface(m_ds->GetCommonSurface()->GetD3D9Surface());
         if(unlikely(FAILED(hrDS9))) {
@@ -1557,8 +1522,35 @@ namespace dxvk {
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D7Device::ResetD3D9Swapchain: Failed to reset the D3D9 swapchain");
     } else {
-      // TODO: Cache and reset all surfaces tied to the D3D9 backbuffers
+      Logger::debug("D3D7Device::ResetD3D9Swapchain: Resetting the render target");
+
       m_rt->GetCommonSurface()->SetD3D9Surface(nullptr);
+      m_rt->GetCommonSurface()->UnDirtyD3D9Surface();
+
+      // Reset the D3D9 objects for all the following surfaces in the swapchain
+      DDraw7Surface* nextFlippable = m_rt->GetNextFlippable();
+
+      while (nextFlippable != nullptr) {
+        Logger::debug("D3D7Device::ResetD3D9Swapchain: Resetting child surface");
+
+        nextFlippable->GetCommonSurface()->SetD3D9Surface(nullptr);
+        nextFlippable->GetCommonSurface()->UnDirtyD3D9Surface();
+
+        nextFlippable = nextFlippable->GetNextFlippable();
+      }
+
+      // Reset the D3D9 objects for all the previous surfaces in the swapchain
+      DDraw7Surface* parentSurf = m_rt->GetParentSurface();
+
+      while (parentSurf != nullptr) {
+        Logger::debug("D3D7Device::ResetD3D9Swapchain: Resetting parent surface");
+
+        parentSurf->GetCommonSurface()->SetD3D9Surface(nullptr);
+        parentSurf->GetCommonSurface()->UnDirtyD3D9Surface();
+
+        parentSurf = parentSurf->GetParentSurface();
+      }
+
       // Note that the D3D9 depth stencil survives a swapchain reset,
       // so there's no need to worry about it in this case
     }
@@ -1595,6 +1587,19 @@ namespace dxvk {
     ib9->Lock(0, size, &pData, D3DLOCK_DISCARD);
     memcpy(pData, static_cast<void*>(indices), size);
     ib9->Unlock();
+  }
+
+  inline void D3D7Device::DDrawDirtySurfaceUpload() {
+    // Render target
+    m_rt->InitializeOrUploadD3D9();
+    // Depth stencil (if present)
+    if (likely(m_ds != nullptr))
+      m_ds->InitializeOrUploadD3D9();
+    // Bound texture(s)
+    for (auto& tex : m_textures) {
+      if (tex.ptr() != nullptr)
+        tex->InitializeOrUploadD3D9();
+    }
   }
 
 }

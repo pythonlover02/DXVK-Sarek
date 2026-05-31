@@ -26,7 +26,7 @@ namespace dxvk {
     D3DCommonDevice(
           DDrawCommonInterface* commonIntf,
           GUID deviceGUID,
-          d3d9::D3DPRESENT_PARAMETERS params9,
+          const d3d9::D3DPRESENT_PARAMETERS* pParams9,
           DWORD creationFlags9);
 
     ~D3DCommonDevice();
@@ -47,6 +47,12 @@ namespace dxvk {
     DDraw7Surface* GetCurrentRenderTarget7() const;
 
     bool IsCurrentRenderTarget(DDrawCommonSurface* commonSurface) const;
+
+    bool IsHALOrTNLHALDevice() const {
+      // This is largely implementation specific, but shouldn't change
+      return (m_creationFlags9 & D3DCREATE_HARDWARE_VERTEXPROCESSING) ||
+             (m_creationFlags9 & D3DCREATE_MIXED_VERTEXPROCESSING);
+    }
 
     void SetInScene(bool inScene) {
       m_inScene = inScene;
@@ -72,8 +78,8 @@ namespace dxvk {
       return m_deviceGUID;
     }
 
-    d3d9::D3DPRESENT_PARAMETERS GetPresentParameters() const {
-      return m_params9;
+    const d3d9::D3DPRESENT_PARAMETERS* GetPresentParameters() const {
+      return &m_params9;
     }
 
     d3d9::D3DMULTISAMPLE_TYPE GetMultiSampleType() const {
