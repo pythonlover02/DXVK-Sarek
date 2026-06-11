@@ -278,9 +278,10 @@ namespace dxvk {
       { "d3d11.invariantPosition",          "False" },
       { "d3d11.floatControls",              "False" },
     }} },
-    /* Nioh 2                                     */
+    /* Nioh 2 - Fixes some fires looking glitchy  */
     { R"(\\nioh2\.exe$)", {{
       { "dxgi.deferSurfaceCreation",        "True" },
+      { "dxvk.zeroMappedMemory",            "True" },
     }} },
     /* Crazy Machines 3 - crashes on long device  *
      * descriptions                               */
@@ -440,7 +441,8 @@ namespace dxvk {
      * around the game not properly initializing  *
      * some of its constant buffers after discard */
     { R"(\\Vindictus(_x64)?\.exe$)", {{
-      { "d3d11.cachedDynamicResources",     "cr"   },
+      { "d3d11.cachedDynamicResources",       "cr" },
+      { "dxvk.zeroMappedMemory",            "True" },
     }} },
     /* Riders Republic - Statically linked AMDAGS */
     { R"(\\RidersRepublic(_BE)?\.exe$)", {{
@@ -876,6 +878,15 @@ namespace dxvk {
     { R"(\\Heroes (o|O)f Annihilated Empires.*\\engine\.exe$)", {{
       { "d3d9.memoryTrackTest",             "True" },
       { "d3d9.maxAvailableMemory",          "2048" },
+    }} },
+    /* Ridge Racer Unbounded - Vertex explosions  */
+    { R"(\\RRU(_demo)?\.exe$)", {{
+      { "dxvk.zeroMappedMemory",            "True" },
+    }} },
+    /* Warhammer 40,000: Dawn of War DE           *
+     * Fixes occasional vertex explosions         */
+    { R"(\\W40k(_gog)?\.exe$)", {{
+      { "dxvk.zeroMappedMemory",            "True" },
     }} },
     /* The Ship (2004)                          */
     { R"(\\ship\.exe$)", {{

@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cstring>
 
 #include "dxvk_device.h"
 #include "dxvk_memory.h"
@@ -123,9 +124,18 @@ namespace dxvk {
       m_freeList.push_back({ allocEnd, sliceEnd - allocEnd });
 
     // Create the memory object with the aligned slice
+    void* mapPtr = m_memory.memPointer
+      ? reinterpret_cast<char*>(m_memory.memPointer) + allocStart
+      : nullptr;
+
+    // Some games assume freshly mapped buffers are zero-initialized and
+    // break on stale data. Clear the slice on hand-out if requested, which
+    // also covers reused slices from recycled chunks.
+    if (unlikely(mapPtr && m_alloc->zeroMappedMemory()))
+      std::memset(mapPtr, 0, allocEnd - allocStart);
+
     return DxvkMemory(m_alloc, this, m_type,
-      m_memory.memHandle, allocStart, allocEnd - allocStart,
-      reinterpret_cast<char*>(m_memory.memPointer) + allocStart);
+      m_memory.memHandle, allocStart, allocEnd - allocStart, mapPtr);
   }
 
 
@@ -378,8 +388,12 @@ namespace dxvk {
       DxvkDeviceMemory devMem = this->tryAllocDeviceMemory(
         type, flags, size, hints, dedAllocInfo);
 
-      if (devMem.memHandle != VK_NULL_HANDLE)
+      if (devMem.memHandle != VK_NULL_HANDLE) {
+        if (unlikely(devMem.memPointer && this->zeroMappedMemory()))
+          std::memset(devMem.memPointer, 0, size);
+
         memory = DxvkMemory(this, nullptr, type, devMem.memHandle, 0, size, devMem.memPointer);
+      }
     } else {
       for (uint32_t i = 0; i < type->chunks.size() && !memory; i++)
         memory = type->chunks[i]->alloc(flags, size, align, hints);

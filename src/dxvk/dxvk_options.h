@@ -33,6 +33,10 @@ namespace dxvk {
     // render-pass-op side is detected but not yet acted on.
     Tristate tilerMode;
 
+    // Zero-initialize host-visible mapped memory on allocation.
+    // Works around games that assume freshly mapped buffers are clean.
+    bool zeroMappedMemory;
+
     /// Memory budget in bytes
     VkDeviceSize maxMemoryBudget;
 
