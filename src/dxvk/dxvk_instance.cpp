@@ -175,9 +175,18 @@ namespace dxvk {
     DxvkDeviceFilter filter(filterFlags);
     std::vector<Rc<DxvkAdapter>> result;
 
+    uint32_t numDGPU = 0;
+    uint32_t numIGPU = 0;
+
     for (uint32_t i = 0; i < numAdapters; i++) {
-      if (filter.testAdapter(deviceProperties[i]))
+      if (filter.testAdapter(deviceProperties[i])) {
+        if (deviceProperties[i].deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
+          numDGPU += 1;
+        else if (deviceProperties[i].deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU)
+          numIGPU += 1;
+
         result.push_back(new DxvkAdapter(m_vki, adapters[i]));
+      }
     }
 
     std::stable_sort(result.begin(), result.end(),
@@ -198,6 +207,11 @@ namespace dxvk {
 
         return aRank < bRank;
       });
+
+    if (m_options.hideIntegratedGraphics && numDGPU > 0 && numIGPU > 0) {
+      result.resize(numDGPU);
+      numIGPU = 0;
+    }
 
     if (result.size() == 0) {
       Logger::warn("DXVK: No adapters found. Please check your "

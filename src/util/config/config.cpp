@@ -470,6 +470,11 @@ namespace dxvk {
     { R"(\\Kena-Win64-Shipping\.exe$)", {{
       { "dxgi.hideIntelGpu",                 "True" },
     }} },
+    /* Warcraft 3 Reforged                        *
+     * Bugs out on some multi-gpu systems.        */
+    { R"(\\x86_64\\Warcraft III\.exe$)", {{
+      { "dxvk.hideIntegratedGraphics",      "True" },
+    }} },
     /* Earth Defense Force 5 */
     { R"(\\EDF5\.exe$)", {{
       { "dxgi.tearFree",                    "False" },

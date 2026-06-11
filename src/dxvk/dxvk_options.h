@@ -18,7 +18,16 @@ namespace dxvk {
     /// when using the state cache
     int32_t numCompilerThreads;
 
+    // Hides integrated GPUs if dedicated GPUs are
+    // present. May be necessary for some games that
+    // incorrectly assume monitor layouts.
+    bool hideIntegratedGraphics;
+
+    // Enable or disable Dyasync
     bool enableDyasync;
+
+    // Number of compiler threads
+    // when using Dyasync
     int32_t numDyasyncThreads;
 
     /// Shader-related options
