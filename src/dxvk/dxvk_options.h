@@ -26,6 +26,9 @@ namespace dxvk {
     /// Device name
     std::string deviceFilter;
 
+    /// Memory budget in bytes
+    VkDeviceSize maxMemoryBudget;
+
     // Enable or disable Dyasync
     bool enableDyasync;
 
