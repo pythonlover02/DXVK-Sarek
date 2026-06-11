@@ -255,6 +255,11 @@ namespace dxvk {
   }
 
 
+  bool DxvkMemoryAllocator::zeroMappedMemory() const {
+    return m_device->config().zeroMappedMemory;
+  }
+
+
   DxvkMemory DxvkMemoryAllocator::alloc(
     const VkMemoryRequirements*             req,
     const VkMemoryDedicatedRequirements&    dedAllocReq,

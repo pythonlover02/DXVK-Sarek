@@ -337,9 +337,7 @@ namespace dxvk {
      * \brief Whether mapped memory should be zero-initialized
      * \returns \c true if zeroMappedMemory is enabled
      */
-    bool zeroMappedMemory() const {
-      return m_device->config().zeroMappedMemory;
-    }
+    bool zeroMappedMemory() const;
 
   private:
 
