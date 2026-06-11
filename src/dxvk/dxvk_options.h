@@ -23,6 +23,9 @@ namespace dxvk {
     // incorrectly assume monitor layouts.
     bool hideIntegratedGraphics;
 
+    /// Device name
+    std::string deviceFilter;
+
     // Enable or disable Dyasync
     bool enableDyasync;
 

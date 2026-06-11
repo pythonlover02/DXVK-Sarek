@@ -1,21 +1,26 @@
 #include "dxvk_device_filter.h"
 
 namespace dxvk {
-  
-  DxvkDeviceFilter::DxvkDeviceFilter(DxvkDeviceFilterFlags flags)
+
+  DxvkDeviceFilter::DxvkDeviceFilter(
+          DxvkDeviceFilterFlags flags,
+    const DxvkOptions&          options)
   : m_flags(flags) {
     m_matchDeviceName = env::getEnvVar("DXVK_FILTER_DEVICE_NAME");
-    
+
+    if (m_matchDeviceName.empty())
+      m_matchDeviceName = options.deviceFilter;
+
     if (m_matchDeviceName.size() != 0)
       m_flags.set(DxvkDeviceFilterFlag::MatchDeviceName);
   }
-  
-  
+
+
   DxvkDeviceFilter::~DxvkDeviceFilter() {
-    
+
   }
-  
-  
+
+
   bool DxvkDeviceFilter::testAdapter(const VkPhysicalDeviceProperties& properties) const {
     if (properties.apiVersion < VK_MAKE_VERSION(1, 1, 0)) {
       Logger::warn(str::format("Skipping Vulkan 1.0 adapter: ", properties.deviceName));
@@ -34,5 +39,5 @@ namespace dxvk {
 
     return true;
   }
-  
+
 }

@@ -10,6 +10,7 @@ namespace dxvk {
     shrinkNvidiaHvvHeap   = config.getOption<Tristate>("dxvk.shrinkNvidiaHvvHeap",    Tristate::Auto);
     hud                   = config.getOption<std::string>("dxvk.hud", "");
     hideIntegratedGraphics = config.getOption<bool>   ("dxvk.hideIntegratedGraphics", false);
+    deviceFilter          = config.getOption<std::string>("dxvk.deviceFilter",        "");
     enableDyasync         = config.getOption<bool>    ("dxvk.enableDyasync",          true);
     numDyasyncThreads     = config.getOption<int32_t> ("dxvk.numDyasyncThreads",      0);
   }
