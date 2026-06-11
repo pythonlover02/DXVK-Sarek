@@ -266,9 +266,24 @@ namespace dxvk {
     if (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
       hints = hints & DxvkMemoryFlag::Transient;
 
+    // On tiling GPUs, prefer cached memory for host-visible allocations
+    // to speed up readbacks. This is a preference only: if no suitable
+    // cached memory type exists, we fall back to uncached below.
+    VkMemoryPropertyFlags cachedFlags = 0;
+
+    if ((flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+     && m_device->perfHints().preferCachedMemory)
+      cachedFlags = VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
+
     // Try to allocate from a memory type which supports the given flags exactly
     auto dedAllocPtr = dedAllocReq.prefersDedicatedAllocation ? &dedAllocInfo : nullptr;
-    DxvkMemory result = this->tryAlloc(req, dedAllocPtr, flags, hints);
+    DxvkMemory result = this->tryAlloc(req, dedAllocPtr, flags | cachedFlags, hints);
+
+    // If we asked for cached memory but none was available, retry uncached
+    if (!result && cachedFlags) {
+      cachedFlags = 0;
+      result = this->tryAlloc(req, dedAllocPtr, flags, hints);
+    }
 
     // If the first attempt failed, try ignoring the dedicated allocation
     if (!result && dedAllocPtr && !dedAllocReq.requiresDedicatedAllocation) {

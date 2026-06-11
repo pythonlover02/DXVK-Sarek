@@ -11,6 +11,7 @@ namespace dxvk {
     hud                   = config.getOption<std::string>("dxvk.hud", "");
     hideIntegratedGraphics = config.getOption<bool>   ("dxvk.hideIntegratedGraphics", false);
     deviceFilter          = config.getOption<std::string>("dxvk.deviceFilter",        "");
+    tilerMode             = config.getOption<Tristate>("dxvk.tilerMode",              Tristate::Auto);
     auto budget = config.getOption<int32_t>("dxvk.maxMemoryBudget", 0);
     maxMemoryBudget = VkDeviceSize(std::max(budget, 0)) << 20u;
     enableDyasync         = config.getOption<bool>    ("dxvk.enableDyasync",          true);

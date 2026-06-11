@@ -2,6 +2,8 @@
 
 #include "../util/config/config.h"
 
+#include "../vulkan/vulkan_loader.h"
+
 namespace dxvk {
 
   struct DxvkOptions {
@@ -25,6 +27,11 @@ namespace dxvk {
 
     /// Device name
     std::string deviceFilter;
+
+    // Tiler GPU tweaks. Currently biases host-visible
+    // allocations toward cached memory on tilers; the
+    // render-pass-op side is detected but not yet acted on.
+    Tristate tilerMode;
 
     /// Memory budget in bytes
     VkDeviceSize maxMemoryBudget;
