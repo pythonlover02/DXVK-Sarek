@@ -2256,10 +2256,11 @@ namespace dxvk {
         uint32_t sincos = m_module.opSinCos(scalarX, useBuiltIn);
 
         // opSinCos returns vec2: index 0 = sin, index 1 = cos
+        uint32_t sinIndex = 0u, cosIndex = 1u;
         sinIds[i] = m_module.opCompositeExtract(
-          floatType, sincos, 1u, &(uint32_t){0u});
+          floatType, sincos, 1u, &sinIndex);
         cosIds[i] = m_module.opCompositeExtract(
-          floatType, sincos, 1u, &(uint32_t){1u});
+          floatType, sincos, 1u, &cosIndex);
       }
 
       if (ins.dst[0].type != DxbcOperandType::Null) {
