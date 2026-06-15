@@ -13,6 +13,7 @@ namespace dxvk {
     deviceFilter          = config.getOption<std::string>("dxvk.deviceFilter",        "");
     tilerMode             = config.getOption<Tristate>("dxvk.tilerMode",              Tristate::Auto);
     zeroMappedMemory      = config.getOption<bool>("dxvk.zeroMappedMemory", false);
+    lowerSinCos           = config.getOption<Tristate>("dxvk.lowerSinCos",            Tristate::Auto);
     auto budget = config.getOption<int32_t>("dxvk.maxMemoryBudget", 0);
     maxMemoryBudget = VkDeviceSize(std::max(budget, 0)) << 20u;
     enableDyasync         = config.getOption<bool>    ("dxvk.enableDyasync",          true);

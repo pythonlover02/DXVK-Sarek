@@ -63,6 +63,10 @@ namespace dxvk {
 
     /// Whether vertex shaders may emit ClipDistance builtins.
     bool enableClipDistance = false;
+
+    /// Use a Taylor approximation for sin/cos instead of the
+    /// native GLSL.std.450 Sin/Cos instructions.
+    bool sincosEmulation = false;
   };
 
 }

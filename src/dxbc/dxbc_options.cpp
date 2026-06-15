@@ -3,7 +3,7 @@
 #include "dxbc_options.h"
 
 namespace dxvk {
-  
+
   DxbcOptions::DxbcOptions() {
 
   }
@@ -18,6 +18,11 @@ namespace dxvk {
 
     // Disable unbound texture optimization on Mali GPUs due to black screen issues
     disableUnboundTextureOptimization = (devProps.vendorID == 0x13B5); // ARM Mali
+
+    // Use software sin/cos approximation on Intel iGPUs by default
+    sincosEmulation = adapter->matchesDriver(VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA)
+                   || adapter->matchesDriver(VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS);
+    applyTristate(sincosEmulation, device->config().lowerSinCos);
 
     useDepthClipWorkaround
       = !devFeatures.extDepthClipEnable.depthClipEnable;
@@ -38,13 +43,13 @@ namespace dxvk {
      && (devInfo.coreSubgroup.supportedOperations & VK_SUBGROUP_FEATURE_BALLOT_BIT);
     useSdivForBufferIndex
       = adapter->matchesDriver(DxvkGpuVendor::Nvidia, VK_DRIVER_ID_NVIDIA_PROPRIETARY_KHR, 0, 0);
-    
+
     switch (device->config().useRawSsbo) {
       case Tristate::Auto:  minSsboAlignment = devInfo.core.properties.limits.minStorageBufferOffsetAlignment; break;
       case Tristate::True:  minSsboAlignment =  4u; break;
       case Tristate::False: minSsboAlignment = ~0u; break;
     }
-    
+
     invariantPosition        = options.invariantPosition;
     enableRtOutputNanFixup   = options.enableRtOutputNanFixup;
     zeroInitWorkgroupMemory  = options.zeroInitWorkgroupMemory;
@@ -55,7 +60,7 @@ namespace dxvk {
     // Disable subgroup early discard on Nvidia because it may hurt performance
     if (adapter->matchesDriver(DxvkGpuVendor::Nvidia, VK_DRIVER_ID_NVIDIA_PROPRIETARY_KHR, 0, 0))
       useSubgroupOpsForEarlyDiscard = false;
-    
+
     // Figure out float control flags to match D3D11 rules
     if (options.floatControls) {
       if (devInfo.khrShaderFloatControls.shaderSignedZeroInfNanPreserveFloat32)
@@ -75,5 +80,5 @@ namespace dxvk {
      || adapter->matchesDriver(DxvkGpuVendor::Amd, VK_DRIVER_ID_MESA_RADV_KHR, 0, VK_MAKE_VERSION(20, 3, 0)))
       enableRtOutputNanFixup = true;
   }
-  
+
 }

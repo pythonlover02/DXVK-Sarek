@@ -2196,14 +2196,23 @@ namespace dxvk {
         DxsoRegMask srcMask(true, false, false, false);
         uint32_t src0 = emitRegisterLoad(src[0], srcMask).id;
 
-        std::array<uint32_t, 4> sincosVectorIndices = { 0, 0, 0, 0 };
+        uint32_t sincos = m_module.opSinCos(src0,
+          !m_moduleInfo.options.sincosEmulation);
 
+        std::array<uint32_t, 4> sincosVectorIndices = { 0, 0, 0, 0 };
         uint32_t index = 0;
+
+        uint32_t cosIdx = 1u, sinIdx = 0u;
+
+        // Original order: mask[0] = cos, mask[1] = sin
+        // opSinCos returns vec2(sin, cos)
         if (mask[0])
-          sincosVectorIndices[index++] = m_module.opCos(scalarTypeId, src0);
+          sincosVectorIndices[index++] = m_module.opCompositeExtract(
+            scalarTypeId, sincos, 1u, &cosIdx);
 
         if (mask[1])
-          sincosVectorIndices[index++] = m_module.opSin(scalarTypeId, src0);
+          sincosVectorIndices[index++] = m_module.opCompositeExtract(
+            scalarTypeId, sincos, 1u, &sinIdx);
 
         for (; index < result.type.ccount; index++) {
           if (sincosVectorIndices[index] == 0)

@@ -37,6 +37,9 @@ namespace dxvk {
     // Works around games that assume freshly mapped buffers are clean.
     bool zeroMappedMemory;
 
+    /// Whether to use custom sin/cos approximation
+    Tristate lowerSinCos = Tristate::Auto;
+
     /// Memory budget in bytes
     VkDeviceSize maxMemoryBudget;
 
