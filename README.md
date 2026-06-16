@@ -1,5 +1,5 @@
 > [!NOTE]
-> Development may be slow at times, but this project is still maintained even if the last commit was made a while ago.
+> Bug reports and pull requests are welcome, but please understand that development happens in my free time and progress may be slow at times, the project is still maintained even if the last commit was made a while ago.
 
 # DXVK-Sarek:
 
