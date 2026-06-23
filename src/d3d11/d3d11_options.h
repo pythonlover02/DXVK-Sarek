@@ -66,7 +66,7 @@ namespace dxvk {
     /// Enforces anisotropic filtering with the
     /// given anisotropy value for all samplers.
     int32_t samplerAnisotropy;
-    
+
     /// Declare vertex positions in shaders as invariant
     bool invariantPosition;
 
@@ -111,6 +111,16 @@ namespace dxvk {
     /// in cached system memory. Enabled automatically when recording
     /// an api trace.
     uint32_t cachedDynamicResources;
+
+    /// Whether to expose the driver command list feature. Enabled by
+    /// default and generally beneficial, but some games may assume that
+    /// this is not supported when running on an AMD GPU.
+    bool exposeDriverCommandLists;
+
+    /// Always lock immediate context on every API call. May be
+    /// useful for debugging purposes or when applications have
+    /// race conditions.
+    bool enableContextLock;
   };
-  
+
 }

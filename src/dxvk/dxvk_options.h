@@ -2,6 +2,8 @@
 
 #include "../util/config/config.h"
 
+#include "../vulkan/vulkan_loader.h"
+
 namespace dxvk {
 
   struct DxvkOptions {
@@ -18,7 +20,34 @@ namespace dxvk {
     /// when using the state cache
     int32_t numCompilerThreads;
 
+    // Hides integrated GPUs if dedicated GPUs are
+    // present. May be necessary for some games that
+    // incorrectly assume monitor layouts.
+    bool hideIntegratedGraphics;
+
+    /// Device name
+    std::string deviceFilter;
+
+    // Tiler GPU tweaks. Currently biases host-visible
+    // allocations toward cached memory on tilers; the
+    // render-pass-op side is detected but not yet acted on.
+    Tristate tilerMode;
+
+    // Zero-initialize host-visible mapped memory on allocation.
+    // Works around games that assume freshly mapped buffers are clean.
+    bool zeroMappedMemory;
+
+    /// Whether to use custom sin/cos approximation
+    Tristate lowerSinCos = Tristate::Auto;
+
+    /// Memory budget in bytes
+    VkDeviceSize maxMemoryBudget;
+
+    // Enable or disable Dyasync
     bool enableDyasync;
+
+    // Number of compiler threads
+    // when using Dyasync
     int32_t numDyasyncThreads;
 
     /// Shader-related options

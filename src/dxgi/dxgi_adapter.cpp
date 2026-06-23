@@ -275,7 +275,11 @@ namespace dxvk {
         fallbackDevice = 0x2487;
       }
 
-      bool hideGpu = (deviceProp.vendorID == uint16_t(DxvkGpuVendor::Nvidia) && options->hideNvidiaGpu)
+      const auto driverID = m_adapter->devicePropertiesExt().khrDeviceDriverProperties.driverID;
+      bool hideNvidiaGpu = driverID == VK_DRIVER_ID_NVIDIA_PROPRIETARY
+        ? options->hideNvidiaGpu : options->hideNvkGpu;
+
+      bool hideGpu = (deviceProp.vendorID == uint16_t(DxvkGpuVendor::Nvidia) && hideNvidiaGpu)
                   || (deviceProp.vendorID == uint16_t(DxvkGpuVendor::Amd) && options->hideAmdGpu)
                   || (deviceProp.vendorID == uint16_t(DxvkGpuVendor::Intel) && options->hideIntelGpu);
       if (hideGpu) {

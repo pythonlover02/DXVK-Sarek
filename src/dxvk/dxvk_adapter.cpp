@@ -530,6 +530,12 @@ namespace dxvk {
   }
 
 
+  bool DxvkAdapter::matchesDriver(
+          VkDriverIdKHR       driver) const {
+    return driver == m_deviceInfo.khrDeviceDriverProperties.driverID;
+  }
+
+
   void DxvkAdapter::logAdapterInfo() const {
     VkPhysicalDeviceProperties deviceInfo = this->deviceProperties();
     VkPhysicalDeviceMemoryProperties memoryInfo = this->memoryProperties();

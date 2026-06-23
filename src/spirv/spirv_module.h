@@ -927,6 +927,10 @@ namespace dxvk {
             uint32_t                resultType,
             uint32_t                vector);
 
+    uint32_t opSinCos(
+            uint32_t                x,
+            bool                    useBuiltIn);
+
     uint32_t opSqrt(
             uint32_t                resultType,
             uint32_t                operand);
@@ -1268,6 +1272,13 @@ namespace dxvk {
       const uint32_t*               argIds);
 
     void instImportGlsl450();
+
+    static constexpr double sincosTaylorFactor(uint32_t power) {
+      double r = 1.0;
+      for (uint32_t i = 1; i <= power; i++)
+        r *= pi * 0.25 / double(i);
+      return r;
+    }
 
     uint32_t getImageOperandWordCount(
       const SpirvImageOperands&     op) const;

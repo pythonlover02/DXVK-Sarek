@@ -27,7 +27,7 @@
 #include "../vulkan/vulkan_presenter.h"
 
 namespace dxvk {
-  
+
   class DxvkInstance;
 
   /**
@@ -44,11 +44,13 @@ namespace dxvk {
   struct DxvkDevicePerfHints {
     VkBool32 preferFbDepthStencilCopy : 1;
     VkBool32 preferFbResolve          : 1;
+    VkBool32 preferRenderPassOps      : 1;
+    VkBool32 preferCachedMemory       : 1;
   };
-  
+
   /**
    * \brief Device queue
-   * 
+   *
    * Stores a Vulkan queue and the
    * queue family that it belongs to.
    */
@@ -65,10 +67,10 @@ namespace dxvk {
     DxvkDeviceQueue graphics;
     DxvkDeviceQueue transfer;
   };
-  
+
   /**
    * \brief DXVK device
-   * 
+   *
    * Device object. This is responsible for resource creation,
    * memory allocation, command submission and state tracking.
    * Rendering commands are recorded into command lists using
@@ -79,16 +81,16 @@ namespace dxvk {
     friend class DxvkSubmissionQueue;
     friend class DxvkDescriptorPoolTracker;
   public:
-    
+
     DxvkDevice(
       const Rc<DxvkInstance>&         instance,
       const Rc<DxvkAdapter>&          adapter,
       const Rc<vk::DeviceFn>&         vkd,
       const DxvkDeviceExtensions&     extensions,
       const DxvkDeviceFeatures&       features);
-      
+
     ~DxvkDevice();
-    
+
     /**
      * \brief Vulkan device functions
      * \returns Vulkan device functions
@@ -96,7 +98,7 @@ namespace dxvk {
     Rc<vk::DeviceFn> vkd() const {
       return m_vkd;
     }
-    
+
     /**
      * \brief Logical device handle
      * \returns The device handle
@@ -112,10 +114,10 @@ namespace dxvk {
     const DxvkOptions& config() const {
       return m_options;
     }
-    
+
     /**
      * \brief Queue handles
-     * 
+     *
      * Handles and queue family indices
      * of all known device queues.
      * \returns Device queue infos
@@ -132,10 +134,10 @@ namespace dxvk {
       return m_queues.transfer.queueHandle
           != m_queues.graphics.queueHandle;
     }
-    
+
     /**
      * \brief The instance
-     * 
+     *
      * The DXVK instance that created this device.
      * \returns Instance
      */
@@ -145,7 +147,7 @@ namespace dxvk {
 
     /**
      * \brief The adapter
-     * 
+     *
      * The physical device that the
      * device has been created for.
      * \returns Adapter
@@ -161,7 +163,7 @@ namespace dxvk {
     const DxvkDeviceExtensions& extensions() const {
       return m_extensions;
     }
-    
+
     /**
      * \brief Enabled device features
      * \returns Enabled features
@@ -180,7 +182,7 @@ namespace dxvk {
 
     /**
      * \brief Get device status
-     * 
+     *
      * This may report device loss in
      * case a submission failed.
      * \returns Device status
@@ -209,7 +211,7 @@ namespace dxvk {
      * \returns Supported shader pipeline stages
      */
     VkPipelineStageFlags getShaderPipelineStages() const;
-    
+
     /**
      * \brief Retrieves device options
      * \returns Device options
@@ -223,26 +225,26 @@ namespace dxvk {
     DxvkDevicePerfHints perfHints() const {
       return m_perfHints;
     }
-    
+
     /**
      * \brief Creates a command list
      * \returns The command list
      */
     Rc<DxvkCommandList> createCommandList();
-    
+
     /**
      * \brief Creates a descriptor pool
-     * 
+     *
      * Returns a previously recycled pool, or creates
      * a new one if necessary. The context should take
      * ownership of the returned pool.
      * \returns Descriptor pool
      */
     Rc<DxvkDescriptorPool> createDescriptorPool();
-    
+
     /**
      * \brief Creates a context
-     * 
+     *
      * Creates a context object that can
      * be used to record command buffers.
      * \returns The context object
@@ -257,7 +259,7 @@ namespace dxvk {
 
     /**
      * \brief Creates a query
-     * 
+     *
      * \param [in] type Query type
      * \param [in] flags Query flags
      * \param [in] index Query index
@@ -276,19 +278,19 @@ namespace dxvk {
      */
     Rc<DxvkFence> createFence(
       const DxvkFenceCreateInfo& fenceInfo);
-    
+
     /**
      * \brief Creates framebuffer for a set of render targets
-     * 
+     *
      * \param [in] info Framebuffer info
      * \returns The framebuffer object
      */
     Rc<DxvkFramebuffer> createFramebuffer(
       const DxvkFramebufferInfo&  info);
-    
+
     /**
      * \brief Creates a buffer object
-     * 
+     *
      * \param [in] createInfo Buffer create info
      * \param [in] memoryType Memory type flags
      * \returns The buffer object
@@ -296,10 +298,10 @@ namespace dxvk {
     Rc<DxvkBuffer> createBuffer(
       const DxvkBufferCreateInfo& createInfo,
             VkMemoryPropertyFlags memoryType);
-    
+
     /**
      * \brief Creates a buffer view
-     * 
+     *
      * \param [in] buffer The buffer to view
      * \param [in] createInfo Buffer view properties
      * \returns The buffer view object
@@ -307,10 +309,10 @@ namespace dxvk {
     Rc<DxvkBufferView> createBufferView(
       const Rc<DxvkBuffer>&           buffer,
       const DxvkBufferViewCreateInfo& createInfo);
-    
+
     /**
      * \brief Creates an image object
-     * 
+     *
      * \param [in] createInfo Image create info
      * \param [in] memoryType Memory type flags
      * \returns The image object
@@ -321,7 +323,7 @@ namespace dxvk {
 
     /**
      * \brief Creates an image object for an existing VkImage
-     * 
+     *
      * \param [in] createInfo Image create info
      * \param [in] image Vulkan image to wrap
      * \returns The image object
@@ -329,10 +331,10 @@ namespace dxvk {
     Rc<DxvkImage> createImageFromVkImage(
       const DxvkImageCreateInfo&  createInfo,
             VkImage               image);
-    
+
     /**
      * \brief Creates an image view
-     * 
+     *
      * \param [in] image The image to create a view for
      * \param [in] createInfo Image view create info
      * \returns The image view
@@ -340,19 +342,19 @@ namespace dxvk {
     Rc<DxvkImageView> createImageView(
       const Rc<DxvkImage>&            image,
       const DxvkImageViewCreateInfo&  createInfo);
-    
+
     /**
      * \brief Creates a sampler object
-     * 
+     *
      * \param [in] createInfo Sampler parameters
      * \returns Newly created sampler object
      */
     Rc<DxvkSampler> createSampler(
       const DxvkSamplerCreateInfo&  createInfo);
-    
+
     /**
      * \brief Retrieves stat counters
-     * 
+     *
      * Can be used by the HUD to display some
      * internal information, such as memory
      * usage, draw calls, etc.
@@ -372,26 +374,26 @@ namespace dxvk {
      * \returns Current frame ID
      */
     uint32_t getCurrentFrameId() const;
-    
+
     /**
      * \brief Initializes dummy resources
-     * 
+     *
      * Should be called after creating the device in
      * case the device initialization was successful
      * and the device is usable.
      */
     void initResources();
-    
+
     /**
      * \brief Registers a shader
      * \param [in] shader Newly compiled shader
      */
     void registerShader(
       const Rc<DxvkShader>&         shader);
-    
+
     /**
      * \brief Presents a swap chain image
-     * 
+     *
      * Invokes the presenter's \c presentImage method on
      * the submission thread. The status of this operation
      * can be retrieved with \ref waitForSubmission.
@@ -401,10 +403,10 @@ namespace dxvk {
     void presentImage(
       const Rc<vk::Presenter>&        presenter,
             DxvkSubmitStatus*         status);
-    
+
     /**
      * \brief Submits a command list
-     * 
+     *
      * Submits the given command list to the device using
      * the given set of optional synchronization primitives.
      * \param [in] commandList The command list to submit
@@ -418,7 +420,7 @@ namespace dxvk {
 
     /**
      * \brief Locks submission queue
-     * 
+     *
      * Since Vulkan queues are only meant to be accessed
      * from one thread at a time, external libraries need
      * to lock the queue before submitting command buffers.
@@ -427,10 +429,10 @@ namespace dxvk {
       m_submissionQueue.synchronize();
       m_submissionQueue.lockDeviceQueue();
     }
-    
+
     /**
      * \brief Unlocks submission queue
-     * 
+     *
      * Releases the Vulkan queues again so that DXVK
      * itself can use them for submissions again.
      */
@@ -440,7 +442,7 @@ namespace dxvk {
 
     /**
      * \brief Number of pending submissions
-     * 
+     *
      * A return value of 0 indicates
      * that the GPU is currently idle.
      * \returns Pending submission count
@@ -462,7 +464,7 @@ namespace dxvk {
 
     /**
      * \brief Waits for a given submission
-     * 
+     *
      * \param [in,out] status Submission status
      * \returns Result of the submission
      */
@@ -475,19 +477,19 @@ namespace dxvk {
      * \param [in] access Access mode to check
      */
     void waitForResource(const Rc<DxvkResource>& resource, DxvkAccess access);
-    
+
     /**
      * \brief Waits until the device becomes idle
-     * 
+     *
      * Waits for the GPU to complete the execution of all
      * previously submitted command buffers. This may be
      * used to ensure that resources that were previously
      * used by the GPU can be safely destroyed.
      */
     void waitForIdle();
-    
+
   private:
-    
+
     DxvkOptions                 m_options;
 
     Rc<DxvkInstance>            m_instance;
@@ -497,32 +499,32 @@ namespace dxvk {
 
     DxvkDeviceFeatures          m_features;
     DxvkDeviceInfo              m_properties;
-    
+
     DxvkDevicePerfHints         m_perfHints;
     DxvkObjects                 m_objects;
 
     sync::Spinlock              m_statLock;
     DxvkStatCounters            m_statCounters;
-    
+
     DxvkDeviceQueueSet          m_queues;
-    
+
     DxvkRecycler<DxvkCommandList,    16> m_recycledCommandLists;
     DxvkRecycler<DxvkDescriptorPool, 16> m_recycledDescriptorPools;
-    
+
     DxvkSubmissionQueue m_submissionQueue;
 
     DxvkDevicePerfHints getPerfHints();
-    
+
     void recycleCommandList(
       const Rc<DxvkCommandList>& cmdList);
-    
+
     void recycleDescriptorPool(
       const Rc<DxvkDescriptorPool>& pool);
-    
+
     DxvkDeviceQueue getQueue(
             uint32_t                family,
             uint32_t                index) const;
-    
+
   };
-  
+
 }

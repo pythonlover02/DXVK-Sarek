@@ -8,7 +8,7 @@
 #include "./log/log.h"
 
 namespace dxvk {
-  
+
   FpsLimiter::FpsLimiter() {
     std::string env = env::getEnvVar("DXVK_FRAME_RATE");
 
@@ -32,8 +32,13 @@ namespace dxvk {
     std::lock_guard<dxvk::mutex> lock(m_mutex);
 
     if (!m_envOverride) {
-      m_targetInterval = frameRate > 0.0
-        ? NtTimerDuration(int64_t(double(NtTimerDuration::period::den) / frameRate))
+      // Negative rates are a soft cap (used by the swapchain to align frame pacing
+      // with refresh when SyncInterval > 1); positive rates are a hard cap.
+      m_isSoftLimit = frameRate < 0.0;
+      double absRate = m_isSoftLimit ? -frameRate : frameRate;
+
+      m_targetInterval = absRate > 0.0
+        ? NtTimerDuration(int64_t(double(NtTimerDuration::period::den) / absRate))
         : NtTimerDuration::zero();
 
       if (isEnabled() && !m_initialized)
@@ -54,9 +59,12 @@ namespace dxvk {
     auto frameTime = std::chrono::duration_cast<NtTimerDuration>(t1 - t0);
 
     if (frameTime * 100 > m_targetInterval * 103 - m_deviation * 100) {
-      // If we have a slow frame, reset the deviation since we
-      // do not want to compensate for low performance later on
-      m_deviation = NtTimerDuration::zero();
+      // If we have a slow frame, reset the deviation since we do not want to
+      // compensate for low performance later on. For soft limits we keep the
+      // deviation so the limiter only really nudges when the app is consistently
+      // rendering faster than the target, which is the point of negative rates.
+      if (!m_isSoftLimit)
+        m_deviation = NtTimerDuration::zero();
     } else {
       // Don't call sleep if the amount of time to sleep is shorter
       // than the time the function calls are likely going to take

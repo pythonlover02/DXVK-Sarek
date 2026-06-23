@@ -1558,7 +1558,7 @@ namespace dxvk {
         // have to re-implement the UpdateSubresource bug from the D3D11 runtime, see
         // https://msdn.microsoft.com/en-us/library/windows/desktop/ff476486(v=vs.85).aspx)
         info->DriverConcurrentCreates = TRUE;
-        info->DriverCommandLists      = TRUE;
+        info->DriverCommandLists      = m_d3d11Options.exposeDriverCommandLists;
       } return S_OK;
 
       case D3D11_FEATURE_DOUBLES: {

@@ -126,18 +126,6 @@ namespace dxvk {
     { R"(\\starwarsbattlefront(trial)?\.exe$)", {{
       { "dxgi.customVendorId",              "10de" },
     }} },
-    /* Dark Souls Remastered                      */
-    { R"(\\DarkSoulsRemastered\.exe$)", {{
-      { "d3d11.constantBufferRangeCheck",   "True" },
-    }} },
-    /* Grim Dawn                                  */
-    { R"(\\Grim Dawn\.exe$)", {{
-      { "d3d11.constantBufferRangeCheck",   "True" },
-    }} },
-    /* NieR:Automata                              */
-    { R"(\\NieRAutomata\.exe$)", {{
-      { "d3d11.constantBufferRangeCheck",   "True" },
-    }} },
     /* NieR Replicant                             */
     { R"(\\NieR Replicant ver\.1\.22474487139\.exe)", {{
       { "d3d11.cachedDynamicResources",     "vi"   },
@@ -173,18 +161,6 @@ namespace dxvk {
      * AMD AGS crash same as above                */
     { R"(\\MW2CR\.exe$)", {{
       { "dxgi.customVendorId",              "10de" },
-    }} },
-    /* Titan Quest                                */
-    { R"(\\TQ\.exe$)", {{
-      { "d3d11.constantBufferRangeCheck",   "True" },
-    }} },
-    /* Saints Row IV                              */
-    { R"(\\SaintsRowIV\.exe$)", {{
-      { "d3d11.constantBufferRangeCheck",   "True" },
-    }} },
-    /* Saints Row: The Third                      */
-    { R"(\\SaintsRowTheThird_DX11\.exe$)", {{
-      { "d3d11.constantBufferRangeCheck",   "True" },
     }} },
     /* Crysis 3 - slower if it notices AMD card     *
      * but apparently no longer works when spoofing *
@@ -239,14 +215,6 @@ namespace dxvk {
     { R"(\\F1_20(1[89]|[2-9][0-9])\.exe$)", {{
       { "d3d11.forceTgsmBarriers",          "True" },
     }} },
-    /* Blue Reflection                            */
-    { R"(\\BLUE_REFLECTION\.exe$)", {{
-      { "d3d11.constantBufferRangeCheck",   "True" },
-    }} },
-    /* Secret World Legends                       */
-    { R"(\\SecretWorldLegendsDX11\.exe$)", {{
-      { "d3d11.constantBufferRangeCheck",   "True" },
-    }} },
     /* Darksiders Warmastered - apparently reads  *
      * from write-only mapped buffers             */
     { R"(\\darksiders1\.exe$)", {{
@@ -278,9 +246,10 @@ namespace dxvk {
       { "d3d11.invariantPosition",          "False" },
       { "d3d11.floatControls",              "False" },
     }} },
-    /* Nioh 2                                     */
+    /* Nioh 2 - Fixes some fires looking glitchy  */
     { R"(\\nioh2\.exe$)", {{
       { "dxgi.deferSurfaceCreation",        "True" },
+      { "dxvk.zeroMappedMemory",            "True" },
     }} },
     /* Crazy Machines 3 - crashes on long device  *
      * descriptions                               */
@@ -440,7 +409,8 @@ namespace dxvk {
      * around the game not properly initializing  *
      * some of its constant buffers after discard */
     { R"(\\Vindictus(_x64)?\.exe$)", {{
-      { "d3d11.cachedDynamicResources",     "cr"   },
+      { "d3d11.cachedDynamicResources",       "cr" },
+      { "dxvk.zeroMappedMemory",            "True" },
     }} },
     /* Riders Republic - Statically linked AMDAGS */
     { R"(\\RidersRepublic(_BE)?\.exe$)", {{
@@ -455,9 +425,9 @@ namespace dxvk {
      * and assumes that AMD GPUs do not expose    *
      * native command lists for AGS usage         */
     { R"(\\granblue_fantasy_relink\.exe$)", {{
-      { "d3d11.ignoreGraphicsBarriers",     "True"  },
-      { "dxgi.hideAmdGpu",                   "True" },
-      { "dxgi.hideNvidiaGpu",               "False" },
+      { "d3d11.relaxedGraphicsBarriers",    "True" },
+      { "d3d11.exposeDriverCommandLists",  "False" },
+      { "dxgi.hideNvidiaGpu",              "False" },
     }} },
     /* Crysis 1/Warhead - Game bug in d3d10 makes *
      * it select lowest supported refresh rate    */
@@ -465,10 +435,19 @@ namespace dxvk {
       { "d3d9.maxFrameRate",              "-1"      },
       { "dxgi.maxFrameRate",              "-1"      },
     }} },
+    /* EDF6 - possible race condition?            */
+    { R"(\\EDF6\.exe$)", {{
+      { "d3d11.enableContextLock",          "True" },
+    }} },
     /* Kena: Bridge of Spirits: intel water       *
      * flickering issues                          */
     { R"(\\Kena-Win64-Shipping\.exe$)", {{
       { "dxgi.hideIntelGpu",                 "True" },
+    }} },
+    /* Warcraft 3 Reforged                        *
+     * Bugs out on some multi-gpu systems.        */
+    { R"(\\x86_64\\Warcraft III\.exe$)", {{
+      { "dxvk.hideIntegratedGraphics",      "True" },
     }} },
     /* Earth Defense Force 5 */
     { R"(\\EDF5\.exe$)", {{
@@ -479,17 +458,6 @@ namespace dxvk {
      * Too fast above 60fps                        */
     { R"(\\Varstray_steam(_demo)?\.exe$)", {{
       { "dxgi.maxFrameRate",                "60" },
-    }} },
-    /* Styx: Shards of Darkness                    *
-     * Render issues on D3D11                      */
-    { R"(\\Styx2-Win64-Shipping\.exe$)", {{
-      { "d3d11.constantBufferRangeCheck",    "True" },
-    }} },
-    /* Romancing Saga 3                            *
-     * Render issues on D3D11                      *
-     * Lets try with just constantBufferRangeCheck */
-    { R"(\\rs3.exe\.exe$)", {{
-      { "d3d11.constantBufferRangeCheck",    "True" },
     }} },
     /* Wargame: European Escalation: Broken gamma   *
      * ramp when nvapi is available for some reason */
@@ -872,6 +840,15 @@ namespace dxvk {
       { "d3d9.memoryTrackTest",             "True" },
       { "d3d9.maxAvailableMemory",          "2048" },
     }} },
+    /* Ridge Racer Unbounded - Vertex explosions  */
+    { R"(\\RRU(_demo)?\.exe$)", {{
+      { "dxvk.zeroMappedMemory",            "True" },
+    }} },
+    /* Warhammer 40,000: Dawn of War DE           *
+     * Fixes occasional vertex explosions         */
+    { R"(\\W40k(_gog)?\.exe$)", {{
+      { "dxvk.zeroMappedMemory",            "True" },
+    }} },
     /* The Ship (2004)                          */
     { R"(\\ship\.exe$)", {{
       { "d3d9.memoryTrackTest",             "True" },
@@ -1140,6 +1117,40 @@ namespace dxvk {
     { R"(\\Heroes of Annihilated Empires.*\\engine\.exe$)", {{
       { "d3d9.maxFrameRate",                  "60" },
     }} },
+    /* Scarface - Rendering issues when the       *
+     * D3DLOCK_DISCARD flag is respected          */
+    { R"(\\Scarface\.exe$)", {{
+      { "d3d9.allowDiscard",               "False" },
+    }} },
+    /* RaceRoom Racing Experience                 *
+     * Game depends on NvAPI_D3D9_StretchRectEx   */
+    { R"(\\RRRE(64)?\.exe$)", {{
+      { "d3d9.hideNvidiaGpu",               "True" },
+    }} },
+    /* Blitzkrieg 2 - Startup crash               */
+    { R"(\\Blitzkrieg 2( - Fall of the Reich| - Liberation)?\\bin\\game\.exe$)", {{
+      { "d3d9.memoryTrackTest",             "True" },
+    }} },
+    /* Perilous Warp - Nvidia path depends on     *
+     * unimplemented NvAPI_D3D9_StretchRectEx.    *
+     * Without it screen effects such as blood    *
+     * splatter are bugged.                       */
+    { R"(\\Perilous Warp\\system(64)?\\game\.exe$)", {{
+      { "d3d9.hideNvidiaGpu",               "True" },
+    }} },
+    /* Sims 3                                     *
+     * Worse shadow quality on unknown AMD cards  */
+    { R"(\\TS3(W)?\.exe$)", {{
+      { "d3d9.customVendorId",              "10de" },
+      { "d3d9.customDeviceId",              "1080" },
+      { "d3d9.customDeviceDesc",            "Geforce GTX 580" },
+    }} },
+    /* SimCity Societies: Destinations            *
+     * Needs depth format cube texture support    *
+     * in order to start up properly              */
+    { R"(\\SCSDestinations\.exe$)", {{
+      { "d3d9.supportCubeDepthFormats",     "True" },
+    }} },
 
     /**********************************************/
     /* D3D8 GAMES                                 */
@@ -1339,6 +1350,10 @@ namespace dxvk {
      * due to queue syncs on certain race tracks  */
     { R"(\\Smash up Derby\\cars\.exe$)", {{
       { "d3d9.allowDirectBufferMapping",   "False" },
+    }} },
+    /* Mafia - Improves poor texture filtering    */
+    { R"(\\Mafia\\Game\.exe$)", {{
+      { "d3d9.samplerAnisotropy",             "16" },
     }} },
 
     /**********************************************/

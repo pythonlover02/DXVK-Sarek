@@ -14,6 +14,11 @@ namespace dxvk {
     const DxvkDeviceFeatures& devFeatures = device->features();
     const DxvkDeviceInfo& devInfo = adapter->devicePropertiesExt();
 
+    // Use software sin/cos approximation on Intel iGPUs by default
+    sincosEmulation = adapter->matchesDriver(VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA)
+                   || adapter->matchesDriver(VK_DRIVER_ID_INTEL_PROPRIETARY_WINDOWS);
+    applyTristate(sincosEmulation, device->config().lowerSinCos);
+
     useDemoteToHelperInvocation
       = (devFeatures.extShaderDemoteToHelperInvocation.shaderDemoteToHelperInvocation);
 
@@ -25,7 +30,7 @@ namespace dxvk {
     // Disable early discard on Nvidia because it may hurt performance
     if (adapter->matchesDriver(DxvkGpuVendor::Nvidia, VK_DRIVER_ID_NVIDIA_PROPRIETARY_KHR, 0, 0))
       useSubgroupOpsForEarlyDiscard = false;
-    
+
     // Apply shader-related options
     strictConstantCopies = options.strictConstantCopies;
 

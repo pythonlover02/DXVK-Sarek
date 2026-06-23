@@ -832,6 +832,8 @@ namespace dxvk {
     // Bump our frame id.
     ++m_frameId;
 
+    UpdateTargetFrameRate(SyncInterval);
+
     for (uint32_t i = 0; i < SyncInterval || i < 1; i++) {
       SynchronizePresent();
 
@@ -965,8 +967,6 @@ namespace dxvk {
       m_device->vkd(),
       presenterDevice,
       presenterDesc);
-
-    m_presenter->setFrameRateLimit(m_parent->GetOptions()->maxFrameRate);
 
     CreateRenderTargetViews();
   }
@@ -1106,6 +1106,21 @@ namespace dxvk {
   void D3D9SwapChainEx::SyncFrameLatency() {
     // Wait for the sync event so that we respect the maximum frame latency
     m_frameLatencySignal->wait(m_frameId - GetActualFrameLatency());
+  }
+
+
+  void D3D9SwapChainEx::UpdateTargetFrameRate(UINT SyncInterval) {
+    double frameRate = double(m_parent->GetOptions()->maxFrameRate);
+
+    // 0 means "user didn't set it"; synthesize a soft cap from the refresh rate
+    // so frame pacing aligns with vsync when SyncInterval > 1.
+    if (frameRate == 0.0 && SyncInterval > 1u && m_displayRefreshRate > 0.0)
+      frameRate = -m_displayRefreshRate / double(SyncInterval);
+
+    if (frameRate != m_targetFrameRate) {
+      m_presenter->setFrameRateLimit(frameRate);
+      m_targetFrameRate = frameRate;
+    }
   }
 
 
