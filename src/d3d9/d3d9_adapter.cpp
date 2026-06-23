@@ -8,6 +8,7 @@
 #include "../util/util_bit.h"
 #include "../util/util_luid.h"
 #include "../util/util_ratio.h"
+#include "../util/util_string.h"
 
 #include <cfloat>
 
@@ -69,12 +70,70 @@ namespace dxvk {
 
     GUID guid          = bit::cast<GUID>(m_adapter->devicePropertiesExt().coreDeviceId.deviceUUID);
 
-    uint32_t vendorId  = options.customVendorId == -1     ? props.vendorID   : uint32_t(options.customVendorId);
-    uint32_t deviceId  = options.customDeviceId == -1     ? props.deviceID   : uint32_t(options.customDeviceId);
-    const char*  desc  = options.customDeviceDesc.empty() ? props.deviceName : options.customDeviceDesc.c_str();
+    // Old path: customVendorId / customDeviceId / customDeviceDesc still take precedence.
+    uint32_t    vendorId = options.customVendorId == -1     ? props.vendorID   : uint32_t(options.customVendorId);
+    uint32_t    deviceId = options.customDeviceId == -1     ? props.deviceID   : uint32_t(options.customDeviceId);
+    std::string desc     = options.customDeviceDesc.empty() ? std::string(props.deviceName) : options.customDeviceDesc;
+
+    // Hide GPU logic (backported from upstream). Only kicks in when the user
+    // hasnt already pinned a custom vendor ID. customDeviceId / customDeviceDesc
+    // continue to override the fallbacks individually.
+    if (options.customVendorId == -1) {
+      bool isNonclassicalVendorId = vendorId != uint32_t(DxvkGpuVendor::Nvidia)
+                                 && vendorId != uint32_t(DxvkGpuVendor::Amd)
+                                 && vendorId != uint32_t(DxvkGpuVendor::Intel);
+
+      if (isNonclassicalVendorId)
+        Logger::info(str::format("D3D9: Detected nonclassical vendor ID: 0x", std::hex, vendorId));
+
+      uint32_t     fallbackVendor = 0xdead;
+      uint32_t     fallbackDevice = 0xbeef;
+      const char*  fallbackDesc   = "Generic Graphics Card";
+
+      if (!options.hideAmdGpu) {
+        // AMD RX 6700 XT
+        fallbackVendor = uint32_t(DxvkGpuVendor::Amd);
+        fallbackDevice = 0x73df;
+        fallbackDesc   = "AMD Radeon RX 6700 XT";
+      } else if (!options.hideNvidiaGpu) {
+        // Nvidia RTX 3060
+        fallbackVendor = uint32_t(DxvkGpuVendor::Nvidia);
+        fallbackDevice = 0x2487;
+        fallbackDesc   = "NVIDIA GeForce RTX 3060";
+      }
+
+      // Pick between hideNvidiaGpu and hideNvkGpu based on which driver we are on.
+      bool isNvidiaProprietary = m_adapter->matchesDriver(
+                                   DxvkGpuVendor::Nvidia,
+                                   VK_DRIVER_ID_NVIDIA_PROPRIETARY_KHR,
+                                   0, 0);
+      bool hideNvidiaGpu = isNvidiaProprietary ? options.hideNvidiaGpu : options.hideNvkGpu;
+
+      bool hideGpu = (vendorId == uint32_t(DxvkGpuVendor::Nvidia) && hideNvidiaGpu)
+                  || (vendorId == uint32_t(DxvkGpuVendor::Amd)    && options.hideAmdGpu)
+                  || (vendorId == uint32_t(DxvkGpuVendor::Intel)  && options.hideIntelGpu)
+                  // Hide the GPU by default for other vendors (default to reporting AMD)
+                  || isNonclassicalVendorId;
+
+      if (hideGpu) {
+        vendorId = fallbackVendor;
+
+        if (options.customDeviceId == -1)
+          deviceId = fallbackDevice;
+
+        if (options.customDeviceDesc.empty())
+          desc = fallbackDesc;
+
+        Logger::info(str::format("D3D9: Hiding actual GPU, reporting:\n",
+                                 "  vendor ID: 0x", std::hex, vendorId, "\n",
+                                 "  device ID: 0x", std::hex, deviceId, "\n",
+                                 "  device description: ", desc, "\n"));
+      }
+    }
+
     const char* driver = GetDriverDLL(DxvkGpuVendor(vendorId));
 
-    copyToStringArray(pIdentifier->Description, desc);
+    copyToStringArray(pIdentifier->Description, desc.c_str());
     copyToStringArray(pIdentifier->DeviceName,  device.DeviceName); // The GDI device name. Not the actual device name.
     copyToStringArray(pIdentifier->Driver,      driver);            // This is the driver's dll.
 
@@ -161,7 +220,8 @@ namespace dxvk {
     if (mapping.FormatSrgb  == VK_FORMAT_UNDEFINED && srgb)
       return D3DERR_NOTAVAILABLE;
 
-    if (RType == D3DRTYPE_CUBETEXTURE && mapping.Aspect != VK_IMAGE_ASPECT_COLOR_BIT)
+    if (RType == D3DRTYPE_CUBETEXTURE && mapping.Aspect != VK_IMAGE_ASPECT_COLOR_BIT
+     && !m_parent->GetOptions().supportCubeDepthFormats)
       return D3DERR_NOTAVAILABLE;
 
     if (RType == D3DRTYPE_VERTEXBUFFER || RType == D3DRTYPE_INDEXBUFFER)
@@ -830,6 +890,9 @@ namespace dxvk {
         continue;
 
       if (!forcedRatio.undefined() && Ratio<DWORD>(devMode.dmPelsWidth, devMode.dmPelsHeight) != forcedRatio)
+        continue;
+
+      if (options.forceRefreshRate && devMode.dmDisplayFrequency != options.forceRefreshRate)
         continue;
 
       D3DDISPLAYMODEEX mode;

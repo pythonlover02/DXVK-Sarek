@@ -78,6 +78,8 @@ namespace dxvk {
 
     void SyncFrameLatency();
 
+    void UpdateTargetFrameRate(UINT SyncInterval);
+
   private:
 
     enum BindingIds : uint32_t {
@@ -85,7 +87,7 @@ namespace dxvk {
       Gamma = 1,
     };
 
-    
+
     struct WindowState {
       LONG style   = 0;
       LONG exstyle = 0;
@@ -104,7 +106,7 @@ namespace dxvk {
     Rc<hud::Hud>              m_hud;
 
     std::vector<Com<D3D9Surface, false>> m_backBuffers;
-    
+
     RECT                      m_srcRect;
     RECT                      m_dstRect;
 
@@ -129,6 +131,7 @@ namespace dxvk {
     WindowState               m_windowState;
 
     double                    m_displayRefreshRate = 0.0;
+    double                    m_targetFrameRate    = 0.0;
 
     void PresentImage(UINT PresentInterval);
 
@@ -159,11 +162,11 @@ namespace dxvk {
     uint32_t PickFormats(
             D3D9Format                Format,
             VkSurfaceFormatKHR*       pDstFormats);
-    
+
     uint32_t PickPresentModes(
             BOOL                      Vsync,
             VkPresentModeKHR*         pDstModes);
-    
+
     uint32_t PickImageCount(
             UINT                      Preferred);
 
@@ -175,13 +178,13 @@ namespace dxvk {
     HRESULT EnterFullscreenMode(
             D3DPRESENT_PARAMETERS*  pPresentParams,
       const D3DDISPLAYMODEEX*       pFullscreenDisplayMode);
-    
+
     HRESULT LeaveFullscreenMode();
-    
+
     HRESULT ChangeDisplayMode(
             D3DPRESENT_PARAMETERS*  pPresentParams,
       const D3DDISPLAYMODEEX*       pFullscreenDisplayMode);
-    
+
     HRESULT RestoreDisplayMode(HMONITOR hMonitor);
 
     bool    UpdatePresentRegion(const RECT* pSourceRect, const RECT* pDestRect);

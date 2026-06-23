@@ -10,7 +10,7 @@ namespace dxvk {
 
   /**
    * \brief DXGI options
-   * 
+   *
    * Per-app options that control the
    * behaviour of some DXGI classes.
    */
@@ -23,7 +23,7 @@ namespace dxvk {
     int32_t customVendorId;
     int32_t customDeviceId;
     std::string customDeviceDesc;
-    
+
     /// Override maximum reported VRAM size. This may be
     /// useful for some 64-bit games which do not support
     /// more than 4 GiB of VRAM.
@@ -33,14 +33,20 @@ namespace dxvk {
     /// Emulate UMA
     bool emulateUMA;
 
-    /// Reports Nvidia GPUs as a different vendor (usually AMD)
+    /// Reports Nvidia GPUs running on the proprietary driver as a different vendor (usually AMD)
     bool hideNvidiaGpu;
+
+    /// Reports Nvidia GPUs running on NVK as a different vendor (usually AMD)
+    bool hideNvkGpu;
 
     /// Reports AMD GPUs as a different vendor (usually Nvidia)
     bool hideAmdGpu;
-    
+
     /// Reports Intel GPUs as a different vendor (usually AMD)
     bool hideIntelGpu;
+
+    /// Forced refresh rate, disable other modes
+    uint32_t forceRefreshRate;
   };
-  
+
 }

@@ -22,6 +22,19 @@ namespace dxvk {
     int32_t customDeviceId;
     std::string customDeviceDesc;
 
+    /// Reports Nvidia GPUs running on the proprietary driver as a different
+    /// vendor (usually AMD)
+    bool hideNvidiaGpu;
+
+    /// Reports Nvidia GPUs running on NVK as a different vendor (usually AMD)
+    bool hideNvkGpu;
+
+    /// Reports AMD GPUs as a different vendor (usually Nvidia)
+    bool hideAmdGpu;
+
+    /// Reports Intel GPUs as a different vendor (usually AMD)
+    bool hideIntelGpu;
+
     /// Present interval. Overrides the value
     /// in D3DPRESENT_PARAMS used in swapchain present.
     int32_t presentInterval;
@@ -89,6 +102,9 @@ namespace dxvk {
     /// D3D9 Floating Point Emulation (anything * 0 = 0)
     D3D9FloatEmulation d3d9FloatEmulation;
 
+    /// Support depth formats for cube textures
+    bool supportCubeDepthFormats;
+
     /// Support the DF16 & DF24 texture format
     bool supportDFFormats;
 
@@ -97,6 +113,9 @@ namespace dxvk {
 
     /// Support D32
     bool supportD32;
+
+    /// Use D32f for D24
+    bool useD32forD24;
 
     /// Disable D3DFMT_A8 for render targets.
     /// Specifically to work around a game
@@ -116,6 +135,9 @@ namespace dxvk {
 
     /// Forced aspect ratio, disable other modes
     std::string forceAspectRatio;
+
+    /// Forced refresh rate, disable other modes
+    uint32_t forceRefreshRate;
 
     /// Enable dialog mode (ie. no exclusive fullscreen)
     bool enableDialogMode;

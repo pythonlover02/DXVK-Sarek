@@ -29,11 +29,14 @@ namespace dxvk {
       if (cRelaxedBarriers)
         barrierControl.set(DxvkBarrierControl::IgnoreWriteAfterWrite);
 
-      if (cIgnoreGraphicsBarriers)
+      if (cRelaxedBarriers || cIgnoreGraphicsBarriers)
         barrierControl.set(DxvkBarrierControl::IgnoreGraphicsBarriers);
 
       ctx->setBarrierControl(barrierControl);
     });
+
+    if (pParent->GetOptions()->enableContextLock)
+      m_multithread.SetMultithreadProtected(TRUE);
 
     ClearState();
   }

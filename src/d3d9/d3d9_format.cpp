@@ -461,7 +461,8 @@ namespace dxvk {
 
     // AMD do not support 24-bit depth buffers on Vulkan,
     // so we have to fall back to a 32-bit depth format.
-    m_d24s8Support = CheckImageFormatSupport(adapter, VK_FORMAT_D24_UNORM_S8_UINT,
+    m_d24s8Support = !options.useD32forD24 &&
+                     CheckImageFormatSupport(adapter, VK_FORMAT_D24_UNORM_S8_UINT,
       VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT |
       VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT);
 

@@ -4,7 +4,7 @@
 #include "util_time.h"
 
 namespace dxvk {
-  
+
   /**
    * \brief Frame rate limiter
    *
@@ -57,7 +57,8 @@ namespace dxvk {
 
     dxvk::mutex     m_mutex;
 
-    NtTimerDuration m_targetInterval  = NtTimerDuration::zero();
+    NtTimerDuration m_targetInterval = NtTimerDuration::zero();
+    bool            m_isSoftLimit    = false;
     NtTimerDuration m_deviation       = NtTimerDuration::zero();
     TimePoint       m_lastFrame;
 

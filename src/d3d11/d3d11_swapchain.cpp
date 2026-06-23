@@ -27,7 +27,7 @@ namespace dxvk {
 
     if (!pDevice->GetOptions()->deferSurfaceCreation)
       CreatePresenter();
-    
+
     CreateBackBuffer();
     CreateBlitter();
     CreateHud();
@@ -42,7 +42,7 @@ namespace dxvk {
 
     m_device->waitForSubmission(&m_presentStatus);
     m_device->waitForIdle();
-    
+
     DestroyFrameLatencyEvent();
   }
 
@@ -149,7 +149,7 @@ namespace dxvk {
 
       if (NumControlPoints > cp.size())
         return E_INVALIDARG;
-      
+
       for (uint32_t i = 0; i < NumControlPoints; i++) {
         uint16_t identity = MapGammaControlPoint(float(i) / float(NumControlPoints - 1));
 
@@ -230,7 +230,7 @@ namespace dxvk {
 
     if (std::exchange(m_dirty, false))
       RecreateSwapChain(m_vsync);
-    
+
     try {
       PresentImage(SyncInterval);
     } catch (const DxvkError& e) {
@@ -265,7 +265,9 @@ namespace dxvk {
 
     // Bump our frame id.
     ++m_frameId;
-    
+
+    UpdateTargetFrameRate(SyncInterval);
+
     for (uint32_t i = 0; i < SyncInterval || i < 1; i++) {
       SynchronizePresent();
 
@@ -285,7 +287,7 @@ namespace dxvk {
 
         if (!m_presenter->hasSwapChain())
           return DXGI_STATUS_OCCLUDED;
-        
+
         info = m_presenter->info();
         status = m_presenter->acquireNextImage(sync, imageIndex);
       }
@@ -294,14 +296,14 @@ namespace dxvk {
       // only have to do it only for the first frame.
       m_context->beginRecording(
         m_device->createCommandList());
-      
+
       m_blitter->presentImage(m_context.ptr(),
         m_imageViews.at(imageIndex), VkRect2D(),
         m_swapImageView, VkRect2D());
 
       if (m_hud != nullptr)
         m_hud->render(m_context, info.format, info.imageExtent);
-      
+
       if (i + 1 >= SyncInterval)
         m_context->signal(m_frameLatencySignal, m_frameId);
 
@@ -345,7 +347,7 @@ namespace dxvk {
   void D3D11SwapChain::SynchronizePresent() {
     // Recreate swap chain if the previous present call failed
     VkResult status = m_device->waitForSubmission(&m_presentStatus);
-    
+
     if (status != VK_SUCCESS)
       RecreateSwapChain(m_vsync);
   }
@@ -367,7 +369,7 @@ namespace dxvk {
 
     if (m_presenter->recreateSwapChain(presenterDesc) != VK_SUCCESS)
       throw DxvkError("D3D11SwapChain: Failed to recreate swap chain");
-    
+
     CreateRenderTargetViews();
   }
 
@@ -401,8 +403,6 @@ namespace dxvk {
       m_device->vkd(),
       presenterDevice,
       presenterDesc);
-    
-    m_presenter->setFrameRateLimit(m_parent->GetOptions()->maxFrameRate);
 
     CreateRenderTargetViews();
   }
@@ -441,7 +441,7 @@ namespace dxvk {
 
     for (uint32_t i = 0; i < info.imageCount; i++) {
       VkImage imageHandle = m_presenter->getImage(i).image;
-      
+
       Rc<DxvkImage> image = new DxvkImage(
         m_device.ptr(), imageInfo, imageHandle);
 
@@ -481,10 +481,10 @@ namespace dxvk {
 
     if (m_desc.BufferUsage & DXGI_USAGE_UNORDERED_ACCESS)
       desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS;
-    
+
     if (m_desc.Flags & DXGI_SWAP_CHAIN_FLAG_GDI_COMPATIBLE)
       desc.MiscFlags |= D3D11_RESOURCE_MISC_GDI_COMPATIBLE;
-    
+
     DXGI_USAGE dxgiUsage = DXGI_USAGE_BACK_BUFFER;
 
     if (m_desc.SwapEffect == DXGI_SWAP_EFFECT_DISCARD
@@ -506,7 +506,7 @@ namespace dxvk {
     viewInfo.minLayer   = 0;
     viewInfo.numLayers  = 1;
     m_swapImageView = m_device->createImageView(m_swapImage, viewInfo);
-    
+
     // Initialize the image so that we can use it. Clearing
     // to black prevents garbled output for the first frame.
     VkImageSubresourceRange subresources;
@@ -518,7 +518,7 @@ namespace dxvk {
 
     m_context->beginRecording(
       m_device->createCommandList());
-    
+
     m_context->initImage(m_swapImage,
       subresources, VK_IMAGE_LAYOUT_UNDEFINED);
 
@@ -530,7 +530,7 @@ namespace dxvk {
 
 
   void D3D11SwapChain::CreateBlitter() {
-    m_blitter = new DxvkSwapchainBlitter(m_device);    
+    m_blitter = new DxvkSwapchainBlitter(m_device);
   }
 
 
@@ -559,6 +559,21 @@ namespace dxvk {
   }
 
 
+  void D3D11SwapChain::UpdateTargetFrameRate(UINT SyncInterval) {
+    double frameRate = double(m_parent->GetOptions()->maxFrameRate);
+
+    // 0 means "user didn't set it"; synthesize a soft cap from the refresh rate
+    // so frame pacing aligns with vsync when SyncInterval > 1.
+    if (frameRate == 0.0 && SyncInterval > 1u && m_displayRefreshRate > 0.0)
+      frameRate = -m_displayRefreshRate / double(SyncInterval);
+
+    if (frameRate != m_targetFrameRate) {
+      m_presenter->setFrameRateLimit(frameRate);
+      m_targetFrameRate = frameRate;
+    }
+  }
+
+
   uint32_t D3D11SwapChain::GetActualFrameLatency() {
     uint32_t maxFrameLatency = m_frameLatency;
 
@@ -582,24 +597,24 @@ namespace dxvk {
       default:
         Logger::warn(str::format("D3D11SwapChain: Unexpected format: ", m_desc.Format));
       [[fallthrough]];
-      
+
       case DXGI_FORMAT_R8G8B8A8_UNORM:
       case DXGI_FORMAT_B8G8R8A8_UNORM: {
         pDstFormats[n++] = { VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
         pDstFormats[n++] = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
       } break;
-      
+
       case DXGI_FORMAT_R8G8B8A8_UNORM_SRGB:
       case DXGI_FORMAT_B8G8R8A8_UNORM_SRGB: {
         pDstFormats[n++] = { VK_FORMAT_R8G8B8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
         pDstFormats[n++] = { VK_FORMAT_B8G8R8A8_SRGB, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
       } break;
-      
+
       case DXGI_FORMAT_R10G10B10A2_UNORM: {
         pDstFormats[n++] = { VK_FORMAT_A2B10G10R10_UNORM_PACK32, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
         pDstFormats[n++] = { VK_FORMAT_A2R10G10B10_UNORM_PACK32, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
       } break;
-      
+
       case DXGI_FORMAT_R16G16B16A16_FLOAT: {
         pDstFormats[n++] = { VK_FORMAT_R16G16B16A16_SFLOAT, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
       } break;

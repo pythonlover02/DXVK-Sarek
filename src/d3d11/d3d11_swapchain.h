@@ -9,7 +9,7 @@
 #include "../util/sync/sync_signal.h"
 
 namespace dxvk {
-  
+
   class D3D11Device;
   class D3D11DXGIDevice;
 
@@ -22,7 +22,7 @@ namespace dxvk {
             D3D11Device*              pDevice,
             HWND                      hWnd,
       const DXGI_SWAP_CHAIN_DESC1*    pDesc);
-    
+
     ~D3D11SwapChain();
 
     HRESULT STDMETHODCALLTYPE QueryInterface(
@@ -35,11 +35,11 @@ namespace dxvk {
     HRESULT STDMETHODCALLTYPE GetAdapter(
             REFIID                    riid,
             void**                    ppvObject);
-    
+
     HRESULT STDMETHODCALLTYPE GetDevice(
             REFIID                    riid,
             void**                    ppDevice);
-    
+
     HRESULT STDMETHODCALLTYPE GetImage(
             UINT                      BufferId,
             REFIID                    riid,
@@ -81,7 +81,7 @@ namespace dxvk {
     };
 
     Com<D3D11DXGIDevice, false> m_dxgiDevice;
-    
+
     D3D11Device*              m_parent;
     HWND                      m_window;
 
@@ -113,6 +113,7 @@ namespace dxvk {
     bool                    m_vsync = true;
 
     double                  m_displayRefreshRate = 0.0;
+    double                  m_targetFrameRate    = 0.0;
 
     HRESULT PresentImage(UINT SyncInterval);
 
@@ -142,19 +143,21 @@ namespace dxvk {
 
     void SyncFrameLatency();
 
+    void UpdateTargetFrameRate(UINT SyncInterval);
+
     uint32_t GetActualFrameLatency();
-    
+
     uint32_t PickFormats(
             DXGI_FORMAT               Format,
             VkSurfaceFormatKHR*       pDstFormats);
-    
+
     uint32_t PickPresentModes(
             BOOL                      Vsync,
             VkPresentModeKHR*         pDstModes);
-    
+
     uint32_t PickImageCount(
             UINT                      Preferred);
-    
+
     VkFullScreenExclusiveEXT PickFullscreenMode();
 
     std::string GetApiName() const;

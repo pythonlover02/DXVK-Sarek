@@ -8,7 +8,7 @@
 #include "./com/com_include.h"
 
 namespace dxvk::str {
-  
+
   std::string fromws(const WCHAR *ws);
 
   void tows(const char* mbs, WCHAR* wcs, size_t wcsLen);
@@ -25,7 +25,7 @@ namespace dxvk::str {
 #else
   inline std::string  topath(const char* mbs) { return std::string(mbs); }
 #endif
-  
+
   inline void format1(std::stringstream&) { }
 
   template<typename... Tx>
@@ -39,7 +39,7 @@ namespace dxvk::str {
     str << arg;
     format1(str, args...);
   }
-  
+
   template<typename... Args>
   std::string format(const Args&... args) {
     std::stringstream stream;
@@ -48,14 +48,20 @@ namespace dxvk::str {
   }
 
   inline void strlcpy(char* dst, const char* src, size_t count) {
-    std::strncpy(dst, src, count);
-    if (count > 0)
-      dst[count - 1] = '\0';
+    if (count == 0)
+      return;
+
+    size_t len = std::strlen(src);
+    if (len >= count)
+      len = count - 1;
+
+    std::memcpy(dst, src, len);
+    dst[len] = '\0';
   }
-  
+
   /**
    * \brief Split string at one or more delimiters characters
-   * 
+   *
    * \param [in] string String to split
    * \param [in] delims Delimiter characters
    * \returns Vector of substring views
