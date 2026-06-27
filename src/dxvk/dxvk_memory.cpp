@@ -201,10 +201,15 @@ namespace dxvk {
       m_memHeaps[i].stats      = DxvkMemoryStats { 0, 0 };
       m_memHeaps[i].budget     = 0;
 
-      /* Target 80% of a heap on systems where we want
-       * to avoid oversubscribing memory heaps */
+      /* Match upstream: only enforce a soft heap budget on discrete GPUs,
+       * where VRAM is a hard ceiling. On UMA, the OS manages memory pressure
+       * across CPU and GPU usage, and a fixed percentage cap causes spurious
+       * allocation failures in games with large working sets (e.g. Cris Tales
+       * on Intel HD Graphics). The driver reports real pressure via
+       * VK_EXT_memory_budget when it matters. */
       if ((m_memProps.memoryHeaps[i].flags & VK_MEMORY_HEAP_DEVICE_LOCAL_BIT)
-       && (m_device->isUnifiedMemoryArchitecture()))
+       && !m_device->isUnifiedMemoryArchitecture()
+       && m_device->properties().core.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU)
         m_memHeaps[i].budget = (8 * m_memProps.memoryHeaps[i].size) / 10;
 
       if (maxBudget && (!m_memHeaps[i].budget || m_memHeaps[i].budget > maxBudget))
