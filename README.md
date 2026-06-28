@@ -24,6 +24,19 @@ Your contributions are greatly appreciated!
 
 Full credit goes to doitsujin/ドイツ人 (Philip Rebohle) and everyone that have worked on the dxvk project. You can find the original DXVK repository here: [dxvk](https://github.com/doitsujin/dxvk).
 
+### ARM Emulation & Mobile GPUs (Box64, FEX, Mali, Adreno)
+
+DXVK-Sarek includes fixes to allow the project to run on mobile and ARM translation layers (e.g., via Box64, FEX, or Android emulators PC).
+
+- Certain Vulkan extensions have been made optional so the project can run on Mali GPUs.
+- @zeyadadev fixed a Mali GPU black screen caused by unbound texture optimization (#36) (thanks pal).
+
+> [!WARNING]
+> **Important Note for Mobile GPU Users:** I am not against marking some Vulkan extensions as optional to make certain GPUs run DXVK-Sarek. But I hope you understand that even if it runs now, the experience will most likely not be ideal. You might encounter visual bugs or stuttering. If you run into issues on a GPU that was allowed to run it this way (Adreno and Mali), check on other Vulkan compatible hardware before reporting the issue, as it's more likely related to your Vulkan drivers.
+>
+> **If you are using a Mali GPU, do not report issues related to performance or visual artifacts.** These problems are almost certainly caused by the GPU's lack of support for critical Vulkan extensions. While I have made efforts to allow Mali GPUs to run the project, I cannot provide fixes or support for these devices. Thank you for your understanding.
+
+**For Developers & Contributors:** My only rule is that the Mali/Other Devices fixes don't affect other devices. That way you don't have to worry too much about what upstream does, and I don't have to manually cherry-pick patches from your fork. If you're alright with it, just open PRs against the repo once you think things are ready. If not, that's fine too, I did want to extend the offer, since contributing upstream means the fixes reach more users through official releases and the work gets properly credited there.
 
 ----
 
@@ -42,15 +55,10 @@ If they’re not available by default, you can easily install them using [Proton
 
 ## Build instructions
 
-In order to pull in all submodules that are needed for building, clone the repository using the following command/commands:
+In order to pull in all submodules that are needed for building, clone the repository using the following command:
 
-For Normal DXVK:
 ```
 git clone --branch main --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK
-```
-For DXVK with Async Patch:
-```
-git clone --branch async --recurse https://github.com/pythonlover02/DXVK-Sarek.git DXVK-Async
 ```
 
 ### Requirements:
