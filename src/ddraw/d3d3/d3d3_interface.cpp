@@ -6,20 +6,21 @@
 #include "../d3d_light.h"
 
 #include "../d3d5/d3d5_interface.h"
+#include "../d3d6/d3d6_interface.h"
 
 #include "../ddraw/ddraw_interface.h"
 
 namespace dxvk {
 
-  uint32_t D3D3Interface::s_intfCount = 0;
+  std::atomic<uint32_t> D3D3Interface::s_intfCount = 0;
 
   D3D3Interface::D3D3Interface(
-        DDrawCommonInterface* commonIntf,
         D3DCommonInterface* commonD3DIntf,
+        DDrawCommonInterface* commonIntf,
         IUnknown* pParent)
     : DDrawChildObject<IUnknown, IDirect3D>(pParent)
-    , m_commonIntf ( commonIntf )
-    , m_commonD3DIntf ( commonD3DIntf ) {
+    , m_commonD3DIntf ( commonD3DIntf )
+    , m_commonIntf ( commonIntf ) {
     if (m_commonD3DIntf == nullptr) {
       m_commonD3DIntf = new D3DCommonInterface();
 
@@ -96,15 +97,37 @@ namespace dxvk {
       Logger::debug("D3D3Interface::QueryInterface: Query for IDirectDraw");
       return m_parent->QueryInterface(riid, ppvObject);
     }
-    // Deathtrap Dungeon queries for IDirect3D2... not sure if this ever worked
+    // Deathtrap Dungeon queries for IDirect3D2...
     if (unlikely(riid == __uuidof(IDirect3D2))) {
       if (likely(m_commonD3DIntf->GetD3D5Interface() != nullptr)) {
         Logger::debug("D3D3Interface::QueryInterface: Query for existing IDirect3D2");
         return m_commonD3DIntf->GetD3D5Interface()->QueryInterface(riid, ppvObject);
       }
 
-      Logger::warn("D3D3Interface::QueryInterface: Query for IDirect3D2");
-      return m_parent->QueryInterface(riid, ppvObject);
+      Logger::debug("D3D3Interface::QueryInterface: Query for IDirect3D2");
+      m_d3d5Intf = new D3D5Interface(m_commonD3DIntf.ptr(), m_commonIntf, m_parent);
+      *ppvObject = m_d3d5Intf.ref();
+      return S_OK;
+    }
+    // ... and Final Fantasy VIII queries for IDirect3D3, because why not...
+    if (unlikely(riid == __uuidof(IDirect3D3))) {
+      if (likely(m_commonD3DIntf->GetD3D6Interface() != nullptr)) {
+        Logger::debug("D3D3Interface::QueryInterface: Query for existing IDirect3D3");
+        return m_commonD3DIntf->GetD3D6Interface()->QueryInterface(riid, ppvObject);
+      }
+
+      Logger::debug("D3D3Interface::QueryInterface: Query for IDirect3D3");
+
+      // We don't have a proxied object on D3D3Interface, so use the parent
+      // DDraw interface to get a proxied object for the queried D3D6Interface
+      Com<IDirect3D3> ppvProxyObject;
+      HRESULT hr = m_parent->QueryInterface(riid, reinterpret_cast<void**>(&ppvProxyObject));
+      if (unlikely(FAILED(hr)))
+        return hr;
+
+      m_d3d6Intf = new D3D6Interface(m_commonD3DIntf.ptr(), m_commonIntf, std::move(ppvProxyObject), m_parent);
+      *ppvObject = m_d3d6Intf.ref();
+      return S_OK;
     }
 
     if (likely(riid == __uuidof(IUnknown) ||
@@ -143,7 +166,8 @@ namespace dxvk {
 
     // RAMP device (monochrome), this is expected to be exposed
     GUID guidRAMP = IID_IDirect3DRampDevice;
-    D3DDEVICEDESC3 desc3RAMP_HAL = GetD3D3Caps(d3dOptions);
+    // The caps of a RAMP device are mostly identical to an RGB device
+    D3DDEVICEDESC3 desc3RAMP_HAL = GetD3D3Caps(IID_IDirect3DRGBDevice, d3dOptions);
     D3DDEVICEDESC3 desc3RAMP_HEL = desc3RAMP_HAL;
     D3DDEVICEDESC descRAMP_HAL = { };
     D3DDEVICEDESC descRAMP_HEL = { };
@@ -176,7 +200,7 @@ namespace dxvk {
 
     // Software emulation, this is expected to be exposed
     GUID guidRGB = IID_IDirect3DRGBDevice;
-    D3DDEVICEDESC3 desc3RGB_HAL = GetD3D3Caps(d3dOptions);
+    D3DDEVICEDESC3 desc3RGB_HAL = GetD3D3Caps(IID_IDirect3DRGBDevice, d3dOptions);
     D3DDEVICEDESC3 desc3RGB_HEL = desc3RGB_HAL;
     D3DDEVICEDESC descRGB_HAL = { };
     D3DDEVICEDESC descRGB_HEL = { };
@@ -191,6 +215,7 @@ namespace dxvk {
     desc3RGB_HEL.dpcTriCaps.dwTextureCaps  |= D3DPTEXTURECAPS_POW2;
     memcpy(&descRGB_HAL, &desc3RGB_HAL, sizeof(D3DDEVICEDESC3));
     memcpy(&descRGB_HEL, &desc3RGB_HEL, sizeof(D3DDEVICEDESC3));
+
     if (likely(!d3dOptions->legacyDeviceNames)) {
       static char deviceDescRGB[100] = "D3VK RGB";
       static char deviceNameRGB[100] = "D3VK RGB";
@@ -207,7 +232,7 @@ namespace dxvk {
 
     // Hardware acceleration
     GUID guidHAL = IID_IDirect3DHALDevice;
-    D3DDEVICEDESC3 desc3HAL_HAL = GetD3D3Caps(d3dOptions);
+    D3DDEVICEDESC3 desc3HAL_HAL = GetD3D3Caps(IID_IDirect3DHALDevice, d3dOptions);
     D3DDEVICEDESC3 desc3HAL_HEL = desc3HAL_HAL;
     D3DDEVICEDESC descHAL_HAL = { };
     D3DDEVICEDESC descHAL_HEL = { };
@@ -217,8 +242,12 @@ namespace dxvk {
                                             & ~D3DPTEXTURECAPS_POW2;
     desc3HAL_HEL.dpcTriCaps.dwTextureCaps &= ~D3DPTEXTURECAPS_PERSPECTIVE
                                            & ~D3DPTEXTURECAPS_POW2;
+    desc3HAL_HEL.dwDevCaps &= ~D3DDEVCAPS_HWTRANSFORMANDLIGHT
+                            & ~D3DDEVCAPS_DRAWPRIMITIVES2
+                            & ~D3DDEVCAPS_DRAWPRIMITIVES2EX;
     memcpy(&descHAL_HAL, &desc3HAL_HAL, sizeof(D3DDEVICEDESC3));
     memcpy(&descHAL_HEL, &desc3HAL_HEL, sizeof(D3DDEVICEDESC3));
+
     if (likely(!d3dOptions->legacyDeviceNames)) {
       static char deviceDescHAL[100] = "D3VK HAL";
       static char deviceNameHAL[100] = "D3VK HAL";
@@ -257,11 +286,7 @@ namespace dxvk {
 
     InitReturnPtr(lplpDirect3DMaterial);
 
-    D3DMATERIALHANDLE handle = m_commonD3DIntf->GetNextMaterialHandle();
-    Com<D3D3Material> d3d3Material = new D3D3Material(this, handle);
-    m_commonD3DIntf->EmplaceMaterial(d3d3Material->GetCommonMaterial(), handle);
-
-    *lplpDirect3DMaterial = d3d3Material.ref();
+    *lplpDirect3DMaterial = ref(new D3D3Material(this));
 
     return D3D_OK;
   }
@@ -291,7 +316,7 @@ namespace dxvk {
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
     // Software emulation, this is expected to be exposed
-    D3DDEVICEDESC3 descRGB_HAL = GetD3D3Caps(d3dOptions);
+    D3DDEVICEDESC3 descRGB_HAL = GetD3D3Caps(IID_IDirect3DRGBDevice, d3dOptions);
     D3DDEVICEDESC3 descRGB_HEL = descRGB_HAL;
     descRGB_HAL.dwFlags = 0;
     descRGB_HAL.dcmColorModel = 0;
@@ -304,7 +329,7 @@ namespace dxvk {
     descRGB_HEL.dpcTriCaps.dwTextureCaps  |= D3DPTEXTURECAPS_POW2;
 
     // Hardware acceleration
-    D3DDEVICEDESC3 descHAL_HAL = GetD3D3Caps(d3dOptions);
+    D3DDEVICEDESC3 descHAL_HAL = GetD3D3Caps(IID_IDirect3DHALDevice, d3dOptions);
     D3DDEVICEDESC3 descHAL_HEL = descHAL_HAL;
     descHAL_HEL.dcmColorModel = 0;
     // Some applications apparently care about RGB texture caps

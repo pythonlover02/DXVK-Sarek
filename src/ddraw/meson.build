@@ -7,6 +7,7 @@ ddraw_src = [
   'ddraw_common_surface.cpp',
   'ddraw_clipper.cpp',
   'ddraw_gamma.cpp',
+  'ddraw_options.cpp',
   'ddraw_palette.cpp',
   'ddraw/ddraw_interface.cpp',
   'ddraw/ddraw_surface.cpp',
@@ -46,9 +47,11 @@ ddraw_src = [
   'd3d7/d3d7_state_block.cpp',
 ]
 
+ddraw_extra_dep = [ cpp.find_library('version') ]
+
 ddraw_dll = shared_library('ddraw'+dll_ext, ddraw_src, ddraw_res,
   name_prefix         : '',
-  dependencies        : [ lib_d3d9, util_dep, dxso_dep, dxvk_dep ],
+  dependencies        : [ lib_d3d9, util_dep, dxso_dep, dxvk_dep, ddraw_extra_dep ],
   include_directories : dxvk_include_path,
   install             : true,
   vs_module_defs      : 'ddraw'+def_spec_ext,

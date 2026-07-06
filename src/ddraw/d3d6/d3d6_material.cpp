@@ -5,17 +5,18 @@
 
 #include "../d3d_common_device.h"
 
+#include "../ddraw_common_interface.h"
+
 #include "../ddraw4/ddraw4_interface.h"
 
 namespace dxvk {
 
-  uint32_t D3D6Material::s_materialCount = 0;
+  std::atomic<uint32_t> D3D6Material::s_materialCount = 0;
 
   D3D6Material::D3D6Material(
-        D3D6Interface* pParent,
-        D3DMATERIALHANDLE handle)
+        D3D6Interface* pParent)
     : DDrawChildObject<D3D6Interface, IDirect3DMaterial3>(pParent) {
-    m_commonMaterial = new D3DCommonMaterial(handle);
+    m_commonMaterial = new D3DCommonMaterial();
 
     m_commonMaterial->SetD3D6Material(this);
 
@@ -25,8 +26,6 @@ namespace dxvk {
   }
 
   D3D6Material::~D3D6Material() {
-    m_parent->GetCommonD3DInterface()->ReleaseMaterialHandle(m_commonMaterial->GetMaterialHandle());
-
     m_commonMaterial->SetD3D6Material(nullptr);
 
     Logger::debug(str::format("D3D6Material: Material nr. [[3-", m_materialCount, "]] bites the dust"));
@@ -68,6 +67,8 @@ namespace dxvk {
     material9->Emissive = data->dcvEmissive;
     material9->Power    = data->dvPower;
 
+    m_commonMaterial->DirtyMaterialColor();
+
     // Update the D3D9 material directly if it's actively being used
     D3DCommonDevice* commonDevice = m_parent->GetCommonInterface()->GetCommonD3DDevice();
     if (likely(commonDevice != nullptr)) {
@@ -102,8 +103,14 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D6Material::GetHandle(IDirect3DDevice3 *device, D3DMATERIALHANDLE *handle) {
     Logger::debug(">>> D3D6Material::GetHandle");
 
-    if(unlikely(device == nullptr || handle == nullptr))
+    if (unlikely(device == nullptr || handle == nullptr))
       return DDERR_INVALIDPARAMS;
+
+    if(!m_commonMaterial->GetMaterialHandle()) {
+      const D3DMATERIALHANDLE nextHandle = D3DCommonInterface::GetNextMaterialHandle();
+      m_commonMaterial->SetMaterialHandle(nextHandle);
+      D3DCommonInterface::EmplaceMaterial(m_commonMaterial.ptr(), nextHandle);
+    }
 
     *handle = m_commonMaterial->GetMaterialHandle();
 

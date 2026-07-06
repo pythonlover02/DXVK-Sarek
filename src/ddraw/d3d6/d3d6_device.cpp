@@ -1,5 +1,6 @@
 #include "d3d6_device.h"
 
+#include "../d3d_common_material.h"
 #include "../ddraw_common_interface.h"
 
 #include "d3d6_buffer.h"
@@ -14,7 +15,7 @@
 
 namespace dxvk {
 
-  uint32_t D3D6Device::s_deviceCount = 0;
+  std::atomic<uint32_t> D3D6Device::s_deviceCount = 0;
 
   D3D6Device::D3D6Device(
         D3DCommonDevice* commonD3DDevice,
@@ -96,16 +97,17 @@ namespace dxvk {
 
   D3D6Device::~D3D6Device() {
     if (LogIndexBufferUsageStats()) {
-      Logger::debug("D3D6Device: Index buffer upload statistics:");
-      Logger::debug(str::format("   0.5 kb : ", m_ib9_uploads[0]));
-      Logger::debug(str::format("   1   kb : ", m_ib9_uploads[1]));
-      Logger::debug(str::format("   2   kb : ", m_ib9_uploads[2]));
-      Logger::debug(str::format("   4   kb : ", m_ib9_uploads[3]));
-      Logger::debug(str::format("   8   kb : ", m_ib9_uploads[4]));
-      Logger::debug(str::format("   16  kb : ", m_ib9_uploads[5]));
-      Logger::debug(str::format("   32  kb : ", m_ib9_uploads[6]));
-      Logger::debug(str::format("   64  kb : ", m_ib9_uploads[7]));
-      Logger::debug(str::format("   128 kb : ", m_ib9_uploads[8]));
+      Logger::info("D3D6Device: Index buffer upload statistics:");
+      Logger::info(str::format("  0.25 kb : ", m_ib9_uploads[0]));
+      Logger::info(str::format("  0.5  kb : ", m_ib9_uploads[1]));
+      Logger::info(str::format("  1    kb : ", m_ib9_uploads[2]));
+      Logger::info(str::format("  2    kb : ", m_ib9_uploads[3]));
+      Logger::info(str::format("  4    kb : ", m_ib9_uploads[4]));
+      Logger::info(str::format("  8    kb : ", m_ib9_uploads[5]));
+      Logger::info(str::format("  16   kb : ", m_ib9_uploads[6]));
+      Logger::info(str::format("  32   kb : ", m_ib9_uploads[7]));
+      Logger::info(str::format("  64   kb : ", m_ib9_uploads[8]));
+      Logger::info(str::format("  128  kb : ", m_ib9_uploads[9]));
     }
 
     // Dissasociate every bound viewport from this device
@@ -429,11 +431,12 @@ namespace dxvk {
       return D3DERR_SCENE_IN_SCENE;
 
     HRESULT hr = m_commonD3DDevice->GetD3D9Device()->BeginScene();
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    if (likely(SUCCEEDED(hr)))
-      m_commonD3DDevice->SetInScene(true);
+    m_commonD3DDevice->SetInScene(true);
 
-    return hr;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::EndScene() {
@@ -447,11 +450,12 @@ namespace dxvk {
       return D3DERR_SCENE_NOT_IN_SCENE;
 
     HRESULT hr = m_commonD3DDevice->GetD3D9Device()->EndScene();
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    if (likely(SUCCEEDED(hr)))
-      m_commonD3DDevice->SetInScene(false);
+    m_commonD3DDevice->SetInScene(false);
 
-    return hr;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::GetDirect3D(IDirect3D3 **d3d) {
@@ -461,6 +465,11 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
 
     InitReturnPtr(d3d);
+
+    if (unlikely(m_parent == nullptr)) {
+      Logger::err("D3D6Device::GetDirect3D: Found no valid parent D3D interface");
+      return DDERR_NOTFOUND;
+    }
 
     *d3d = ref(m_parent);
 
@@ -479,6 +488,10 @@ namespace dxvk {
 
     if (unlikely(m_currentViewport == d3d6Viewport))
       return D3D_OK;
+
+    // Validate that the viewport is attached to this (common) device
+    if (unlikely(m_commonD3DDevice != d3d6Viewport->GetCommonViewport()->GetCommonD3DDevice()))
+      return DDERR_INVALIDPARAMS;
 
     if (likely(m_currentViewport != nullptr)) {
       m_currentViewport->DeactivateLights();
@@ -524,14 +537,14 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
     }
 
-    if (unlikely(!m_commonIntf->IsWrappedSurface(surface))) {
+    if (unlikely(!DDrawCommonInterface::IsWrappedSurface(surface))) {
       Logger::err("D3D6Device::SetRenderTarget: Received an unwrapped RT");
       return DDERR_UNSUPPORTED;
     }
 
     DDraw4Surface* rt6 = static_cast<DDraw4Surface*>(surface);
 
-    HRESULT hr = rt6->GetCommonSurface()->ValidateRTUsage(m_commonD3DDevice->IsHALOrTNLHALDevice());
+    HRESULT hr = rt6->GetCommonSurface()->ValidateRTUsage(m_commonD3DDevice->IsHALOrTNLHALDevice(), false);
     if (unlikely(FAILED(hr)))
       return hr;
 
@@ -544,45 +557,36 @@ namespace dxvk {
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
     hr = device9->SetRenderTarget(0, rt6->GetCommonSurface()->GetD3D9Surface());
-
-    if (likely(SUCCEEDED(hr))) {
-      Logger::debug("D3D6Device::SetRenderTarget: Set a new D3D9 RT");
-
-      m_rt = rt6;
-      m_ds = m_rt->GetAttachedDepthStencil();
-
-      HRESULT hrDS;
-
-      if (m_ds != nullptr) {
-        Logger::debug("D3D6Device::SetRenderTarget: Found an attached DS");
-
-        hrDS = m_ds->InitializeD3D9DepthStencil();
-        if (unlikely(FAILED(hrDS))) {
-          Logger::err("D3D6Device::SetRenderTarget: Failed to initialize/upload D3D9 DS");
-          return hrDS;
-        }
-
-        hrDS = device9->SetDepthStencilSurface(m_ds->GetCommonSurface()->GetD3D9Surface());
-        if (unlikely(FAILED(hrDS))) {
-          Logger::err("D3D6Device::SetRenderTarget: Failed to set D3D9 DS");
-          return hrDS;
-        }
-
-        Logger::debug("D3D6Device::SetRenderTarget: Set a new D3D9 DS");
-      } else {
-        Logger::debug("D3D6Device::SetRenderTarget: RT has no depth stencil attached");
-
-        hrDS = device9->SetDepthStencilSurface(nullptr);
-        if (unlikely(FAILED(hrDS))) {
-          Logger::err("D3D6Device::SetRenderTarget: Failed to clear the D3D9 DS");
-          return hrDS;
-        }
-
-        Logger::debug("D3D6Device::SetRenderTarget: Cleared the D3D9 DS");
-      }
-    } else {
+    if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::SetRenderTarget: Failed to set D3D9 RT");
       return hr;
+    }
+
+    m_rt = rt6;
+    m_ds = m_rt->GetAttachedDepthStencil();
+
+    if (m_ds != nullptr) {
+      Logger::debug("D3D6Device::SetRenderTarget: Found an attached DS");
+
+      hr = m_ds->InitializeD3D9DepthStencil();
+      if (unlikely(FAILED(hr))) {
+        Logger::err("D3D6Device::SetRenderTarget: Failed to initialize/upload D3D9 DS");
+        return hr;
+      }
+
+      hr = device9->SetDepthStencilSurface(m_ds->GetCommonSurface()->GetD3D9Surface());
+      if (unlikely(FAILED(hr))) {
+        Logger::err("D3D6Device::SetRenderTarget: Failed to set D3D9 DS");
+        return hr;
+      }
+    } else {
+      Logger::debug("D3D6Device::SetRenderTarget: RT has no depth stencil attached");
+
+      hr = device9->SetDepthStencilSurface(nullptr);
+      if (unlikely(FAILED(hr))) {
+        Logger::err("D3D6Device::SetRenderTarget: Failed to clear the D3D9 DS");
+        return hr;
+      }
     }
 
     return D3D_OK;
@@ -733,7 +737,7 @@ namespace dxvk {
       case D3DRENDERSTATE_WRAPU: {
         DWORD value9 = 0;
         device9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
-        *lpdwRenderState = value9 & D3DWRAP_U;
+        *lpdwRenderState = (value9 & D3DWRAP_U) ? TRUE : FALSE;
         return D3D_OK;
       }
 
@@ -741,7 +745,7 @@ namespace dxvk {
       case D3DRENDERSTATE_WRAPV: {
         DWORD value9 = 0;
         device9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
-        *lpdwRenderState = value9 & D3DWRAP_V;
+        *lpdwRenderState = (value9 & D3DWRAP_V) ? TRUE : FALSE;
         return D3D_OK;
       }
 
@@ -907,7 +911,7 @@ namespace dxvk {
         DDraw4Surface* surface4 = nullptr;
 
         if (likely(dwRenderState != 0)) {
-          surface4 = m_commonIntf->GetSurface4FromTextureHandle(dwRenderState);
+          surface4 = DDrawCommonInterface::GetSurface4FromTextureHandle(dwRenderState);
           if (unlikely(surface4 == nullptr))
             return DDERR_INVALIDPARAMS;
         }
@@ -954,7 +958,7 @@ namespace dxvk {
         DWORD value9 = 0;
         device9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
         if (dwRenderState == TRUE) {
-          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & D3DWRAP_U);
+          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 | D3DWRAP_U);
         } else {
           device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & ~D3DWRAP_U);
         }
@@ -966,7 +970,7 @@ namespace dxvk {
         DWORD value9 = 0;
         device9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
         if (dwRenderState == TRUE) {
-          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & D3DWRAP_V);
+          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 | D3DWRAP_V);
         } else {
           device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & ~D3DWRAP_V);
         }
@@ -1054,7 +1058,13 @@ namespace dxvk {
       }
 
       case D3DRENDERSTATE_TEXTUREMAPBLEND:
+        // Setting the same blend state won't reset the texture state
+        if (m_commonD3DDevice->GetTextureMapBlend() == dwRenderState)
+          return D3D_OK;
+
         m_commonD3DDevice->SetTextureMapBlend(dwRenderState);
+        // Any explicitly set D3DTSS_ALPHAOP value will get overwritten at this point
+        m_alphaOpSet = false;
 
         switch (dwRenderState) {
           // "In this mode, the RGB and alpha values of the texture replace
@@ -1132,7 +1142,8 @@ namespace dxvk {
       case D3DRENDERSTATE_SUBPIXELX:
         return D3D_OK;
 
-      // TODO:
+      // Tests have shown age accurate GPUs didn't offer support for
+      // stippling at all, so this should be safe to ignore
       case D3DRENDERSTATE_STIPPLEDALPHA:
         static bool s_stippledAlphaErrorShown;
 
@@ -1141,7 +1152,8 @@ namespace dxvk {
 
         return D3D_OK;
 
-      // TODO:
+      // Tests have shown age accurate GPUs didn't offer support for
+      // stippling at all, so this should be safe to ignore
       case D3DRENDERSTATE_STIPPLEENABLE:
         static bool s_stippleEnableErrorShown;
 
@@ -1256,6 +1268,9 @@ namespace dxvk {
 
     Logger::debug(">>> D3D6Device::GetLightState");
 
+    if (unlikely(lpdwLightState == nullptr))
+      return DDERR_INVALIDPARAMS;
+
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
     switch (dwLightStateType) {
@@ -1304,7 +1319,7 @@ namespace dxvk {
           return D3D_OK;
         }
 
-        d3d9::D3DMATERIAL9* material9 = m_parent->GetCommonD3DInterface()->GetD3D9MaterialFromHandle(dwLightState);
+        d3d9::D3DMATERIAL9* material9 = D3DCommonInterface::GetCommonMaterialFromHandle(dwLightState)->GetD3D9Material();
         if (unlikely(material9 == nullptr))
           return DDERR_INVALIDPARAMS;
 
@@ -1375,8 +1390,13 @@ namespace dxvk {
 
     DDrawDirtySurfaceUpload();
 
-    HandlePreDrawFlags(flags, vertex_type);
-    HandlePreDrawLegacyProjection(flags);
+    const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
+                              (vertex_type & D3DFVF_NORMAL) &&
+                              m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
+
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
+    HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(vertex_type);
     HRESULT hr = device9->DrawPrimitiveUP(
@@ -1385,8 +1405,9 @@ namespace dxvk {
                      vertices,
                      GetFVFSize(vertex_type));
 
-    HandlePostDrawLegacyProjection();
-    HandlePostDrawFlags(flags, vertex_type);
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
+    HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawPrimitive: Failed D3D9 call to DrawPrimitiveUP");
@@ -1395,7 +1416,7 @@ namespace dxvk {
 
     UpdateSurfaceDirtyTracking(true, true, true);
 
-    return hr;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::DrawIndexedPrimitive(D3DPRIMITIVETYPE primitive_type, DWORD fvf, void *vertices, DWORD vertex_count, WORD *indices, DWORD index_count, DWORD flags) {
@@ -1415,8 +1436,13 @@ namespace dxvk {
 
     DDrawDirtySurfaceUpload();
 
-    HandlePreDrawFlags(flags, fvf);
-    HandlePreDrawLegacyProjection(flags);
+    const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
+                              (fvf & D3DFVF_NORMAL) &&
+                              m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
+
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
+    HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(fvf);
     HRESULT hr = device9->DrawIndexedPrimitiveUP(
@@ -1429,8 +1455,9 @@ namespace dxvk {
                       vertices,
                       GetFVFSize(fvf));
 
-    HandlePostDrawLegacyProjection();
-    HandlePostDrawFlags(flags, fvf);
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
+    HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawIndexedPrimitive: Failed D3D9 call to DrawIndexedPrimitiveUP");
@@ -1439,7 +1466,7 @@ namespace dxvk {
 
     UpdateSurfaceDirtyTracking(true, true, true);
 
-    return hr;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::SetClipStatus(D3DCLIPSTATUS *clip_status) {
@@ -1462,9 +1489,9 @@ namespace dxvk {
       clip_status->dwFlags = D3DCLIPSTATUS_EXTENTS2;
       clip_status->dwStatus = 0;
       clip_status->minx = viewport9.X;
-      clip_status->maxx = viewport9.X + viewport9.Height;
+      clip_status->maxx = viewport9.X + viewport9.Width;
       clip_status->miny = viewport9.Y;
-      clip_status->maxy = viewport9.Y + viewport9.Width;
+      clip_status->maxy = viewport9.Y + viewport9.Height;
       clip_status->minz = 0;
       clip_status->maxz = 0;
     }
@@ -1492,8 +1519,13 @@ namespace dxvk {
     // Transform strided vertex data to a standard vertex buffer stream
     PackedVertexBuffer pvb = TransformStridedtoUP(fvf, strided_data, vertex_count);
 
-    HandlePreDrawFlags(flags, fvf);
-    HandlePreDrawLegacyProjection(flags);
+    const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
+                              (fvf & D3DFVF_NORMAL) &&
+                              m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
+
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
+    HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(fvf);
     HRESULT hr = device9->DrawPrimitiveUP(
@@ -1502,8 +1534,9 @@ namespace dxvk {
                      pvb.vertexData.data(),
                      pvb.stride);
 
-    HandlePostDrawLegacyProjection();
-    HandlePostDrawFlags(flags, fvf);
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
+    HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawPrimitiveStrided: Failed D3D9 call to DrawPrimitiveUP");
@@ -1512,7 +1545,7 @@ namespace dxvk {
 
     UpdateSurfaceDirtyTracking(true, true, true);
 
-    return hr;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::DrawIndexedPrimitiveStrided(D3DPRIMITIVETYPE primitive_type, DWORD fvf, D3DDRAWPRIMITIVESTRIDEDDATA *strided_data, DWORD vertex_count, WORD *indices, DWORD index_count, DWORD flags) {
@@ -1535,8 +1568,13 @@ namespace dxvk {
     // Transform strided vertex data to a standard vertex buffer stream
     PackedVertexBuffer pvb = TransformStridedtoUP(fvf, strided_data, vertex_count);
 
-    HandlePreDrawFlags(flags, fvf);
-    HandlePreDrawLegacyProjection(flags);
+    const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
+                              (fvf & D3DFVF_NORMAL) &&
+                              m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
+
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
+    HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(fvf);
     HRESULT hr = device9->DrawIndexedPrimitiveUP(
@@ -1549,8 +1587,9 @@ namespace dxvk {
                       pvb.vertexData.data(),
                       pvb.stride);
 
-    HandlePostDrawLegacyProjection();
-    HandlePostDrawFlags(flags, fvf);
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
+    HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawIndexedPrimitiveStrided: Failed D3D9 call to DrawIndexedPrimitiveUP");
@@ -1559,7 +1598,7 @@ namespace dxvk {
 
     UpdateSurfaceDirtyTracking(true, true, true);
 
-    return hr;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::DrawPrimitiveVB(D3DPRIMITIVETYPE primitive_type, IDirect3DVertexBuffer *vb, DWORD start_vertex, DWORD vertex_count, DWORD flags) {
@@ -1586,8 +1625,13 @@ namespace dxvk {
 
     DDrawDirtySurfaceUpload();
 
-    HandlePreDrawFlags(flags, vb6->GetFVF());
-    HandlePreDrawLegacyProjection(flags);
+    const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
+                              (vb6->GetFVF() & D3DFVF_NORMAL) &&
+                              m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
+
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
+    HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(vb6->GetFVF());
     device9->SetStreamSource(0, vb6->GetD3D9VertexBuffer(), 0, vb6->GetStride());
@@ -1596,8 +1640,9 @@ namespace dxvk {
                            start_vertex,
                            GetPrimitiveCount(primitive_type, vertex_count));
 
-    HandlePostDrawLegacyProjection();
-    HandlePostDrawFlags(flags, vb6->GetFVF());
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
+    HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawPrimitiveVB: Failed D3D9 call to DrawPrimitive");
@@ -1606,7 +1651,7 @@ namespace dxvk {
 
     UpdateSurfaceDirtyTracking(true, true, true);
 
-    return hr;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::DrawIndexedPrimitiveVB(D3DPRIMITIVETYPE primitive_type, IDirect3DVertexBuffer *vb, WORD *indices, DWORD index_count, DWORD flags) {
@@ -1644,8 +1689,13 @@ namespace dxvk {
 
     DDrawDirtySurfaceUpload();
 
-    HandlePreDrawFlags(flags, vb6->GetFVF());
-    HandlePreDrawLegacyProjection(flags);
+    const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
+                              (vb6->GetFVF() & D3DFVF_NORMAL) &&
+                              m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
+
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
+    HandlePreDrawLegacyProjection(device9, flags);
 
     d3d9::IDirect3DIndexBuffer9* ib9 = m_ib9[ibIndex].ptr();
 
@@ -1662,17 +1712,18 @@ namespace dxvk {
                     0,
                     GetPrimitiveCount(primitive_type, index_count));
 
-    HandlePostDrawLegacyProjection();
-    HandlePostDrawFlags(flags, vb6->GetFVF());
+    if (!useLighting)
+      device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
+    HandlePostDrawLegacyProjection(device9);
 
-    if(unlikely(FAILED(hr))) {
+    if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawIndexedPrimitiveVB: Failed D3D9 call to DrawIndexedPrimitive");
       return hr;
     }
 
     UpdateSurfaceDirtyTracking(true, true, true);
 
-    return hr;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Device::ComputeSphereVisibility(D3DVECTOR *lpCenters, D3DVALUE *lpRadii, DWORD dwNumSpheres, DWORD dwFlags, DWORD *lpdwReturnValues) {
@@ -1732,20 +1783,20 @@ namespace dxvk {
       Logger::debug("D3D6Device::SetTexture: Unbiding D3D9 texture");
 
       hr = device9->SetTexture(stage, nullptr);
-
-      if (likely(SUCCEEDED(hr))) {
-        if (m_textures[stage] != nullptr) {
-          Logger::debug("D3D6Device::SetTexture: Unbinding local texture");
-          m_textures[stage] = nullptr;
-
-          if (likely(stage == 0))
-            m_bridge->SetColorKeyState(false);
-        }
-      } else {
+      if (unlikely(FAILED(hr))) {
         Logger::err("D3D6Device::SetTexture: Failed to unbind D3D9 texture");
+        return hr;
       }
 
-      return hr;
+      if (likely(m_textures[stage] != nullptr)) {
+        Logger::debug("D3D6Device::SetTexture: Unbinding local texture");
+        m_textures[stage] = nullptr;
+
+        if (likely(stage == 0))
+          m_bridge->SetColorKeyState(false);
+      }
+
+      return D3D_OK;
     }
 
     // D3D5Texture (aka IDirect3DTexture2) is shared between D3D5 and D3D6
@@ -1789,7 +1840,7 @@ namespace dxvk {
         //  have been used with no texturing; if the texture does not contain an alpha component,
         //  alpha values at the vertices in the source are interpolated between vertices."
         if (m_commonD3DDevice->GetTextureMapBlend() == D3DTBLEND_MODULATE && !m_alphaOpSet) {
-          const DWORD textureOp = surface6->GetCommonSurface()->IsAlphaFormat() ? D3DTOP_SELECTARG1 : D3DTOP_MODULATE;
+          const DWORD textureOp = surface6->GetCommonSurface()->IsAlphaFormat() ? D3DTOP_SELECTARG1 : D3DTOP_SELECTARG2;
           device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP, textureOp);
         }
 
@@ -1802,6 +1853,8 @@ namespace dxvk {
                                 normalizedColorKey.dwColorSpaceHighValue);
         }
       }
+    } else {
+      Logger::err("D3D6Device::SetTexture: Found no valid D3D9 texture");
     }
 
     m_textures[stage] = texture6;
@@ -1831,9 +1884,14 @@ namespace dxvk {
       if (stateType == d3d9::D3DSAMP_MAGFILTER ||
           stateType == d3d9::D3DSAMP_MINFILTER || stateType == d3d9::D3DSAMP_MIPFILTER) {
         DWORD dwStateProxy9 = 0;
+
         HRESULT hr = device9->GetSamplerState(dwStage, stateType, &dwStateProxy9);
+        if (unlikely(FAILED(hr)))
+          return hr;
+
         *lpdwState = DecodeD3D9TexFilterValues(d3dTexStageStateType, dwStateProxy9);
-        return hr;
+
+        return D3D_OK;
       } else {
         return device9->GetSamplerState(dwStage, stateType, lpdwState);
       }
@@ -1854,7 +1912,8 @@ namespace dxvk {
       return device9->SetSamplerState(dwStage, d3d9::D3DSAMP_ADDRESSV, dwState);
     }
 
-    if (!m_alphaOpSet && d3dTexStageStateType == D3DTSS_ALPHAOP)
+    // Prioritize what the application sets over texture map blend modes
+    if (d3dTexStageStateType == D3DTSS_ALPHAOP)
       m_alphaOpSet = true;
 
     d3d9::D3DSAMPLERSTATETYPE stateType = ConvertSamplerStateType(d3dTexStageStateType);
@@ -1904,7 +1963,7 @@ namespace dxvk {
         Logger::debug(str::format("D3D6Device::InitializeDS: DepthStencil: ", dsRect->right, "x", dsRect->bottom));
 
         HRESULT hrDS9 = device9->SetDepthStencilSurface(m_ds->GetCommonSurface()->GetD3D9Surface());
-        if(unlikely(FAILED(hrDS9))) {
+        if (unlikely(FAILED(hrDS9))) {
           Logger::err("D3D6Device::InitializeDS: Failed to set D3D9 depth stencil");
         } else {
           // This needs to act like an auto depth stencil of sorts, so manually enable z-buffering
@@ -1920,7 +1979,7 @@ namespace dxvk {
   }
 
   void D3D6Device::UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface) {
-    if(likely(dirtyRenderTarget))
+    if (likely(dirtyRenderTarget))
       m_rt->GetCommonSurface()->DirtyD3D9Surface();
 
     if (likely(dirtyPrimarySurface)) {
@@ -1941,41 +2000,42 @@ namespace dxvk {
     HRESULT hr = m_bridge->ResetSwapChain(params);
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::ResetD3D9Swapchain: Failed to reset the D3D9 swapchain");
-    } else {
-      Logger::debug("D3D6Device::ResetD3D9Swapchain: Resetting the render target");
-
-      m_rt->GetCommonSurface()->SetD3D9Surface(nullptr);
-      m_rt->GetCommonSurface()->UnDirtyD3D9Surface();
-
-      // Reset the D3D9 objects for all the following surfaces in the swapchain
-      DDraw4Surface* nextFlippable = m_rt->GetNextFlippable();
-
-      while (nextFlippable != nullptr) {
-        Logger::debug("D3D6Device::ResetD3D9Swapchain: Resetting child surface");
-
-        nextFlippable->GetCommonSurface()->SetD3D9Surface(nullptr);
-        nextFlippable->GetCommonSurface()->UnDirtyD3D9Surface();
-
-        nextFlippable = nextFlippable->GetNextFlippable();
-      }
-
-      // Reset the D3D9 objects for all the previous surfaces in the swapchain
-      DDraw4Surface* parentSurf = m_rt->GetParentSurface();
-
-      while (parentSurf != nullptr) {
-        Logger::debug("D3D6Device::ResetD3D9Swapchain: Resetting parent surface");
-
-        parentSurf->GetCommonSurface()->SetD3D9Surface(nullptr);
-        parentSurf->GetCommonSurface()->UnDirtyD3D9Surface();
-
-        parentSurf = parentSurf->GetParentSurface();
-      }
-
-      // Note that the D3D9 depth stencil survives a swapchain reset,
-      // so there's no need to worry about it in this case
+      return hr;
     }
 
-    return hr;
+    Logger::debug("D3D6Device::ResetD3D9Swapchain: Resetting the render target");
+
+    m_rt->GetCommonSurface()->SetD3D9Surface(nullptr);
+    m_rt->GetCommonSurface()->UnDirtyD3D9Surface();
+
+    // Reset the D3D9 objects for all the following surfaces in the swapchain
+    DDraw4Surface* nextFlippable = m_rt->GetNextFlippable();
+
+    while (nextFlippable != nullptr) {
+      Logger::debug("D3D6Device::ResetD3D9Swapchain: Resetting child surface");
+
+      nextFlippable->GetCommonSurface()->SetD3D9Surface(nullptr);
+      nextFlippable->GetCommonSurface()->UnDirtyD3D9Surface();
+
+      nextFlippable = nextFlippable->GetNextFlippable();
+    }
+
+    // Reset the D3D9 objects for all the previous surfaces in the swapchain
+    DDraw4Surface* parentSurf = m_rt->GetParentSurface();
+
+    while (parentSurf != nullptr) {
+      Logger::debug("D3D6Device::ResetD3D9Swapchain: Resetting parent surface");
+
+      parentSurf->GetCommonSurface()->SetD3D9Surface(nullptr);
+      parentSurf->GetCommonSurface()->UnDirtyD3D9Surface();
+
+      parentSurf = parentSurf->GetParentSurface();
+    }
+
+    // Note that the D3D9 depth stencil survives a swapchain reset,
+    // so there's no need to worry about it in this case
+
+    return D3D_OK;
   }
 
   inline HRESULT D3D6Device::InitializeIndexBuffers() {
@@ -2062,17 +2122,17 @@ namespace dxvk {
       Logger::debug("D3D6Device::SetTextureWithHandle: Unbiding D3D9 texture");
 
       hr = device9->SetTexture(0, nullptr);
-
-      if (likely(SUCCEEDED(hr))) {
-        if (m_commonD3DDevice->GetCurrentTextureHandle() != 0) {
-          Logger::debug("D3D6Device::SetTextureWithHandle: Unbinding local texture");
-          m_commonD3DDevice->SetCurrentTextureHandle(0);
-        }
-      } else {
+      if (unlikely(FAILED(hr))) {
         Logger::err("D3D6Device::SetTextureWithHandle: Failed to unbind D3D9 texture");
+        return hr;
       }
 
-      return hr;
+      if (likely(m_commonD3DDevice->GetCurrentTextureHandle() != 0)) {
+        Logger::debug("D3D6Device::SetTextureWithHandle: Unbinding local texture");
+        m_commonD3DDevice->SetCurrentTextureHandle(0);
+      }
+
+      return D3D_OK;
     }
 
     Logger::debug("D3D6Device::SetTextureWithHandle: Binding D3D9 texture");
@@ -2104,8 +2164,8 @@ namespace dxvk {
       // "Any alpha values in the texture replace the alpha values in the colors that would
       //  have been used with no texturing; if the texture does not contain an alpha component,
       //  alpha values at the vertices in the source are interpolated between vertices."
-      if (m_commonD3DDevice->GetTextureMapBlend() == D3DTBLEND_MODULATE) {
-        const DWORD textureOp = surface->GetCommonSurface()->IsAlphaFormat() ? D3DTOP_SELECTARG1 : D3DTOP_MODULATE;
+      if (m_commonD3DDevice->GetTextureMapBlend() == D3DTBLEND_MODULATE && !m_alphaOpSet) {
+        const DWORD textureOp = surface->GetCommonSurface()->IsAlphaFormat() ? D3DTOP_SELECTARG1 : D3DTOP_SELECTARG2;
         device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP, textureOp);
       }
 
@@ -2117,6 +2177,8 @@ namespace dxvk {
         m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
                               normalizedColorKey.dwColorSpaceHighValue);
       }
+    } else {
+      Logger::err("D3D6Device::SetTextureWithHandle: Found no valid D3D9 texture");
     }
 
     m_commonD3DDevice->SetCurrentTextureHandle(textureHandle);

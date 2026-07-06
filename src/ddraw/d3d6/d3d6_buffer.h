@@ -67,10 +67,6 @@ namespace dxvk {
 
   private:
 
-    inline void HandlePreProcessVerticesFlags(DWORD pvFlags);
-
-    inline void HandlePostProcessVerticesFlags(DWORD pvFlags);
-
     inline bool IsOptimized() const {
       return m_desc.dwCaps & D3DVBCAPS_OPTIMIZED;
     }
@@ -82,24 +78,22 @@ namespace dxvk {
       Logger::debug(str::format("   Vertices: ", m_size / m_stride));
     }
 
-    bool                              m_locked  = false;
+    bool                              m_locked        = false;
 
-    static uint32_t                   s_buffCount;
-    uint32_t                          m_buffCount  = 0;
-
-    DDrawCommonInterface*             m_commonIntf = nullptr;
-
-    D3D6Device*                       m_d3d6Device = nullptr;
-
-    Com<d3d9::IDirect3DVertexBuffer9> m_vb9;
-
-    DWORD                             m_lighting   = FALSE;
+    DDrawCommonInterface*             m_commonIntf    = nullptr;
 
     DWORD                             m_creationFlags = 0;
     D3DVERTEXBUFFERDESC               m_desc;
 
-    UINT                              m_stride = 0;
-    UINT                              m_size   = 0;
+    UINT                              m_stride        = 0;
+    UINT                              m_size          = 0;
+
+    D3D6Device*                       m_d3d6Device    = nullptr;
+
+    Com<d3d9::IDirect3DVertexBuffer9> m_vb9;
+
+    uint32_t                          m_buffCount     = 0;
+    static std::atomic<uint32_t>      s_buffCount;
 
   };
 

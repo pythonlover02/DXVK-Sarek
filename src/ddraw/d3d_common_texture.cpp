@@ -2,12 +2,13 @@
 
 namespace dxvk {
 
-  D3DCommonTexture::D3DCommonTexture(DDrawCommonSurface* commonSurf, D3DTEXTUREHANDLE textureHandle)
-    : m_commonSurf ( commonSurf )
-    , m_textureHandle ( textureHandle ) {
+  D3DCommonTexture::D3DCommonTexture(DDrawCommonSurface* commonSurf)
+    : m_commonSurf ( commonSurf ) {
   }
 
   D3DCommonTexture::~D3DCommonTexture() {
+    if (m_textureHandle)
+      DDrawCommonInterface::ReleaseTextureHandle(m_textureHandle);
   }
 
 }

@@ -1,5 +1,6 @@
 #include "d3d3_device.h"
 
+#include "../d3d_common_material.h"
 #include "../d3d_common_texture.h"
 #include "../ddraw_common_interface.h"
 
@@ -15,7 +16,7 @@
 
 namespace dxvk {
 
-  uint32_t D3D3Device::s_deviceCount = 0;
+  std::atomic<uint32_t> D3D3Device::s_deviceCount = 0;
 
   D3D3Device::D3D3Device(
         D3DCommonDevice* commonD3DDevice,
@@ -36,7 +37,7 @@ namespace dxvk {
 
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
     // Retrieve and cache the device capabilities
-    m_desc = GetD3D3Caps(d3dOptions);
+    m_desc = GetD3D3Caps(deviceGUID, d3dOptions);
 
     d3d9::IDirect3DDevice9* device9;
 
@@ -235,14 +236,14 @@ namespace dxvk {
     const D3DTEXTUREHANDLE handle1 = commonTex1->GetTextureHandle();
     const D3DTEXTUREHANDLE handle2 = commonTex2->GetTextureHandle();
 
-    m_commonIntf->ReleaseTextureHandle(handle1);
-    m_commonIntf->ReleaseTextureHandle(handle2);
+    DDrawCommonInterface::ReleaseTextureHandle(handle1);
+    DDrawCommonInterface::ReleaseTextureHandle(handle2);
 
     commonTex1->SetTextureHandle(handle2);
     commonTex2->SetTextureHandle(handle1);
 
-    m_commonIntf->EmplaceTexture(commonTex1, handle2);
-    m_commonIntf->EmplaceTexture(commonTex2, handle1);
+    DDrawCommonInterface::EmplaceTexture(commonTex1, handle2);
+    DDrawCommonInterface::EmplaceTexture(commonTex2, handle1);
 
     return D3D_OK;
   }
@@ -399,11 +400,12 @@ namespace dxvk {
       return D3DERR_SCENE_IN_SCENE;
 
     HRESULT hr = m_commonD3DDevice->GetD3D9Device()->BeginScene();
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    if (likely(SUCCEEDED(hr)))
-      m_commonD3DDevice->SetInScene(true);
+    m_commonD3DDevice->SetInScene(true);
 
-    return hr;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D3Device::EndScene() {
@@ -417,11 +419,12 @@ namespace dxvk {
       return D3DERR_SCENE_NOT_IN_SCENE;
 
     HRESULT hr = m_commonD3DDevice->GetD3D9Device()->EndScene();
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    if (likely(SUCCEEDED(hr)))
-      m_commonD3DDevice->SetInScene(false);
+    m_commonD3DDevice->SetInScene(false);
 
-    return hr;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D3Device::GetDirect3D(IDirect3D **d3d) {
@@ -436,8 +439,10 @@ namespace dxvk {
     // at all unless it's explicitly created before this call
     D3D3Interface* d3d3Intf = m_commonIntf->GetOrCreateD3D3Interface();
     // Shouldn't happen under normal circumstances, but validate just in case
-    if (unlikely(d3d3Intf == nullptr))
+    if (unlikely(d3d3Intf == nullptr)) {
+      Logger::err("D3D3Device::GetDirect3D: Found no valid D3D interface");
       return DDERR_NOTFOUND;
+    }
 
     *d3d = ref(d3d3Intf);
 
@@ -489,17 +494,23 @@ namespace dxvk {
 
     D3D3Viewport* d3d3Viewport = static_cast<D3D3Viewport*>(viewport);
 
-    if (m_currentViewport != d3d3Viewport) {
+    if (unlikely(m_currentViewport != d3d3Viewport)) {
+      // Validate that the viewport is attached to this (common) device
+      if (unlikely(m_commonD3DDevice != d3d3Viewport->GetCommonViewport()->GetCommonD3DDevice()))
+        return DDERR_INVALIDPARAMS;
+
       if (likely(m_currentViewport != nullptr)) {
+        // Shouldn't be necessary, but play it safe, as there is some potential
+        // for improper behavior if we skip deactivation during D3D5/6 interop
         m_currentViewport->DeactivateLights();
         m_currentViewport->GetCommonViewport()->SetIsCurrentViewport(false);
       }
 
       m_currentViewport = d3d3Viewport;
-    }
 
-    m_currentViewport->GetCommonViewport()->SetIsCurrentViewport(true);
-    m_currentViewport->ApplyViewport();
+      m_currentViewport->GetCommonViewport()->SetIsCurrentViewport(true);
+      m_currentViewport->ApplyViewport();
+    }
 
     D3DEXECUTEDATA* executeData = d3d3ExecuteBuffer->GetExecuteDataInternal();
 
@@ -641,7 +652,9 @@ namespace dxvk {
               }
               case D3DPROCESSVERTICES_TRANSFORM:
               case D3DPROCESSVERTICES_TRANSFORMLIGHT: {
-                const bool doLighting = op == D3DPROCESSVERTICES_TRANSFORMLIGHT;
+                // "If the rendering device does not have a material assigned to it, the Direct3D lighting engine is disabled."
+                const bool doLighting = op == D3DPROCESSVERTICES_TRANSFORMLIGHT &&
+                                        m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
 
                 Logger::debug(str::format("D3D3Device::Execute: D3DOP_PROCESSVERTICES ", doLighting ? "TRANSFORMLIGHT" : "TRANSFORM"));
 
@@ -663,19 +676,13 @@ namespace dxvk {
                 pvData.doExtents = pv.dwFlags & D3DPROCESSVERTICES_UPDATEEXTENTS;
                 pvData.isLegacy = true;
 
-                std::vector<Com<D3DLight>> lights = commonViewport->GetLights();
                 std::vector<d3d9::D3DLIGHT9> lights9;
-
-                for (auto light: lights) {
-                  if (!light->IsActive())
-                    continue;
-
-                  const d3d9::D3DLIGHT9* light9 = light->GetD3D9Light();
-                  if (light9 != nullptr)
-                    lights9.push_back(*light9);
+                if (doLighting) {
+                  commonViewport->GetD3D9Lights(&lights9);
+                  pvData.lights = &lights9;
+                } else {
+                  pvData.lights = nullptr;
                 }
-
-                pvData.lights = &lights9;
 
                 ProcessVerticesSW(device9, m_commonIntf->GetOptions(), &pvData);
 
@@ -935,7 +942,7 @@ namespace dxvk {
         Logger::debug(str::format("D3D3Device::InitializeDS: DepthStencil: ", dsRect->right, "x", dsRect->bottom));
 
         HRESULT hrDS9 = device9->SetDepthStencilSurface(m_ds->GetCommonSurface()->GetD3D9Surface());
-        if(unlikely(FAILED(hrDS9))) {
+        if (unlikely(FAILED(hrDS9))) {
           Logger::err("D3D3Device::InitializeDS: Failed to set D3D9 depth stencil");
         } else {
           // This needs to act like an auto depth stencil of sorts, so manually enable z-buffering
@@ -951,7 +958,7 @@ namespace dxvk {
   }
 
   void D3D3Device::UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface) {
-    if(likely(dirtyRenderTarget))
+    if (likely(dirtyRenderTarget))
       m_rt->GetCommonSurface()->DirtyD3D9Surface();
 
     if (likely(dirtyPrimarySurface)) {
@@ -973,9 +980,9 @@ namespace dxvk {
     if (likely(m_ds != nullptr))
       m_ds->InitializeOrUploadD3D9();
     // Bound texture(s)
-    D3DTEXTUREHANDLE texHandle = m_commonD3DDevice->GetCurrentTextureHandle();
+    const D3DTEXTUREHANDLE texHandle = m_commonD3DDevice->GetCurrentTextureHandle();
     if (likely(texHandle != 0)) {
-      DDrawSurface* tex = m_commonIntf->GetSurfaceFromTextureHandle(texHandle);
+      DDrawSurface* tex = DDrawCommonInterface::GetSurfaceFromTextureHandle(texHandle);
       if (likely(tex != nullptr))
         tex->InitializeOrUploadD3D9();
     }
@@ -1017,18 +1024,13 @@ namespace dxvk {
           return D3D_OK;
         }
 
-        D3DCommonInterface* commonD3DIntf = m_commonD3DDevice->GetCommonD3DInterface();
-        if (likely(commonD3DIntf != nullptr)) {
-          d3d9::D3DMATERIAL9* material9 = commonD3DIntf->GetD3D9MaterialFromHandle(dwLightState);
-          if (unlikely(material9 == nullptr))
-            return DDERR_INVALIDPARAMS;
+        d3d9::D3DMATERIAL9* material9 = D3DCommonInterface::GetCommonMaterialFromHandle(dwLightState)->GetD3D9Material();
+        if (unlikely(material9 == nullptr))
+          return DDERR_INVALIDPARAMS;
 
-          m_commonD3DDevice->SetCurrentMaterialHandle(dwLightState);
-          Logger::debug(str::format("D3D3Device::SetLightStateInternal: Applying material nr. ", dwLightState, " to D3D9"));
-          device9->SetMaterial(material9);
-        } else {
-          Logger::warn("D3D3Device::SetLightStateInternal: Unable to set D3D9 material");
-        }
+        m_commonD3DDevice->SetCurrentMaterialHandle(dwLightState);
+        Logger::debug(str::format("D3D3Device::SetLightStateInternal: Applying material nr. ", dwLightState, " to D3D9"));
+        device9->SetMaterial(material9);
 
         break;
       }
@@ -1081,7 +1083,7 @@ namespace dxvk {
         DDrawSurface* surface = nullptr;
 
         if (likely(dwRenderState != 0)) {
-          surface = m_commonIntf->GetSurfaceFromTextureHandle(dwRenderState);
+          surface = DDrawCommonInterface::GetSurfaceFromTextureHandle(dwRenderState);
           if (unlikely(surface == nullptr))
             return DDERR_INVALIDPARAMS;
         }
@@ -1120,7 +1122,7 @@ namespace dxvk {
         DWORD value9 = 0;
         device9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
         if (dwRenderState == TRUE) {
-          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & D3DWRAP_U);
+          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 | D3DWRAP_U);
         } else {
           device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & ~D3DWRAP_U);
         }
@@ -1132,7 +1134,7 @@ namespace dxvk {
         DWORD value9 = 0;
         device9->GetRenderState(d3d9::D3DRS_WRAP0, &value9);
         if (dwRenderState == TRUE) {
-          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & D3DWRAP_V);
+          device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 | D3DWRAP_V);
         } else {
           device9->SetRenderState(d3d9::D3DRS_WRAP0, value9 & ~D3DWRAP_V);
         }
@@ -1218,6 +1220,10 @@ namespace dxvk {
       }
 
       case D3DRENDERSTATE_TEXTUREMAPBLEND:
+        // Setting the same blend state won't reset the texture state
+        if (m_commonD3DDevice->GetTextureMapBlend() == dwRenderState)
+          return D3D_OK;
+
         m_commonD3DDevice->SetTextureMapBlend(dwRenderState);
 
         switch (dwRenderState) {
@@ -1303,7 +1309,8 @@ namespace dxvk {
       case D3DRENDERSTATE_SUBPIXELX:
         return D3D_OK;
 
-      // TODO:
+      // Tests have shown age accurate GPUs didn't offer support for
+      // stippling at all, so this should be safe to ignore
       case D3DRENDERSTATE_STIPPLEDALPHA:
         static bool s_stippledAlphaErrorShown;
 
@@ -1312,7 +1319,8 @@ namespace dxvk {
 
         return D3D_OK;
 
-      // TODO:
+      // Tests have shown age accurate GPUs didn't offer support for
+      // stippling at all, so this should be safe to ignore
       case D3DRENDERSTATE_STIPPLEENABLE:
         static bool s_stippleEnableErrorShown;
 
@@ -1533,8 +1541,8 @@ namespace dxvk {
     for (uint16_t i = 0; i < count; i++) {
       const D3DTEXTURELOAD& tl = textureLoad[i];
 
-      DDrawSurface* destSurf = m_commonIntf->GetSurfaceFromTextureHandle(tl.hDestTexture);
-      DDrawSurface* srcSurf = m_commonIntf->GetSurfaceFromTextureHandle(tl.hSrcTexture);
+      DDrawSurface* destSurf = DDrawCommonInterface::GetSurfaceFromTextureHandle(tl.hDestTexture);
+      DDrawSurface* srcSurf = DDrawCommonInterface::GetSurfaceFromTextureHandle(tl.hSrcTexture);
       if (destSurf != nullptr && srcSurf != nullptr) {
         destSurf->GetD3D3Texture()->Load(srcSurf->GetD3D3Texture());
       } else {
@@ -1555,17 +1563,17 @@ namespace dxvk {
       Logger::debug("D3D3Device::SetTextureInternal: Unbiding D3D9 texture");
 
       hr = device9->SetTexture(0, nullptr);
-
-      if (likely(SUCCEEDED(hr))) {
-        if (m_commonD3DDevice->GetCurrentTextureHandle() != 0) {
-          Logger::debug("D3D3Device::SetTextureInternal: Unbinding local texture");
-          m_commonD3DDevice->SetCurrentTextureHandle(0);
-        }
-      } else {
+      if (unlikely(FAILED(hr))) {
         Logger::err("D3D3Device::SetTextureInternal: Failed to unbind D3D9 texture");
+        return hr;
       }
 
-      return hr;
+      if (likely(m_commonD3DDevice->GetCurrentTextureHandle() != 0)) {
+        Logger::debug("D3D3Device::SetTextureInternal: Unbinding local texture");
+        m_commonD3DDevice->SetCurrentTextureHandle(0);
+      }
+
+      return D3D_OK;
     }
 
     Logger::debug("D3D3Device::SetTextureInternal: Binding D3D9 texture");
@@ -1598,7 +1606,7 @@ namespace dxvk {
       //  have been used with no texturing; if the texture does not contain an alpha component,
       //  alpha values at the vertices in the source are interpolated between vertices."
       if (m_commonD3DDevice->GetTextureMapBlend() == D3DTBLEND_MODULATE) {
-        const DWORD textureOp = surface->GetCommonSurface()->IsAlphaFormat() ? D3DTOP_SELECTARG1 : D3DTOP_MODULATE;
+        const DWORD textureOp = surface->GetCommonSurface()->IsAlphaFormat() ? D3DTOP_SELECTARG1 : D3DTOP_SELECTARG2;
         device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP, textureOp);
       }
 
@@ -1611,6 +1619,8 @@ namespace dxvk {
         m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
                               normalizedColorKey.dwColorSpaceHighValue);
       }
+    } else {
+      Logger::err("D3D3Device::SetTextureInternal: Found no valid D3D9 texture");
     }
 
     m_commonD3DDevice->SetCurrentTextureHandle(textureHandle);

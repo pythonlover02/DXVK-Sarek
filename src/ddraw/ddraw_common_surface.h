@@ -41,6 +41,8 @@ namespace dxvk {
 
     HRESULT InitializeD3D9(const bool initRenderTarget);
 
+    HRESULT InitializeOrUploadD3D9();
+
     bool IsInitialized() const {
       return m_surface9 != nullptr;
     }
@@ -79,6 +81,10 @@ namespace dxvk {
 
     d3d9::IDirect3DCubeTexture9* GetD3D9CubeTexture() const {
       return m_cubeMap9.ptr();
+    }
+
+    d3d9::D3DFORMAT GetD3D9Format() const {
+      return m_format9;
     }
 
     bool IsDesc2Set() const {
@@ -132,11 +138,7 @@ namespace dxvk {
       const DDCOLORKEY*    colorKey    = (m_desc2.dwFlags & DDSD_CKSRCBLT) ? &m_desc2.ddckCKSrcBlt : &m_desc.ddckCKSrcBlt;
 
       // Empire of the Ants relies on us using the "Low" color space DWORD
-      return ColorKeyToRGB(pixelFormat, colorKey->dwColorSpaceLowValue, m_commonIntf->GetOptions()->colorKeyTolerance);
-    }
-
-    d3d9::D3DFORMAT GetD3D9Format() const {
-      return m_format9;
+      return ColorKeyToARGB(pixelFormat, colorKey->dwColorSpaceLowValue);
     }
 
     bool IsFullSurfaceLock(RECT* lockRect, RECT* fullSurfaceRect) const {
@@ -229,6 +231,10 @@ namespace dxvk {
       return m_isD3D9DepthStencil;
     }
 
+    void MarkWithTextureHandle() {
+      m_hasTextureHandle = true;
+    }
+
     void SetClipper(DDrawClipper* clipper) {
       m_clipper = clipper;
     }
@@ -239,12 +245,12 @@ namespace dxvk {
 
     void SetPalette(DDrawPalette* palette) {
       if (likely(m_palette != palette)) {
-        if (palette == nullptr)
+        if (unlikely(m_palette != nullptr))
           m_palette->SetCommonSurface(nullptr);
 
         m_palette = palette;
 
-        if (m_palette != nullptr)
+        if (likely(m_palette != nullptr))
           m_palette->SetCommonSurface(this);
       }
     }
@@ -333,7 +339,8 @@ namespace dxvk {
 
     bool IsTexture() const {
       return m_desc2.ddsCaps.dwCaps & DDSCAPS_TEXTURE
-          || m_desc.ddsCaps.dwCaps  & DDSCAPS_TEXTURE;
+          || m_desc.ddsCaps.dwCaps  & DDSCAPS_TEXTURE
+          || m_hasTextureHandle;
     }
 
     bool IsOverlay() const {
@@ -384,15 +391,16 @@ namespace dxvk {
     bool IsTextureOrCubeMap() const {
       return m_desc2.ddsCaps.dwCaps  & DDSCAPS_TEXTURE
           || m_desc2.ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP
-          || m_desc.ddsCaps.dwCaps   & DDSCAPS_TEXTURE;
-    }
-
-    bool IsBackBufferOrFlippable() const {
-      return m_isBackBufferOrFlippable;
+          || m_desc.ddsCaps.dwCaps   & DDSCAPS_TEXTURE
+          || m_hasTextureHandle;
     }
 
     bool IsRenderTarget() const {
       return m_isRenderTarget;
+    }
+
+    bool IsBackBufferOrFlippable() const {
+      return m_isBackBufferOrFlippable;
     }
 
     bool IsDXTFormat() const {
@@ -408,7 +416,8 @@ namespace dxvk {
           || m_format9 == d3d9::D3DFMT_P8;
     }
 
-    HRESULT ValidateRTUsage(bool isHALOrTNLHALDevice) const {
+    // D3D7 is a bit more sane here, as always, so handle it separately
+    HRESULT ValidateRTUsage7(bool isHALOrTNLHALDevice, bool isDeviceCreation) const {
       // Render targets require the DDSCAPS_3DDEVICE flag
       if (unlikely(!Is3DSurface())) {
         Logger::err("DDrawCommonInterface::ValidateRTUsage: Missing DDSCAPS_3DDEVICE");
@@ -417,10 +426,42 @@ namespace dxvk {
       // Depth stencil surfaces can't be set as render targets
       if (unlikely(IsDepthStencil())) {
         Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid DDSCAPS_ZBUFFER");
+        return isDeviceCreation ? DDERR_INVALIDCAPS : DDERR_INVALIDPIXELFORMAT;
+      }
+      // DXVK doesn't support P8 render targets, so pretend these are always invalid
+      if (unlikely(m_format9 == d3d9::D3DFMT_P8)) {
+        Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid P8 render target");
+        return isDeviceCreation ? DDERR_NOPALETTEATTACHED : DDERR_INVALIDPARAMS;
+      }
+      // Render targets can't be created in system memory on HAL/HAL T&L devices
+      if (unlikely(IsInSystemMemory() && isHALOrTNLHALDevice)) {
+        Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid DDSCAPS_SYSTEMMEMORY");
+        return isDeviceCreation ? D3DERR_SURFACENOTINVIDMEM : DDERR_INVALIDPARAMS;
+      }
+
+      return DD_OK;
+    }
+
+    // D3D6 and earlier RT usage validations
+    HRESULT ValidateRTUsage(bool isHALDevice, bool isDeviceCreation) const {
+      // Render targets require the DDSCAPS_3DDEVICE flag
+      if (unlikely(!Is3DSurface())) {
+        Logger::err("DDrawCommonInterface::ValidateRTUsage: Missing DDSCAPS_3DDEVICE");
         return DDERR_INVALIDCAPS;
       }
-      // Render targets must not be created in system memory on HAL/HAL T&L devices
-      if (unlikely(IsInSystemMemory() && isHALOrTNLHALDevice)) {
+      // Depth stencil surfaces can't be set as render targets
+      if (unlikely(IsDepthStencil())) {
+        Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid DDSCAPS_ZBUFFER");
+        return isDeviceCreation ? DDERR_INVALIDCAPS : DDERR_INVALIDPIXELFORMAT;
+      }
+      // DXVK doesn't support P8 render targets, so pretend these are always invalid
+      if (unlikely(m_format9 == d3d9::D3DFMT_P8)) {
+        Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid P8 render target");
+        return isDeviceCreation ? DDERR_NOPALETTEATTACHED : DDERR_INVALIDPARAMS;
+      }
+      // Render targets can't be created in system memory on HAL devices,
+      // however system memory surfaces can later be set as render targets... yeah...
+      if (unlikely(isDeviceCreation && IsInSystemMemory() && isHALDevice)) {
         Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid DDSCAPS_SYSTEMMEMORY");
         return D3DERR_SURFACENOTINVIDMEM;
       }
@@ -467,8 +508,8 @@ namespace dxvk {
       m_rect.bottom = (m_desc2.dwFlags & DDSD_HEIGHT) ? m_desc2.dwHeight : m_desc.dwHeight;
       m_format9 = ConvertFormat((m_desc2.dwFlags & DDSD_PIXELFORMAT) ? m_desc2.ddpfPixelFormat : m_desc.ddpfPixelFormat);
       // determine and cache various frequently used flag combinations
-      m_isBackBufferOrFlippable = !IsPrimarySurface() && !IsFrontBuffer() && (IsBackBuffer() || IsFlippable());
       m_isRenderTarget          = IsFrontBuffer() || IsBackBuffer() || IsFlippable() || Is3DSurface();
+      m_isBackBufferOrFlippable = !IsPrimarySurface() && !IsFrontBuffer() && (IsBackBuffer() || IsFlippable());
     }
 
     bool                             m_dirtyDDraw         = false;
@@ -480,39 +521,40 @@ namespace dxvk {
 
     bool                             m_isDesc2Set         = false;
     bool                             m_isDescSet          = false;
+    bool                             m_hasTextureHandle   = false;
 
+    bool                             m_isRenderTarget     = false;
     bool                             m_isBackBufferOrFlippable = false;
-    bool                             m_isRenderTarget          = false;
-
-    uint16_t                         m_mipCount        = 1;
-    uint32_t                         m_backBufferIndex = 0;
-
-    DDSURFACEDESC                    m_desc  = { };
-    DDSURFACEDESC2                   m_desc2 = { };
-    RECT                             m_rect  = { };
-    d3d9::D3DFORMAT                  m_format9 = d3d9::D3DFMT_UNKNOWN;
-
-    Com<DDrawClipper>                m_clipper;
-    Com<DDrawPalette>                m_palette;
 
     Com<DDrawCommonInterface>        m_commonIntf;
 
-    D3DCommonDevice*                 m_commonD3DDevice = nullptr;
+    D3DCommonDevice*                 m_commonD3DDevice    = nullptr;
+
+    uint16_t                         m_mipCount           = 1;
+    uint32_t                         m_backBufferIndex    = 0;
+
+    DDSURFACEDESC                    m_desc               = { };
+    DDSURFACEDESC2                   m_desc2              = { };
+    RECT                             m_rect               = { };
+
+    Com<DDrawClipper>                m_clipper;
+    Com<DDrawPalette>                m_palette;
 
     Com<d3d9::IDirect3DSurface9>     m_surface9;
     Com<d3d9::IDirect3DTexture9>     m_texture9;
     Com<d3d9::IDirect3DCubeTexture9> m_cubeMap9;
 
-    // Track all possible surface versions of the same object
-    DDraw7Surface*                   m_surf7  = nullptr;
-    DDraw4Surface*                   m_surf4  = nullptr;
-    DDraw3Surface*                   m_surf3  = nullptr;
-    DDraw2Surface*                   m_surf2  = nullptr;
-    DDrawSurface*                    m_surf   = nullptr;
+    d3d9::D3DFORMAT                  m_format9            = d3d9::D3DFMT_UNKNOWN;
+
+    DDraw7Surface*                   m_surf7              = nullptr;
+    DDraw4Surface*                   m_surf4              = nullptr;
+    DDraw3Surface*                   m_surf3              = nullptr;
+    DDraw2Surface*                   m_surf2              = nullptr;
+    DDrawSurface*                    m_surf               = nullptr;
 
     // Track the origin surface, as in the DDraw surface
     // that gets created through a CreateSurface call
-    IUnknown*                        m_origin = nullptr;
+    IUnknown*                        m_origin             = nullptr;
 
   };
 

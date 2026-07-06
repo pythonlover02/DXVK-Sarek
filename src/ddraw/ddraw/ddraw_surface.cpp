@@ -13,7 +13,7 @@
 
 namespace dxvk {
 
-  uint32_t DDrawSurface::s_surfCount = 0;
+  std::atomic<uint32_t> DDrawSurface::s_surfCount = 0;
 
   DDrawSurface::DDrawSurface(
         DDrawCommonSurface* commonSurf,
@@ -56,11 +56,14 @@ namespace dxvk {
       IDirectDrawSurface* nextFlippable = nullptr;
       EnumAttachedSurfaces(&nextFlippable, ListBackBufferSurfacesCallback);
       m_nextFlippable = reinterpret_cast<DDrawSurface*>(nextFlippable);
-      if (likely(m_nextFlippable != nullptr))
+      if (likely(m_nextFlippable != nullptr)) {
+        // The call to EnumAttachedSurfaces has incremented the public ref
+        m_nextFlippable->Release();
         Logger::debug("DDrawSurface: Retrieved the next swapchain surface");
+      }
     }
 
-    m_commonIntf->AddWrappedSurface(this);
+    DDrawCommonInterface::AddWrappedSurface(this);
 
     m_commonSurf->SetDDSurface(this);
 
@@ -94,7 +97,7 @@ namespace dxvk {
       m_parentSurf->ClearAttachedDepthStencil();
     }
 
-    m_commonIntf->RemoveWrappedSurface(this);
+    DDrawCommonInterface::RemoveWrappedSurface(this);
 
     // Release all public references on all attached surfaces
     for (auto & attachedSurface : m_attachedSurfaces) {
@@ -129,10 +132,8 @@ namespace dxvk {
         if (unlikely(FAILED(hr)))
           return hr;
 
-        D3DTEXTUREHANDLE nextHandle = m_commonIntf->GetNextTextureHandle();
-        m_texture3 = new D3D3Texture(m_commonSurf.ptr(), std::move(ppvProxyObject), this, nextHandle);
-        D3DCommonTexture* commonTex = m_texture3->GetCommonTexture();
-        m_commonIntf->EmplaceTexture(commonTex, nextHandle);
+        m_texture3 = new D3D3Texture(m_texture5 != nullptr ? m_texture5->GetCommonTexture() : nullptr,
+                                     m_commonSurf.ptr(), std::move(ppvProxyObject), this);
       }
 
       *ppvObject = m_texture3.ref();
@@ -148,10 +149,34 @@ namespace dxvk {
         if (unlikely(FAILED(hr)))
           return hr;
 
-        D3DTEXTUREHANDLE nextHandle = m_commonIntf->GetNextTextureHandle();
-        m_texture5 = new D3D5Texture(m_commonSurf.ptr(), std::move(ppvProxyObject), this, nextHandle);
-        D3DCommonTexture* commonTex = m_texture5->GetCommonTexture();
-        m_commonIntf->EmplaceTexture(commonTex, nextHandle);
+        // If any games query for IDirect3DTexture2 from IDirectDrawSurface, they will need
+        // a valid IDirectDrawSurface4 object in order to use IDirect3DTexture2 with a D3D6
+        // device, or when calling IDirect3DTexture2::Load, which is a known use in D3D5/3.
+        // Query for one and cache it, to keep it alive as long as needed.
+        //
+        // Note: Doing only this for The Sims won't be enough as, for some reason,
+        // it goes out of its way to release the originating IDirectDrawSurface4
+        // object AFTER it queries for IDirect3DTexture2 from IDirectDrawSurface...
+        if (unlikely(m_commonSurf->GetDD4Surface() == nullptr)) {
+          Logger::debug("DDrawSurface::QueryInterface: Query for IDirectDrawSurface4");
+
+          Com<IDirectDrawSurface4> surface4ProxyObject;
+          HRESULT hr = m_proxy->QueryInterface(__uuidof(IDirectDrawSurface4),
+                                               reinterpret_cast<void**>(&surface4ProxyObject));
+          if (unlikely(FAILED(hr)))
+            return hr;
+
+          try {
+            m_surface4 = new DDraw4Surface(m_commonSurf.ptr(), std::move(surface4ProxyObject),
+                                           m_commonIntf->GetDD4Interface(), nullptr, false);
+          } catch (const DxvkError& e) {
+            Logger::err(e.message());
+            return E_NOINTERFACE;
+          }
+        }
+
+        m_texture5 = new D3D5Texture(m_texture3 != nullptr ? m_texture3->GetCommonTexture() : nullptr,
+                                     m_commonSurf.ptr(), std::move(ppvProxyObject), this, false);
       }
 
       *ppvObject = m_texture5.ref();
@@ -179,6 +204,11 @@ namespace dxvk {
         riid == IID_WineD3DDevice) {
       Logger::debug("DDrawSurface::QueryInterface: Query with an IDirect3DDevice IID");
 
+      // Surfaces which have been queried from an IDirectDrawSurface7
+      // object are unable to create a D3D3 device on this legacy path
+      if (unlikely(m_commonSurf->GetDD7Surface() == m_commonSurf->GetOrigin()))
+        return E_NOINTERFACE;
+
       HRESULT hr = CreateDeviceInternal(riid, ppvObject);
       if (unlikely(FAILED(hr)))
         return E_NOINTERFACE;
@@ -199,7 +229,13 @@ namespace dxvk {
       if (unlikely(FAILED(hr)))
         return hr;
 
-      *ppvObject = ref(new DDraw2Surface(m_commonSurf.ptr(), std::move(ppvProxyObject), this, nullptr));
+      try {
+        *ppvObject = ref(new DDraw2Surface(m_commonSurf.ptr(), std::move(ppvProxyObject),
+                                           this, nullptr));
+      } catch (const DxvkError& e) {
+        Logger::err(e.message());
+        return E_NOINTERFACE;
+      }
 
       return S_OK;
     }
@@ -216,7 +252,13 @@ namespace dxvk {
       if (unlikely(FAILED(hr)))
         return hr;
 
-      *ppvObject = ref(new DDraw3Surface(m_commonSurf.ptr(), std::move(ppvProxyObject), this, nullptr));
+      try {
+        *ppvObject = ref(new DDraw3Surface(m_commonSurf.ptr(), std::move(ppvProxyObject),
+                                           this, nullptr));
+      } catch (const DxvkError& e) {
+        Logger::err(e.message());
+        return E_NOINTERFACE;
+      }
 
       return S_OK;
     }
@@ -233,8 +275,14 @@ namespace dxvk {
       if (unlikely(FAILED(hr)))
         return hr;
 
-      Com<DDraw4Surface> surface4 = new DDraw4Surface(m_commonSurf.ptr(), std::move(ppvProxyObject),
-                                                      m_commonIntf->GetDD4Interface(), nullptr, false);
+      Com<DDraw4Surface> surface4;
+      try {
+        surface4 = new DDraw4Surface(m_commonSurf.ptr(), std::move(ppvProxyObject),
+                                     m_commonIntf->GetDD4Interface(), nullptr, false);
+      } catch (const DxvkError& e) {
+        Logger::err(e.message());
+        return E_NOINTERFACE;
+      }
 
       // Dungeon Keeper 2 creates and attaches a IDirectDrawSurface4 depth stencil,
       // but then keeps using clears from the IDirectDrawSurface object...
@@ -244,8 +292,14 @@ namespace dxvk {
         if (unlikely(FAILED(hr)))
           return hr;
 
-        Com<DDraw4Surface> depthStencil4 = new DDraw4Surface(m_depthStencil->GetCommonSurface(), std::move(dsProxyObject),
-                                                             m_commonIntf->GetDD4Interface(), nullptr, false);
+        Com<DDraw4Surface> depthStencil4;
+        try {
+          depthStencil4 = new DDraw4Surface(m_depthStencil->GetCommonSurface(), std::move(dsProxyObject),
+                                            m_commonIntf->GetDD4Interface(), nullptr, false);
+        } catch (const DxvkError& e) {
+          Logger::err(e.message());
+          return E_NOINTERFACE;
+        }
 
         surface4->SetAttachedDepthStencil(std::move(depthStencil4));
       }
@@ -267,7 +321,13 @@ namespace dxvk {
       if (unlikely(FAILED(hr)))
         return hr;
 
-      *ppvObject = ref(new DDraw7Surface(m_commonSurf.ptr(), std::move(ppvProxyObject), m_commonIntf->GetDD7Interface(), nullptr, false));
+      try {
+        *ppvObject = ref(new DDraw7Surface(m_commonSurf.ptr(), std::move(ppvProxyObject),
+                                           m_commonIntf->GetDD7Interface(), nullptr, false));
+      } catch (const DxvkError& e) {
+        Logger::err(e.message());
+        return E_NOINTERFACE;
+      }
 
       return S_OK;
     }
@@ -295,8 +355,8 @@ namespace dxvk {
     if (unlikely(lpDDSAttachedSurface == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSAttachedSurface))) {
-      Logger::warn("DDrawSurface::AddAttachedSurface: Received an unwrapped surface");
+    if (unlikely(!DDrawCommonInterface::IsWrappedSurface(lpDDSAttachedSurface))) {
+      Logger::err("DDrawSurface::AddAttachedSurface: Received an unwrapped surface");
       return DDERR_CANNOTATTACHSURFACE;
     }
 
@@ -317,7 +377,7 @@ namespace dxvk {
     if (likely(attachedSurf->GetCommonSurface()->IsDepthStencil()))
       m_depthStencil = attachedSurf;
 
-    return hr;
+    return DD_OK;
   }
 
   // Docs: "This method is used for the software implementation.
@@ -330,11 +390,17 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDrawSurface::Blt(LPRECT lpDestRect, LPDIRECTDRAWSURFACE lpDDSrcSurface, LPRECT lpSrcRect, DWORD dwFlags, LPDDBLTFX lpDDBltFx) {
     Logger::debug("<<< DDrawSurface::Blt: Proxy");
 
-    const bool sourceIsWrappedSurface = m_commonIntf->IsWrappedSurface(lpDDSrcSurface);
+    const bool sourceIsWrappedSurface = lpDDSrcSurface == nullptr ||
+                                        DDrawCommonInterface::IsWrappedSurface(lpDDSrcSurface);
+
+    if (unlikely(!sourceIsWrappedSurface)) {
+      Logger::err("DDrawSurface::Blt: Received an unwrapped source surface");
+      return DDERR_UNSUPPORTED;
+    }
 
     // Write back any dirty surface data from bound D3D9 back buffers or
     // depth stencils, for both the source surface and the current surface
-    if (likely(lpDDSrcSurface != nullptr && sourceIsWrappedSurface)) {
+    if (likely(lpDDSrcSurface != nullptr)) {
       DDrawSurface* sourceSurface = static_cast<DDrawSurface*>(lpDDSrcSurface);
       sourceSurface->DownloadSurfaceData();
     }
@@ -348,8 +414,7 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
     if (likely(d3d9Device != nullptr)) {
-      const bool exclusiveMode = (m_commonIntf->GetCooperativeLevel() & DDSCL_EXCLUSIVE)
-                              && !m_commonIntf->GetOptions()->ignoreExclusiveMode;
+      const bool exclusiveMode = m_commonIntf->GetCooperativeLevel() & DDSCL_EXCLUSIVE;
 
       // Windowed mode presentation path
       if (!exclusiveMode && lpDDSrcSurface != nullptr && m_commonSurf->IsPrimarySurface()) {
@@ -366,34 +431,29 @@ namespace dxvk {
     }
 
     HRESULT hr;
-
-    if (unlikely(!sourceIsWrappedSurface)) {
-      if (unlikely(lpDDSrcSurface != nullptr)) {
-        Logger::warn("DDrawSurface::Blt: Received an unwrapped source surface");
-        return DDERR_UNSUPPORTED;
-      }
+    if (unlikely(lpDDSrcSurface == nullptr)) {
       hr = GetShadowOrProxied()->Blt(lpDestRect, lpDDSrcSurface, lpSrcRect, dwFlags, lpDDBltFx);
     } else {
       DDrawSurface* sourceSurface = static_cast<DDrawSurface*>(lpDDSrcSurface);
       hr = GetShadowOrProxied()->Blt(lpDestRect, sourceSurface->GetShadowOrProxied(), lpSrcRect, dwFlags, lpDDBltFx);
     }
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    if (likely(SUCCEEDED(hr))) {
-      m_commonSurf->DirtyDDrawSurface();
+    m_commonSurf->DirtyDDrawSurface();
 
-      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
-        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
-                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
-                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
-                                   false : true;
-        if (shouldPresent) {
-          InitializeOrUploadD3D9();
-          d3d9Device->Present(NULL, NULL, NULL, NULL);
-        }
+    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+      const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                 m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                 false : true;
+      if (shouldPresent) {
+        InitializeOrUploadD3D9();
+        d3d9Device->Present(NULL, NULL, NULL, NULL);
       }
     }
 
-    return hr;
+    return DD_OK;
   }
 
   // Docs: "The IDirectDrawSurface::BltBatch method is not currently implemented."
@@ -405,12 +465,18 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDrawSurface::BltFast(DWORD dwX, DWORD dwY, LPDIRECTDRAWSURFACE lpDDSrcSurface, LPRECT lpSrcRect, DWORD dwTrans) {
     Logger::debug("<<< DDrawSurface::BltFast: Proxy");
 
-    const bool sourceIsWrappedSurface = m_commonIntf->IsWrappedSurface(lpDDSrcSurface);
+    const bool sourceIsWrappedSurface = lpDDSrcSurface == nullptr ||
+                                        DDrawCommonInterface::IsWrappedSurface(lpDDSrcSurface);
+
+    if (unlikely(!sourceIsWrappedSurface)) {
+      Logger::err("DDrawSurface::BltFast: Received an unwrapped source surface");
+      return DDERR_UNSUPPORTED;
+    }
 
     RECT* sourceFullSurfaceRect = nullptr;
     // Write back any dirty surface data from bound D3D9 back buffers or
     // depth stencils, for both the source surface and the current surface
-    if (likely(lpDDSrcSurface != nullptr && sourceIsWrappedSurface)) {
+    if (likely(lpDDSrcSurface != nullptr)) {
       DDrawSurface* sourceSurface = static_cast<DDrawSurface*>(lpDDSrcSurface);
       sourceSurface->DownloadSurfaceData();
       sourceFullSurfaceRect = sourceSurface->GetCommonSurface()->GetFullSurfaceRect();
@@ -425,15 +491,10 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
     if (likely(d3d9Device != nullptr)) {
-      const bool exclusiveMode = (m_commonIntf->GetCooperativeLevel() & DDSCL_EXCLUSIVE)
-                              && !m_commonIntf->GetOptions()->ignoreExclusiveMode;
+      const bool exclusiveMode = m_commonIntf->GetCooperativeLevel() & DDSCL_EXCLUSIVE;
 
       // Windowed mode presentation path
       if (!exclusiveMode && lpDDSrcSurface != nullptr && m_commonSurf->IsPrimarySurface()) {
-        if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSrcSurface))) {
-          Logger::warn("DDrawSurface::BltFast: Received an unwrapped source surface");
-          return DDERR_UNSUPPORTED;
-        }
         // TODO: Handle this properly, not by uploading the RT again
         DDrawSurface* sourceSurface = static_cast<DDrawSurface*>(lpDDSrcSurface);
         DDrawSurface* renderTarget = m_commonSurf->GetCommonD3DDevice()->GetCurrentRenderTarget();
@@ -447,52 +508,51 @@ namespace dxvk {
     }
 
     HRESULT hr;
-
-    if (unlikely(!sourceIsWrappedSurface)) {
-      if (unlikely(lpDDSrcSurface != nullptr)) {
-        Logger::warn("DDrawSurface::BltFast: Received an unwrapped source surface");
-        return DDERR_UNSUPPORTED;
-      }
+    if (lpDDSrcSurface == nullptr) {
       hr = GetShadowOrProxied()->BltFast(dwX, dwY, lpDDSrcSurface, lpSrcRect, dwTrans);
     } else {
       DDrawSurface* sourceSurface = static_cast<DDrawSurface*>(lpDDSrcSurface);
       hr = GetShadowOrProxied()->BltFast(dwX, dwY, sourceSurface->GetShadowOrProxied(), lpSrcRect, dwTrans);
     }
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    if (likely(SUCCEEDED(hr))) {
-      m_commonSurf->DirtyDDrawSurface();
+    m_commonSurf->DirtyDDrawSurface();
 
-      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
-        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
-                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
-                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
-                                   false : true;
-        if (shouldPresent) {
-          InitializeOrUploadD3D9();
-          d3d9Device->Present(NULL, NULL, NULL, NULL);
-        }
+    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+      const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                 m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                 false : true;
+      if (shouldPresent) {
+        InitializeOrUploadD3D9();
+        d3d9Device->Present(NULL, NULL, NULL, NULL);
       }
     }
 
-    return hr;
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDrawSurface::DeleteAttachedSurface(DWORD dwFlags, LPDIRECTDRAWSURFACE lpDDSAttachedSurface) {
     Logger::debug("<<< DDrawSurface::DeleteAttachedSurface: Proxy");
 
-    if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSAttachedSurface))) {
-      if (unlikely(lpDDSAttachedSurface != nullptr)) {
-        Logger::warn("DDrawSurface::DeleteAttachedSurface: Received an unwrapped surface");
-        return DDERR_UNSUPPORTED;
-      }
+    const bool attachedSurfaceIsWrappedSurface = lpDDSAttachedSurface == nullptr ||
+                                                 DDrawCommonInterface::IsWrappedSurface(lpDDSAttachedSurface);
 
+    if (unlikely(!attachedSurfaceIsWrappedSurface)) {
+      Logger::err("DDrawSurface::DeleteAttachedSurface: Received an unwrapped surface");
+      return DDERR_UNSUPPORTED;
+    }
+
+    if (lpDDSAttachedSurface == nullptr) {
       HRESULT hrProxy = m_proxy->DeleteAttachedSurface(dwFlags, lpDDSAttachedSurface);
+      if (unlikely(FAILED(hrProxy)))
+        return hrProxy;
 
       // If lpDDSAttachedSurface is NULL, then all surfaces are detached
-      if (likely(SUCCEEDED(hrProxy)))
-        m_depthStencil = nullptr;
+      m_depthStencil = nullptr;
 
-      return hrProxy;
+      return DD_OK;
     }
 
     DDrawSurface* attachedSurf = static_cast<DDrawSurface*>(lpDDSAttachedSurface);
@@ -513,7 +573,7 @@ namespace dxvk {
       m_depthStencil = nullptr;
     }
 
-    return hr;
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDrawSurface::EnumAttachedSurfaces(LPVOID lpContext, LPDDENUMSURFACESCALLBACK lpEnumSurfacesCallback) {
@@ -524,35 +584,42 @@ namespace dxvk {
 
     std::vector<AttachedSurface> attachedSurfaces;
     // Enumerate all attached surfaces from the underlying DDraw implementation
-    m_proxy->EnumAttachedSurfaces(reinterpret_cast<void*>(&attachedSurfaces), EnumAttachedSurfacesCallback);
+    HRESULT hr = m_proxy->EnumAttachedSurfaces(reinterpret_cast<void*>(&attachedSurfaces), EnumAttachedSurfacesCallback);
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    HRESULT hr = DDENUMRET_OK;
+    hr = DDENUMRET_OK;
 
     // Wrap surfaces as needed and perform the actual callback the application is requesting
     auto surfaceIt = attachedSurfaces.begin();
     while (surfaceIt != attachedSurfaces.end() && hr == DDENUMRET_OK) {
       Com<IDirectDrawSurface> surface = surfaceIt->surface;
 
-      auto attachedSurfaceIter = m_attachedSurfaces.find(surface.ptr());
-      if (unlikely(attachedSurfaceIter == m_attachedSurfaces.end())) {
-        // Return the already attached depth surface if it exists
-        if (unlikely(m_depthStencil != nullptr && surface.ptr() == m_depthStencil->GetProxied())) {
-          hr = lpEnumSurfacesCallback(m_depthStencil.ref(), &surfaceIt->desc, lpContext);
+      try {
+        auto attachedSurfaceIter = m_attachedSurfaces.find(surface.ptr());
+        if (unlikely(attachedSurfaceIter == m_attachedSurfaces.end())) {
+          // Return the already attached depth surface if it exists
+          if (unlikely(m_depthStencil != nullptr && surface.ptr() == m_depthStencil->GetProxied())) {
+            hr = lpEnumSurfacesCallback(m_depthStencil.ref(), &surfaceIt->desc, lpContext);
+          } else {
+            Com<DDrawSurface> ddrawSurface = new DDrawSurface(nullptr, std::move(surface), m_parent, this, false);
+            m_attachedSurfaces.emplace(std::piecewise_construct,
+                                       std::forward_as_tuple(ddrawSurface->GetProxied()),
+                                       std::forward_as_tuple(ddrawSurface.ref()));
+            hr = lpEnumSurfacesCallback(ddrawSurface.ref(), &surfaceIt->desc, lpContext);
+          }
         } else {
-          Com<DDrawSurface> ddrawSurface = new DDrawSurface(nullptr, std::move(surface), m_parent, this, false);
-          m_attachedSurfaces.emplace(std::piecewise_construct,
-                                     std::forward_as_tuple(ddrawSurface->GetProxied()),
-                                     std::forward_as_tuple(ddrawSurface.ref()));
-          hr = lpEnumSurfacesCallback(ddrawSurface.ref(), &surfaceIt->desc, lpContext);
+          hr = lpEnumSurfacesCallback(attachedSurfaceIter->second.ref(), &surfaceIt->desc, lpContext);
         }
-      } else {
-        hr = lpEnumSurfacesCallback(attachedSurfaceIter->second.ref(), &surfaceIt->desc, lpContext);
+      } catch (const DxvkError& e) {
+        Logger::err(e.message());
+        return DDERR_GENERIC;
       }
 
       ++surfaceIt;
     }
 
-    return D3D_OK;
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDrawSurface::EnumOverlayZOrders(DWORD dwFlags, LPVOID lpContext, LPDDENUMSURFACESCALLBACK lpfnCallback) {
@@ -561,7 +628,13 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDrawSurface::Flip(LPDIRECTDRAWSURFACE lpDDSurfaceTargetOverride, DWORD dwFlags) {
-    const bool overrideIsWrappedSurface = m_commonIntf->IsWrappedSurface(lpDDSurfaceTargetOverride);
+    const bool overrideIsWrappedSurface = lpDDSurfaceTargetOverride == nullptr ||
+                                          DDrawCommonInterface::IsWrappedSurface(lpDDSurfaceTargetOverride);
+
+    if (unlikely(!overrideIsWrappedSurface)) {
+      Logger::err("DDrawSurface::Flip: Received an unwrapped override surface");
+      return DDERR_UNSUPPORTED;
+    }
 
     Com<DDrawSurface> overrideSurf = static_cast<DDrawSurface*>(lpDDSurfaceTargetOverride);
 
@@ -595,7 +668,7 @@ namespace dxvk {
         return DDERR_NOTFLIPPABLE;
       }
 
-      if (unlikely(overrideIsWrappedSurface && !overrideSurf->GetCommonSurface()->IsBackBufferOrFlippable())) {
+      if (unlikely(overrideSurf != nullptr && !overrideSurf->GetCommonSurface()->IsBackBufferOrFlippable())) {
         Logger::debug("DDrawSurface::Flip: Unflippable override surface");
         return DDERR_NOTFLIPPABLE;
       }
@@ -644,7 +717,7 @@ namespace dxvk {
         }
       }
 
-      if (!overrideIsWrappedSurface) {
+      if (overrideSurf == nullptr) {
         return m_proxy->Flip(lpDDSurfaceTargetOverride, dwFlags);
       } else {
         return m_proxy->Flip(overrideSurf->GetShadowOrProxied(), dwFlags);
@@ -681,7 +754,6 @@ namespace dxvk {
 
     Com<IDirectDrawSurface> surface;
     HRESULT hr = m_proxy->GetAttachedSurface(lpDDSCaps, &surface);
-
     // These are rather common, as some games query expecting to get nothing in return, for
     // example it's a common use case to query the mip attach chain until nothing is returned
     if (FAILED(hr)) {
@@ -699,8 +771,8 @@ namespace dxvk {
         } else {
           Com<DDrawSurface> ddrawSurface = new DDrawSurface(nullptr, std::move(surface), m_parent, this, false);
           m_attachedSurfaces.emplace(std::piecewise_construct,
-                                      std::forward_as_tuple(ddrawSurface->GetProxied()),
-                                      std::forward_as_tuple(ddrawSurface.ref()));
+                                     std::forward_as_tuple(ddrawSurface->GetProxied()),
+                                     std::forward_as_tuple(ddrawSurface.ref()));
           *lplpDDAttachedSurface = ddrawSurface.ref();
         }
       } else {
@@ -751,7 +823,7 @@ namespace dxvk {
 
     *lplpDDClipper = ref(clipper);
 
-    return D3D_OK;
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDrawSurface::GetColorKey(DWORD dwFlags, LPDDCOLORKEY lpDDColorKey) {
@@ -851,24 +923,24 @@ namespace dxvk {
     Logger::debug("<<< DDrawSurface::ReleaseDC: Proxy");
 
     HRESULT hr = GetShadowOrProxied()->ReleaseDC(hDC);
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    if (likely(SUCCEEDED(hr))) {
-      m_commonSurf->DirtyDDrawSurface();
+    m_commonSurf->DirtyDDrawSurface();
 
-      d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
-      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
-        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
-                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
-                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
-                                   false : true;
-        if (shouldPresent) {
-          InitializeOrUploadD3D9();
-          d3d9Device->Present(NULL, NULL, NULL, NULL);
-        }
+    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
+    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+      const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                  m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                  false : true;
+      if (shouldPresent) {
+        InitializeOrUploadD3D9();
+        d3d9Device->Present(NULL, NULL, NULL, NULL);
       }
     }
 
-    return hr;
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDrawSurface::Restore() {
@@ -917,8 +989,10 @@ namespace dxvk {
     // appear to work well universally, however, so only apply when needed.
     if (unlikely(m_commonIntf->GetOptions()->colorKeyMasking && lpDDColorKey != nullptr)) {
       const uint8_t colorBitCount = m_commonSurf->GetColorBitCount();
-      lpDDColorKey->dwColorSpaceLowValue  &= (1 << colorBitCount) - 1;
-      lpDDColorKey->dwColorSpaceHighValue &= (1 << colorBitCount) - 1;
+      if (likely(colorBitCount < 32u)) {
+        lpDDColorKey->dwColorSpaceLowValue  &= (1 << colorBitCount) - 1;
+        lpDDColorKey->dwColorSpaceHighValue &= (1 << colorBitCount) - 1;
+      }
     }
 
     HRESULT hr = m_proxy->SetColorKey(dwFlags, lpDDColorKey);
@@ -975,24 +1049,24 @@ namespace dxvk {
     Logger::debug("<<< DDrawSurface::Unlock: Proxy");
 
     HRESULT hr = GetShadowOrProxied()->Unlock(lpSurfaceData);
+    if (unlikely(FAILED(hr)))
+      return hr;
 
-    if (likely(SUCCEEDED(hr))) {
-      m_commonSurf->DirtyDDrawSurface();
+    m_commonSurf->DirtyDDrawSurface();
 
-      d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
-      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
-        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
-                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
-                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
-                                   false : true;
-        if (shouldPresent) {
-          InitializeOrUploadD3D9();
-          d3d9Device->Present(NULL, NULL, NULL, NULL);
-        }
+    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->RefreshD3D9Device();
+    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+      const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                 m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                 false : true;
+      if (shouldPresent) {
+        InitializeOrUploadD3D9();
+        d3d9Device->Present(NULL, NULL, NULL, NULL);
       }
     }
 
-    return hr;
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDrawSurface::UpdateOverlay(LPRECT lpSrcRect, LPDIRECTDRAWSURFACE lpDDDestSurface, LPRECT lpDestRect, DWORD dwFlags, LPDDOVERLAYFX lpDDOverlayFx) {
@@ -1001,8 +1075,8 @@ namespace dxvk {
     if (unlikely(lpDDDestSurface == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDDestSurface))) {
-      Logger::warn("DDrawSurface::UpdateOverlay: Received an unwrapped surface");
+    if (unlikely(!DDrawCommonInterface::IsWrappedSurface(lpDDDestSurface))) {
+      Logger::err("DDrawSurface::UpdateOverlay: Received an unwrapped surface");
       return DDERR_UNSUPPORTED;
     }
 
@@ -1019,13 +1093,20 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDrawSurface::UpdateOverlayZOrder(DWORD dwFlags, LPDIRECTDRAWSURFACE lpDDSReference) {
     Logger::debug("<<< DDrawSurface::UpdateOverlayZOrder: Proxy");
 
-    if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDSReference))) {
-      Logger::warn("DDrawSurface::UpdateOverlayZOrder: Received an unwrapped surface");
+    const bool referenceIsWrappedSurface = lpDDSReference == nullptr ||
+                                           DDrawCommonInterface::IsWrappedSurface(lpDDSReference);
+
+    if (unlikely(!referenceIsWrappedSurface)) {
+      Logger::err("DDrawSurface::UpdateOverlayZOrder: Received an unwrapped surface");
       return DDERR_UNSUPPORTED;
     }
 
-    DDrawSurface* ddrawSurface = static_cast<DDrawSurface*>(lpDDSReference);
-    return m_proxy->UpdateOverlayZOrder(dwFlags, ddrawSurface->GetProxied());
+    if (lpDDSReference == nullptr) {
+      return m_proxy->UpdateOverlayZOrder(dwFlags, lpDDSReference);
+    } else {
+      DDrawSurface* ddrawSurface = static_cast<DDrawSurface*>(lpDDSReference);
+      return m_proxy->UpdateOverlayZOrder(dwFlags, ddrawSurface->GetProxied());
+    }
   }
 
   IDirectDrawSurface* DDrawSurface::GetShadowOrProxied() {
@@ -1206,12 +1287,14 @@ namespace dxvk {
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
     DWORD deviceCreationFlags9 = D3DCREATE_SOFTWARE_VERTEXPROCESSING;
+    bool  isHALDevice          = false;
     bool  rgbFallback          = false;
 
     if (likely(!d3dOptions->forceSWVP)) {
       if (riid == IID_IDirect3DHALDevice || riid == IID_WineD3DDevice) {
         Logger::info("DDrawSurface::CreateDeviceInternal: Creating an IID_IDirect3DHALDevice device");
         deviceCreationFlags9 = D3DCREATE_MIXED_VERTEXPROCESSING;
+        isHALDevice = true;
       } else if (riid == IID_IDirect3DRGBDevice) {
         Logger::info("DDrawSurface::CreateDeviceInternal: Creating an IID_IDirect3DRGBDevice device");
       } else if (riid == IID_IDirect3DMMXDevice) {
@@ -1234,6 +1317,10 @@ namespace dxvk {
     if (unlikely(hWnd == nullptr)) {
       Logger::debug("DDrawSurface::CreateDeviceInternal: HWND is NULL");
     }
+
+    HRESULT hrRT = m_commonSurf->ValidateRTUsage(isHALDevice, true);
+    if (unlikely(FAILED(hrRT)))
+      return hrRT;
 
     DWORD backBufferWidth  = m_commonSurf->GetDesc()->dwWidth;
     DWORD BackBufferHeight = m_commonSurf->GetDesc()->dwHeight;
@@ -1309,11 +1396,11 @@ namespace dxvk {
     params.MultiSampleQuality = 0;
     params.SwapEffect         = d3d9::D3DSWAPEFFECT_DISCARD;
     params.hDeviceWindow      = hWnd;
-    params.Windowed           = TRUE; // Always use windowed, so that we can delegate mode switching to ddraw
+    params.Windowed           = TRUE; // Always use windowed, so that we can delegate mode switching to DDraw
     params.EnableAutoDepthStencil     = FALSE;
     params.AutoDepthStencilFormat     = d3d9::D3DFMT_UNKNOWN;
     params.Flags                      = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER; // Needed for back buffer locks
-    params.FullScreen_RefreshRateInHz = 0; // We'll get the right mode/refresh rate set by ddraw, just play along
+    params.FullScreen_RefreshRateInHz = 0; // We'll get the right mode/refresh rate set by DDraw, just play along
     params.PresentationInterval       = D3DPRESENT_INTERVAL_DEFAULT; // A D3D3 device always uses VSync
 
     Com<d3d9::IDirect3DDevice9> device9;
