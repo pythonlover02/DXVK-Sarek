@@ -1517,7 +1517,9 @@ namespace dxvk {
     m_immConstBuf = m_module.newVarInit(
       pointerTypeId, spv::StorageClassPrivate,
       arrayId);
+
     m_module.setDebugName(m_immConstBuf, "icb");
+    m_module.decorate(m_immConstBuf, spv::DecorationNonWritable);
   }
 
 
