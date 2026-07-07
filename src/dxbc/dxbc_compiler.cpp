@@ -3168,6 +3168,13 @@ namespace dxvk {
     DxbcRegisterValue imageSize   = emitQueryTextureSize(ins.src[1], mipLod);
     DxbcRegisterValue imageLevels = emitQueryTextureLods(ins.src[1]);
 
+    // If the mip level is out of bounds, D3D requires us to return
+    // zero before applying modifiers, whereas SPIR-V is undefined,
+    // so we need to fix it up manually here.
+    imageSize.id = m_module.opSelect(getVectorTypeId(imageSize.type),
+      m_module.opULessThan(m_module.defBoolType(), mipLod.id, imageLevels.id),
+      imageSize.id, emitBuildZeroVector(imageSize.type).id);
+
     // Convert intermediates to the requested type
     if (returnType == DxbcScalarType::Float32) {
       imageSize.type.ctype = DxbcScalarType::Float32;
