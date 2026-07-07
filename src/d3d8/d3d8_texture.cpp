@@ -1,6 +1,7 @@
 #include "d3d8_texture.h"
 
-#include "d3d8_d3d9_util.h"
+#include "d3d8_device.h"
+#include "d3d8_util.h"
 
 namespace dxvk {
 
@@ -13,6 +14,11 @@ namespace dxvk {
     : D3D8Texture2DBase(pDevice, Pool, std::move(pTexture), pTexture->GetLevelCount()) {
   }
 
+  D3D8Texture2D::~D3D8Texture2D() {
+    if (unlikely(m_parent->GetOptions()->textureUAFGuard))
+      m_parent->RemoveValidTexture(this);
+  }
+
   D3DRESOURCETYPE STDMETHODCALLTYPE D3D8Texture2D::GetType() { return D3DRTYPE_TEXTURE; }
 
   HRESULT STDMETHODCALLTYPE D3D8Texture2D::GetLevelDesc(UINT Level, D3DSURFACE_DESC* pDesc) {
@@ -21,11 +27,12 @@ namespace dxvk {
 
     d3d9::D3DSURFACE_DESC surf;
     HRESULT res = GetD3D9()->GetLevelDesc(Level, &surf);
+    if (unlikely(FAILED(res)))
+      return res;
 
-    if (likely(SUCCEEDED(res)))
-      ConvertSurfaceDesc8(&surf, pDesc);
+    ConvertSurfaceDesc8(&surf, pDesc);
 
-    return res;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Texture2D::GetSurfaceLevel(UINT Level, IDirect3DSurface8** ppSurfaceLevel) {
@@ -56,6 +63,11 @@ namespace dxvk {
           Com<d3d9::IDirect3DVolumeTexture9>&&  pVolumeTexture)
     : D3D8Texture3DBase(pDevice, Pool, std::move(pVolumeTexture), pVolumeTexture->GetLevelCount()) {}
 
+  D3D8Texture3D::~D3D8Texture3D() {
+    if (unlikely(m_parent->GetOptions()->textureUAFGuard))
+      m_parent->RemoveValidTexture(this);
+  }
+
   D3DRESOURCETYPE STDMETHODCALLTYPE D3D8Texture3D::GetType() { return D3DRTYPE_VOLUMETEXTURE; }
 
   HRESULT STDMETHODCALLTYPE D3D8Texture3D::GetLevelDesc(UINT Level, D3DVOLUME_DESC *pDesc) {
@@ -64,11 +76,12 @@ namespace dxvk {
 
     d3d9::D3DVOLUME_DESC vol;
     HRESULT res = GetD3D9()->GetLevelDesc(Level, &vol);
+    if (unlikely(FAILED(res)))
+      return res;
 
-    if (likely(SUCCEEDED(res)))
-      ConvertVolumeDesc8(&vol, pDesc);
+    ConvertVolumeDesc8(&vol, pDesc);
 
-    return res;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D8Texture3D::GetVolumeLevel(UINT Level, IDirect3DVolume8** ppVolumeLevel) {
@@ -105,6 +118,11 @@ namespace dxvk {
     : D3D8TextureCubeBase(pDevice, Pool, std::move(pTexture), pTexture->GetLevelCount() * CUBE_FACES) {
   }
 
+  D3D8TextureCube::~D3D8TextureCube() {
+    if (unlikely(m_parent->GetOptions()->textureUAFGuard))
+      m_parent->RemoveValidTexture(this);
+  }
+
   D3DRESOURCETYPE STDMETHODCALLTYPE D3D8TextureCube::GetType() { return D3DRTYPE_CUBETEXTURE; }
 
   HRESULT STDMETHODCALLTYPE D3D8TextureCube::GetLevelDesc(UINT Level, D3DSURFACE_DESC* pDesc) {
@@ -113,11 +131,12 @@ namespace dxvk {
 
     d3d9::D3DSURFACE_DESC surf;
     HRESULT res = GetD3D9()->GetLevelDesc(Level, &surf);
+    if (unlikely(FAILED(res)))
+      return res;
 
-    if (likely(SUCCEEDED(res)))
-      ConvertSurfaceDesc8(&surf, pDesc);
+    ConvertSurfaceDesc8(&surf, pDesc);
 
-    return res;
+    return D3D_OK;
   }
 
   HRESULT STDMETHODCALLTYPE D3D8TextureCube::GetCubeMapSurface(
