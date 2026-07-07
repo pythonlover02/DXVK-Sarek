@@ -15,7 +15,7 @@ namespace dxvk::vk {
 
   /**
    * \brief Presenter description
-   * 
+   *
    * Contains the desired properties of
    * the swap chain. This is passed as
    * an input during swap chain creation.
@@ -32,7 +32,7 @@ namespace dxvk::vk {
 
   /**
    * \brief Presenter properties
-   * 
+   *
    * Contains the actual properties
    * of the underlying swap chain.
    */
@@ -49,7 +49,7 @@ namespace dxvk::vk {
   struct PresenterFeatures {
     bool                fullScreenExclusive : 1;
   };
-  
+
   /**
    * \brief Adapter and queue
    */
@@ -70,7 +70,7 @@ namespace dxvk::vk {
 
   /**
    * \brief Presenter semaphores
-   * 
+   *
    * Pair of semaphores used for acquire and present
    * operations, including the command buffers used
    * in between. Also stores a fence to signal on
@@ -83,7 +83,7 @@ namespace dxvk::vk {
 
   /**
    * \brief Vulkan presenter
-   * 
+   *
    * Provides abstractions for some of the
    * more complicated aspects of Vulkan's
    * window system integration.
@@ -98,7 +98,7 @@ namespace dxvk::vk {
       const Rc<DeviceFn>&   vkd,
             PresenterDevice device,
       const PresenterDesc&  desc);
-    
+
     ~Presenter();
 
     /**
@@ -109,7 +109,7 @@ namespace dxvk::vk {
 
     /**
      * \brief Retrieves image by index
-     * 
+     *
      * Can be used to create per-image objects.
      * \param [in] index Image index
      * \returns Image handle
@@ -119,7 +119,7 @@ namespace dxvk::vk {
 
     /**
      * \brief Acquires next image
-     * 
+     *
      * Potentially blocks the calling thread.
      * If this returns an error, the swap chain
      * must be recreated and a new image must
@@ -131,20 +131,20 @@ namespace dxvk::vk {
     VkResult acquireNextImage(
             PresenterSync&  sync,
             uint32_t&       index);
-    
+
     /**
      * \brief Presents current image
-     * 
+     *
      * Presents the current image. If this returns
      * an error, the swap chain must be recreated,
      * but do not present before acquiring an image.
      * \returns Status of the operation
      */
     VkResult presentImage();
-    
+
     /**
      * \brief Changes presenter properties
-     * 
+     *
      * Recreates the swap chain immediately. Note that
      * no swap chain resources must be in use by the
      * GPU at the time this is called.
@@ -197,15 +197,15 @@ namespace dxvk::vk {
 
     VkResult getSupportedFormats(
             std::vector<VkSurfaceFormatKHR>& formats,
-      const PresenterDesc&            desc);
-    
+            VkFullScreenExclusiveEXT  fullScreenExclusive) const;
+
     VkResult getSupportedPresentModes(
             std::vector<VkPresentModeKHR>& modes,
-      const PresenterDesc&            desc);
-    
+            VkFullScreenExclusiveEXT  fullScreenExclusive) const;
+
     VkResult getSwapImages(
             std::vector<VkImage>&     images);
-    
+
     VkSurfaceFormatKHR pickFormat(
             uint32_t                  numSupported,
       const VkSurfaceFormatKHR*       pSupported,
