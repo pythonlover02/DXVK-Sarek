@@ -7561,6 +7561,7 @@ namespace dxvk {
       spv::StorageClassPrivate, samplePosArray);
 
     m_module.setDebugName(varId, "g_sample_pos");
+    m_module.decorate(varId, spv::DecorationNonWritable);
     return varId;
   }
 
