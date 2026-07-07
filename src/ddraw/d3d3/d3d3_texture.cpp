@@ -2,21 +2,26 @@
 
 #include "../ddraw_common_interface.h"
 #include "../ddraw_common_surface.h"
+#include "../d3d_common_texture.h"
 
 #include "../ddraw/ddraw_surface.h"
 
 namespace dxvk {
 
-  uint32_t D3D3Texture::s_texCount = 0;
+  std::atomic<uint32_t> D3D3Texture::s_texCount = 0;
 
   D3D3Texture::D3D3Texture(
+        D3DCommonTexture* commonTex,
         DDrawCommonSurface* commonSurf,
         Com<IDirect3DTexture>&& proxyTexture,
-        IUnknown* pParent,
-        D3DTEXTUREHANDLE handle)
+        IUnknown* pParent)
     : DDrawWrappedObject<IUnknown, IDirect3DTexture>(pParent, std::move(proxyTexture))
+    , m_commonTex ( commonTex )
     , m_commonIntf ( commonSurf->GetCommonInterface() ) {
-    m_commonTex = new D3DCommonTexture(commonSurf, handle);
+    if (m_commonTex == nullptr)
+      m_commonTex = new D3DCommonTexture(commonSurf);
+
+    m_commonTex->SetD3D3Texture(this);
 
     m_texCount = ++s_texCount;
 
@@ -24,7 +29,7 @@ namespace dxvk {
   }
 
   D3D3Texture::~D3D3Texture() {
-    m_commonIntf->ReleaseTextureHandle(m_commonTex->GetTextureHandle());
+    m_commonTex->SetD3D3Texture(nullptr);
 
     Logger::debug(str::format("D3D3Texture: Texture nr. [[1-", m_texCount, "]] bites the dust"));
   }
@@ -95,8 +100,28 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D3Texture::GetHandle(LPDIRECT3DDEVICE lpDirect3DDevice, LPD3DTEXTUREHANDLE lpHandle) {
     Logger::debug(">>> D3D3Texture::GetHandle");
 
-    if(unlikely(lpDirect3DDevice == nullptr || lpHandle == nullptr))
+    if (unlikely(lpDirect3DDevice == nullptr || lpHandle == nullptr))
       return DDERR_INVALIDPARAMS;
+
+    DDrawCommonSurface* commonSurf = m_commonTex->GetCommonSurface();
+
+    if (unlikely(!commonSurf->IsTexture())) {
+      // The Sims tries to get a handle from a surface which wasn't created with the DDSCAPS_TEXTURE flag,
+      // so manually flag it as a texture before we initialize its D3D9 object
+      if (likely(!commonSurf->IsInitialized())) {
+        Logger::debug("D3D3Texture::GetHandle: Parent surface isn't a texture");
+        m_commonTex->GetCommonSurface()->MarkWithTextureHandle();
+      // If for some reason this happens after it's initialized, there's nothing we can do but log an error
+      } else {
+        Logger::err("D3D3Texture::GetHandle: Parent surface isn't a texture");
+      }
+    }
+
+    if (!m_commonTex->GetTextureHandle()) {
+      const D3DTEXTUREHANDLE nextHandle = DDrawCommonInterface::GetNextTextureHandle();
+      m_commonTex->SetTextureHandle(nextHandle);
+      DDrawCommonInterface::EmplaceTexture(m_commonTex.ptr(), nextHandle);
+    }
 
     *lpHandle = m_commonTex->GetTextureHandle();
 
@@ -115,6 +140,8 @@ namespace dxvk {
 
     Com<D3D3Texture> d3d3Texture = static_cast<D3D3Texture*>(lpD3DTexture);
 
+    // Note: Will not work if IDirect3DTexture is queried directly
+    // from IDirectDrawSurface4, though that shouldn't happen in practice
     DDrawSurface* parentSurf = d3d3Texture->GetCommonTexture()->GetDDSurface();
     if (likely(parentSurf != nullptr)) {
       parentSurf->DownloadSurfaceData();
@@ -127,12 +154,15 @@ namespace dxvk {
       return hr;
 
     DDrawCommonSurface* commonSurf = m_commonTex->GetCommonSurface();
-    HRESULT hrDesc = commonSurf->RefreshSurfaceDescripton();
-    if (unlikely(FAILED(hrDesc)))
+    hr = commonSurf->RefreshSurfaceDescripton();
+    if (unlikely(FAILED(hr))) {
       Logger::err("D3D3Texture::Load: Failed to refresh surface description");
+      return hr;
+    }
+
     commonSurf->DirtyDDrawSurface();
 
-    return hr;
+    return D3D_OK;
   }
 
   // Docs state: "Returns DDERR_ALREADYINITIALIZED because the Direct3DTexture object is initialized when it is created."

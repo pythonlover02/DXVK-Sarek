@@ -10,16 +10,16 @@
 
 namespace dxvk {
 
-  uint32_t D3D7Interface::s_intfCount = 0;
+  std::atomic<uint32_t> D3D7Interface::s_intfCount = 0;
 
   D3D7Interface::D3D7Interface(
-        DDrawCommonInterface* commonIntf,
         D3DCommonInterface* commonD3DIntf,
+        DDrawCommonInterface* commonIntf,
         Com<IDirect3D7>&& d3d7IntfProxy,
         IUnknown* pParent)
     : DDrawWrappedObject<IUnknown, IDirect3D7>(pParent, std::move(d3d7IntfProxy))
-    , m_commonIntf ( commonIntf )
-    , m_commonD3DIntf ( commonD3DIntf ) {
+    , m_commonD3DIntf ( commonD3DIntf )
+    , m_commonIntf ( commonIntf ) {
     if (m_commonD3DIntf == nullptr) {
       m_commonD3DIntf = new D3DCommonInterface();
 
@@ -185,15 +185,18 @@ namespace dxvk {
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
     DWORD deviceCreationFlags9 = D3DCREATE_SOFTWARE_VERTEXPROCESSING;
+    bool  isHALOrTNLHALDevice  = false;
     bool  rgbFallback          = false;
 
     if (likely(!d3dOptions->forceSWVP)) {
       if (rclsid == IID_IDirect3DTnLHalDevice) {
         Logger::info("D3D7Interface::CreateDevice: Creating an IID_IDirect3DTnLHalDevice device");
         deviceCreationFlags9 = D3DCREATE_HARDWARE_VERTEXPROCESSING;
+        isHALOrTNLHALDevice = true;
       } else if (rclsid == IID_IDirect3DHALDevice || rclsid == IID_WineD3DDevice) {
         Logger::info("D3D7Interface::CreateDevice: Creating an IID_IDirect3DHALDevice device");
         deviceCreationFlags9 = D3DCREATE_MIXED_VERTEXPROCESSING;
+        isHALOrTNLHALDevice = true;
       } else if (rclsid == IID_IDirect3DRGBDevice) {
         Logger::info("D3D7Interface::CreateDevice: Creating an IID_IDirect3DRGBDevice device");
       } else {
@@ -212,12 +215,16 @@ namespace dxvk {
     }
 
     Com<DDraw7Surface> rt7;
-    if (unlikely(!m_commonIntf->IsWrappedSurface(surface))) {
+    if (unlikely(!DDrawCommonInterface::IsWrappedSurface(surface))) {
       Logger::err("D3D7Interface::CreateDevice: Unwrapped surface passed as RT");
       return DDERR_UNSUPPORTED;
     } else {
       rt7 = static_cast<DDraw7Surface*>(surface);
     }
+
+    HRESULT hrRT = rt7->GetCommonSurface()->ValidateRTUsage7(isHALOrTNLHALDevice, true);
+    if (unlikely(FAILED(hrRT)))
+      return hrRT;
 
     Com<IDirect3DDevice7> d3d7DeviceProxy;
     HRESULT hr = m_proxy->CreateDevice(rclsidOverride, rt7->GetShadowOrProxied(), &d3d7DeviceProxy);
@@ -290,11 +297,11 @@ namespace dxvk {
     params.MultiSampleQuality = 0;
     params.SwapEffect         = d3d9::D3DSWAPEFFECT_DISCARD;
     params.hDeviceWindow      = hWnd;
-    params.Windowed           = TRUE; // Always use windowed, so that we can delegate mode switching to ddraw
+    params.Windowed           = TRUE; // Always use windowed, so that we can delegate mode switching to DDraw
     params.EnableAutoDepthStencil     = FALSE;
     params.AutoDepthStencilFormat     = d3d9::D3DFMT_UNKNOWN;
     params.Flags                      = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER; // Needed for back buffer locks
-    params.FullScreen_RefreshRateInHz = 0; // We'll get the right mode/refresh rate set by ddraw, just play along
+    params.FullScreen_RefreshRateInHz = 0; // We'll get the right mode/refresh rate set by DDraw, just play along
     params.PresentationInterval       = vBlankStatus ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;
 
     Com<d3d9::IDirect3DDevice9> device9;
@@ -402,10 +409,10 @@ namespace dxvk {
       d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();
 
       // Note: This doesn't do anything in the D3D9 backend at the moment
-      HRESULT hr9 = d3d9Device->EvictManagedResources();
-      if (unlikely(FAILED(hr9))) {
+      hr = d3d9Device->EvictManagedResources();
+      if (unlikely(FAILED(hr))) {
         Logger::err("D3D7Interface::EvictManagedTextures: Failed D3D9 managed resource eviction");
-        return hr9;
+        return hr;
       }
     }
 

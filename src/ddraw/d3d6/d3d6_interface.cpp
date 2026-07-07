@@ -9,22 +9,23 @@
 #include "../d3d_multithread.h"
 
 #include "../d3d3/d3d3_interface.h"
+#include "../d3d5/d3d5_interface.h"
 
 #include "../ddraw4/ddraw4_interface.h"
 #include "../ddraw4/ddraw4_surface.h"
 
 namespace dxvk {
 
-  uint32_t D3D6Interface::s_intfCount = 0;
+  std::atomic<uint32_t> D3D6Interface::s_intfCount = 0;
 
   D3D6Interface::D3D6Interface(
-        DDrawCommonInterface* commonIntf,
         D3DCommonInterface* commonD3DIntf,
+        DDrawCommonInterface* commonIntf,
         Com<IDirect3D3>&& d3d6IntfProxy,
         IUnknown* pParent)
     : DDrawWrappedObject<IUnknown, IDirect3D3>(pParent, std::move(d3d6IntfProxy))
-    , m_commonIntf ( commonIntf )
-    , m_commonD3DIntf ( commonD3DIntf ) {
+    , m_commonD3DIntf ( commonD3DIntf )
+    , m_commonIntf ( commonIntf ) {
     if (m_commonD3DIntf == nullptr) {
       m_commonD3DIntf = new D3DCommonInterface();
 
@@ -89,17 +90,19 @@ namespace dxvk {
 
     InitReturnPtr(ppvObject);
 
+    if (unlikely(riid == __uuidof(IDirectDraw))) {
+      Logger::debug("D3D6Interface::QueryInterface: Query for IDirectDraw");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
+    if (unlikely(riid == __uuidof(IDirectDraw2))) {
+      Logger::debug("D3D6Interface::QueryInterface: Query for IDirectDraw2");
+      return m_parent->QueryInterface(riid, ppvObject);
+    }
     if (riid == __uuidof(IDirectDraw4)) {
       Logger::debug("D3D6Interface::QueryInterface: Query for IDirectDraw4");
       return m_parent->QueryInterface(riid, ppvObject);
     }
-    // Some games query for ddraw interfaces
-    if (unlikely(riid == __uuidof(IDirectDraw)
-              || riid == __uuidof(IDirectDraw2))) {
-      Logger::debug("D3D6Interface::QueryInterface: Query for legacy IDirectDraw");
-      return m_parent->QueryInterface(riid, ppvObject);
-    }
-    // Some games query for legacy d3d interfaces
+    // Some games query for legacy D3D interfaces
     if (unlikely(riid == __uuidof(IDirect3D))) {
       if (m_commonD3DIntf->GetD3D3Interface() != nullptr) {
         Logger::debug("D3D6Interface::QueryInterface: Query for existing IDirect3D");
@@ -108,9 +111,22 @@ namespace dxvk {
 
       Logger::debug("D3D6Interface::QueryInterface: Query for IDirect3D");
 
-      Com<D3D3Interface> d3d3Intf = new D3D3Interface(m_commonIntf, m_commonD3DIntf.ptr(), m_parent);
-      m_commonIntf->SetD3D3Interface(d3d3Intf.ptr());
-      *ppvObject = d3d3Intf.ref();
+      m_d3d3Intf = new D3D3Interface(m_commonD3DIntf.ptr(), m_commonIntf, m_parent);
+      m_commonIntf->SetD3D3Interface(m_d3d3Intf.ptr());
+      *ppvObject = m_d3d3Intf.ref();
+
+      return S_OK;
+    }
+    if (unlikely(riid == __uuidof(IDirect3D2))) {
+      if (m_commonD3DIntf->GetD3D5Interface() != nullptr) {
+        Logger::debug("D3D6Interface::QueryInterface: Query for existing IDirect3D2");
+        return m_commonD3DIntf->GetD3D5Interface()->QueryInterface(riid, ppvObject);
+      }
+
+      Logger::debug("D3D6Interface::QueryInterface: Query for IDirect3D2");
+
+      m_d3d5Intf = new D3D5Interface(m_commonD3DIntf.ptr(), m_commonIntf, m_parent);
+      *ppvObject = m_d3d5Intf.ref();
 
       return S_OK;
     }
@@ -224,11 +240,7 @@ namespace dxvk {
 
     InitReturnPtr(lplpDirect3DMaterial);
 
-    D3DMATERIALHANDLE handle = m_commonD3DIntf->GetNextMaterialHandle();
-    Com<D3D6Material> d3d6Material = new D3D6Material(this, handle);
-    m_commonD3DIntf->EmplaceMaterial(d3d6Material->GetCommonMaterial(), handle);
-
-    *lplpDirect3DMaterial = d3d6Material.ref();
+    *lplpDirect3DMaterial = ref(new D3D6Material(this));
 
     return D3D_OK;
   }
@@ -360,12 +372,14 @@ namespace dxvk {
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
     DWORD deviceCreationFlags9 = D3DCREATE_SOFTWARE_VERTEXPROCESSING;
+    bool  isHALDevice          = false;
     bool  rgbFallback          = false;
 
     if (likely(!d3dOptions->forceSWVP)) {
       if (rclsid == IID_IDirect3DHALDevice || rclsid == IID_WineD3DDevice) {
         Logger::info("D3D6Interface::CreateDevice: Creating an IID_IDirect3DHALDevice device");
         deviceCreationFlags9 = D3DCREATE_MIXED_VERTEXPROCESSING;
+        isHALDevice = true;
       } else if (rclsid == IID_IDirect3DRGBDevice) {
         Logger::info("D3D6Interface::CreateDevice: Creating an IID_IDirect3DRGBDevice device");
       } else if (rclsid == IID_IDirect3DMMXDevice) {
@@ -388,12 +402,16 @@ namespace dxvk {
     }
 
     Com<DDraw4Surface> rt4;
-    if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDS))) {
+    if (unlikely(!DDrawCommonInterface::IsWrappedSurface(lpDDS))) {
       Logger::err("D3D6Interface::CreateDevice: Unwrapped surface passed as RT");
       return DDERR_UNSUPPORTED;
     } else {
       rt4 = static_cast<DDraw4Surface*>(lpDDS);
     }
+
+    HRESULT hrRT = rt4->GetCommonSurface()->ValidateRTUsage(isHALDevice, true);
+    if (unlikely(FAILED(hrRT)))
+      return hrRT;
 
     DDSURFACEDESC2 desc;
     desc.dwSize = sizeof(DDSURFACEDESC2);
@@ -458,11 +476,11 @@ namespace dxvk {
     params.MultiSampleQuality = 0;
     params.SwapEffect         = d3d9::D3DSWAPEFFECT_DISCARD;
     params.hDeviceWindow      = hWnd;
-    params.Windowed           = TRUE; // Always use windowed, so that we can delegate mode switching to ddraw
+    params.Windowed           = TRUE; // Always use windowed, so that we can delegate mode switching to DDraw
     params.EnableAutoDepthStencil     = FALSE;
     params.AutoDepthStencilFormat     = d3d9::D3DFMT_UNKNOWN;
     params.Flags                      = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER; // Needed for back buffer locks
-    params.FullScreen_RefreshRateInHz = 0; // We'll get the right mode/refresh rate set by ddraw, just play along
+    params.FullScreen_RefreshRateInHz = 0; // We'll get the right mode/refresh rate set by DDraw, just play along
     params.PresentationInterval       = vBlankStatus ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;
 
     Com<d3d9::IDirect3DDevice9> device9;
@@ -571,10 +589,10 @@ namespace dxvk {
       d3d9::IDirect3DDevice9* d3d9Device = commonDevice->GetD3D9Device();
 
       // Note: This doesn't do anything in the D3D9 backend at the moment
-      HRESULT hr9 = d3d9Device->EvictManagedResources();
-      if (unlikely(FAILED(hr9))) {
+      hr = d3d9Device->EvictManagedResources();
+      if (unlikely(FAILED(hr))) {
         Logger::err("D3D6Interface::EvictManagedTextures: Failed D3D9 managed resource eviction");
-        return hr9;
+        return hr;
       }
     }
 

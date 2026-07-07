@@ -17,7 +17,7 @@
 
 namespace dxvk {
 
-  uint32_t DDraw4Interface::s_intfCount = 0;
+  std::atomic<uint32_t> DDraw4Interface::s_intfCount = 0;
 
   DDraw4Interface::DDraw4Interface(
         DDrawCommonInterface* commonIntf,
@@ -69,7 +69,7 @@ namespace dxvk {
         if (unlikely(FAILED(hr)))
           return hr;
 
-        m_d3d6Intf = new D3D6Interface(m_commonIntf.ptr(), nullptr, std::move(ppvProxyObject), this);
+        m_d3d6Intf = new D3D6Interface(nullptr, m_commonIntf.ptr(), std::move(ppvProxyObject), this);
       }
 
       *ppvObject = m_d3d6Intf.ref();
@@ -139,7 +139,7 @@ namespace dxvk {
 
       Logger::debug("DDraw4Interface::QueryInterface: Query for IDirect3D");
 
-      Com<D3D3Interface> d3d3Intf = new D3D3Interface(m_commonIntf.ptr(), nullptr, this);
+      Com<D3D3Interface> d3d3Intf = new D3D3Interface(nullptr, m_commonIntf.ptr(), this);
       m_commonIntf->SetD3D3Interface(d3d3Intf.ptr());
       *ppvObject = d3d3Intf.ref();
 
@@ -154,7 +154,7 @@ namespace dxvk {
 
       Logger::debug("DDraw4Interface::QueryInterface: Query for IDirect3D2");
 
-      Com<D3D5Interface> d3d5Intf = new D3D5Interface(m_commonIntf.ptr(), nullptr, this);
+      Com<D3D5Interface> d3d5Intf = new D3D5Interface(nullptr, m_commonIntf.ptr(), this);
       *ppvObject = d3d5Intf.ref();
 
       return S_OK;
@@ -197,13 +197,12 @@ namespace dxvk {
 
     Com<IDirectDrawClipper> lplpDDClipperProxy;
     HRESULT hr = m_proxy->CreateClipper(dwFlags, &lplpDDClipperProxy, pUnkOuter);
-
-    if (likely(SUCCEEDED(hr))) {
-      *lplpDDClipper = ref(new DDrawClipper(m_commonIntf.ptr(), std::move(lplpDDClipperProxy), this));
-    } else {
+    if (unlikely(FAILED(hr))) {
       Logger::warn("DDraw4Interface::CreateClipper: Failed to create proxy clipper");
       return hr;
     }
+
+    *lplpDDClipper = ref(new DDrawClipper(m_commonIntf.ptr(), std::move(lplpDDClipperProxy), this));
 
     return DD_OK;
   }
@@ -218,13 +217,12 @@ namespace dxvk {
 
     Com<IDirectDrawPalette> lplpDDPaletteProxy;
     HRESULT hr = m_proxy->CreatePalette(dwFlags, lpColorTable, &lplpDDPaletteProxy, pUnkOuter);
-
-    if (likely(SUCCEEDED(hr))) {
-      *lplpDDPalette = ref(new DDrawPalette(std::move(lplpDDPaletteProxy), this));
-    } else {
+    if (unlikely(FAILED(hr))) {
       Logger::warn("DDraw4Interface::CreatePalette: Failed to create proxy palette");
       return hr;
     }
+
+    *lplpDDPalette = ref(new DDrawPalette(std::move(lplpDDPaletteProxy), this));
 
     return DD_OK;
   }
@@ -253,6 +251,21 @@ namespace dxvk {
     // Similarly strip the DDSCAPS2_OPAQUE flag on texture creation
     lpDDSurfaceDesc->ddsCaps.dwCaps2 &= ~DDSCAPS2_OPAQUE;
 
+    // Work around a WineD3D bug/limitation that prevents
+    // read back from L6V5U5 and X8L8V8U8 video memory surfaces
+    //
+    // Note: Doing this for other surfaces/formats is a bad idea,
+    // because some games expect these flags to remain in place, and
+    // may crash in case they find that's not the case
+    if (unlikely((lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_BUMPLUMINANCE)
+              && (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_VIDEOMEMORY))) {
+      Logger::warn("DDraw4Interface::CreateSurface: Video memory DDPF_BUMPLUMINANCE surface");
+      lpDDSurfaceDesc->ddsCaps.dwCaps &= ~DDSCAPS_VIDEOMEMORY &
+                                         ~DDSCAPS_LOCALVIDMEM &
+                                         ~DDSCAPS_NONLOCALVIDMEM;
+      lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_SYSTEMMEMORY;
+    }
+
     if (unlikely((lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_ZBUFFER)
               && (lpDDSurfaceDesc->ddpfPixelFormat.dwZBitMask == 0xFFFFFFFF))) {
       if (m_commonIntf->GetOptions()->useD24X8forD32) {
@@ -268,53 +281,52 @@ namespace dxvk {
 
     Com<IDirectDrawSurface4> ddrawSurface4Proxied;
     hr = m_proxy->CreateSurface(lpDDSurfaceDesc, &ddrawSurface4Proxied, pUnkOuter);
-
-    if (likely(SUCCEEDED(hr))) {
-      try{
-        Com<DDraw4Surface> surface4 = new DDraw4Surface(nullptr, std::move(ddrawSurface4Proxied), this, nullptr, true);
-
-        if (unlikely(lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE)) {
-          m_commonIntf->SetPrimarySurface(surface4->GetCommonSurface());
-
-          // Shadow surface creation for the primary surface
-          // (it needs to be based on the same incoming desc)
-          if (unlikely(!surface4->GetCommonSurface()->Is8BitFormat() &&
-                        m_commonIntf->GetOptions()->forceLegacyPresent)) {
-            Logger::debug("DDraw4Interface::CreateSurface: Creating shadow surface");
-
-            DDSURFACEDESC2 shadowDesc = *lpDDSurfaceDesc;
-            const DDSURFACEDESC2* primaryDesc = surface4->GetCommonSurface()->GetDesc2();
-
-            shadowDesc.ddsCaps.dwCaps &= ~DDSCAPS_PRIMARYSURFACE & ~DDSCAPS_COMPLEX & ~DDSCAPS_FLIP;
-            shadowDesc.ddsCaps.dwCaps |= DDSCAPS_OFFSCREENPLAIN;
-            shadowDesc.dwFlags &= ~DDSD_BACKBUFFERCOUNT;
-            // Dimensions aren't specified in the incoming desc,
-            // but are explicitly needed for non-primary surfaces
-            shadowDesc.dwFlags |= DDSD_WIDTH | DDSD_HEIGHT;
-            shadowDesc.dwWidth  = primaryDesc->dwWidth;
-            shadowDesc.dwHeight = primaryDesc->dwHeight;
-
-            Com<IDirectDrawSurface4> ddraw4SurfaceShadow;
-            hr = m_proxy->CreateSurface(&shadowDesc, &ddraw4SurfaceShadow, pUnkOuter);
-            if (unlikely(FAILED(hr))) {
-              Logger::warn("DDraw4Interface::CreateSurface: Failed to create shadow surface");
-            } else {
-              Com<DDraw4Surface> shadowSurf = new DDraw4Surface(nullptr, std::move(ddraw4SurfaceShadow),
-                                                                this, nullptr, false);
-              surface4->SetShadowSurface(std::move(shadowSurf));
-            }
-          }
-        }
-
-        *lplpDDSurface = surface4.ref();
-      } catch (const DxvkError& e) {
-        Logger::err(e.message());
-        return DDERR_GENERIC;
-      }
     // Some games simply try creating surfaces with various formats until something works...
-    } else {
+    if (unlikely(FAILED(hr))) {
       Logger::debug("DDraw4Interface::CreateSurface: Failed to create proxy surface");
       return hr;
+    }
+
+    try{
+      Com<DDraw4Surface> surface4 = new DDraw4Surface(nullptr, std::move(ddrawSurface4Proxied), this, nullptr, true);
+
+      if (unlikely(lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_PRIMARYSURFACE)) {
+        m_commonIntf->SetPrimarySurface(surface4->GetCommonSurface());
+
+        // Shadow surface creation for the primary surface
+        // (it needs to be based on the same incoming desc)
+        if (unlikely(!surface4->GetCommonSurface()->Is8BitFormat() &&
+                      m_commonIntf->GetOptions()->forceLegacyPresent)) {
+          Logger::debug("DDraw4Interface::CreateSurface: Creating shadow surface");
+
+          DDSURFACEDESC2 shadowDesc = *lpDDSurfaceDesc;
+          const DDSURFACEDESC2* primaryDesc = surface4->GetCommonSurface()->GetDesc2();
+
+          shadowDesc.ddsCaps.dwCaps &= ~DDSCAPS_PRIMARYSURFACE & ~DDSCAPS_COMPLEX & ~DDSCAPS_FLIP;
+          shadowDesc.ddsCaps.dwCaps |= DDSCAPS_OFFSCREENPLAIN;
+          shadowDesc.dwFlags &= ~DDSD_BACKBUFFERCOUNT;
+          // Dimensions aren't specified in the incoming desc,
+          // but are explicitly needed for non-primary surfaces
+          shadowDesc.dwFlags |= DDSD_WIDTH | DDSD_HEIGHT;
+          shadowDesc.dwWidth  = primaryDesc->dwWidth;
+          shadowDesc.dwHeight = primaryDesc->dwHeight;
+
+          Com<IDirectDrawSurface4> ddraw4SurfaceShadow;
+          hr = m_proxy->CreateSurface(&shadowDesc, &ddraw4SurfaceShadow, pUnkOuter);
+          if (unlikely(FAILED(hr))) {
+            Logger::warn("DDraw4Interface::CreateSurface: Failed to create shadow surface");
+          } else {
+            Com<DDraw4Surface> shadowSurf = new DDraw4Surface(nullptr, std::move(ddraw4SurfaceShadow),
+                                                              this, nullptr, false);
+            surface4->SetShadowSurface(std::move(shadowSurf));
+          }
+        }
+      }
+
+      *lplpDDSurface = surface4.ref();
+    } catch (const DxvkError& e) {
+      Logger::err(e.message());
+      return DDERR_GENERIC;
     }
 
     return DD_OK;
@@ -323,28 +335,31 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw4Interface::DuplicateSurface(LPDIRECTDRAWSURFACE4 lpDDSurface, LPDIRECTDRAWSURFACE4 *lplpDupDDSurface) {
     Logger::debug("<<< DDraw4Interface::DuplicateSurface: Proxy");
 
-    if (m_commonIntf->IsWrappedSurface(lpDDSurface)) {
-      InitReturnPtr(lplpDupDDSurface);
+    if (unlikely(lpDDSurface == nullptr || lplpDupDDSurface == nullptr))
+      return DDERR_CANTDUPLICATE;
 
-      DDraw4Surface* ddraw4Surface = static_cast<DDraw4Surface*>(lpDDSurface);
-      Com<IDirectDrawSurface4> dupSurface4;
-      HRESULT hr = m_proxy->DuplicateSurface(ddraw4Surface->GetProxied(), &dupSurface4);
-      if (likely(SUCCEEDED(hr))) {
-        try {
-          *lplpDupDDSurface = ref(new DDraw4Surface(nullptr, std::move(dupSurface4), this, nullptr, false));
-        } catch (const DxvkError& e) {
-          Logger::err(e.message());
-          return DDERR_GENERIC;
-        }
-      }
-      return hr;
-    } else {
-      if (unlikely(lpDDSurface != nullptr)) {
-        Logger::warn("DDraw7Interface::DuplicateSurface: Received an unwrapped source surface");
-        return DDERR_UNSUPPORTED;
-      }
-      return m_proxy->DuplicateSurface(lpDDSurface, lplpDupDDSurface);
+    InitReturnPtr(lplpDupDDSurface);
+
+    if (unlikely(!DDrawCommonInterface::IsWrappedSurface(lpDDSurface))) {
+      Logger::err("DDraw4Interface::DDraw4Interface: Received an unwrapped surface");
+      return DDERR_CANTDUPLICATE;
     }
+
+    DDraw4Surface* ddraw4Surface = static_cast<DDraw4Surface*>(lpDDSurface);
+
+    Com<IDirectDrawSurface4> dupSurface4;
+    HRESULT hr = m_proxy->DuplicateSurface(ddraw4Surface->GetProxied(), &dupSurface4);
+    if (unlikely(FAILED(hr)))
+      return hr;
+
+    try {
+      *lplpDupDDSurface = ref(new DDraw4Surface(nullptr, std::move(dupSurface4), this, nullptr, false));
+    } catch (const DxvkError& e) {
+      Logger::err(e.message());
+      return DDERR_GENERIC;
+    }
+
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDraw4Interface::EnumDisplayModes(DWORD dwFlags, LPDDSURFACEDESC2 lpDDSurfaceDesc, LPVOID lpContext, LPDDENUMMODESCALLBACK2 lpEnumModesCallback) {
@@ -359,20 +374,24 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
 
     std::vector<AttachedSurface4> attachedSurfaces;
-    // Enumerate all surfaces from the underlying DDraw implementation
     HRESULT hr = m_proxy->EnumSurfaces(dwFlags, lpDDSD, reinterpret_cast<void*>(&attachedSurfaces), EnumAttachedSurfaces4Callback);
     if (unlikely(FAILED(hr)))
       return hr;
 
-    HRESULT hrCB = DDENUMRET_OK;
+    hr = DDENUMRET_OK;
 
-    // Wrap surfaces as needed and perform the actual callback the application is requesting
     auto surfaceIt = attachedSurfaces.begin();
-    while (surfaceIt != attachedSurfaces.end() && hrCB == DDENUMRET_OK) {
+    while (surfaceIt != attachedSurfaces.end() && hr == DDENUMRET_OK) {
       Com<IDirectDrawSurface4> surface4 = surfaceIt->surface4;
 
-      Com<DDraw4Surface> ddraw4Surface = new DDraw4Surface(nullptr, std::move(surface4), this, nullptr, false);
-      hrCB = lpEnumSurfacesCallback(ddraw4Surface.ref(), &surfaceIt->desc2, lpContext);
+      Com<DDraw4Surface> ddraw4Surface;
+      try {
+        ddraw4Surface = new DDraw4Surface(nullptr, std::move(surface4), this, nullptr, false);
+      } catch (const DxvkError& e) {
+        Logger::err(e.message());
+        return DDERR_GENERIC;
+      }
+      hr = lpEnumSurfacesCallback(ddraw4Surface.ref(), &surfaceIt->desc2, lpContext);
 
       ++surfaceIt;
     }
@@ -403,7 +422,6 @@ namespace dxvk {
 
     // Interstate '76 sends invalid dwSizes part of the structs,
     // and that explodes in Wine, so validate it before proxying
-
     if (unlikely(lpDDDriverCaps != nullptr && !IsValidDDrawCapsSize(lpDDDriverCaps->dwSize)))
       return DDERR_INVALIDPARAMS;
 
@@ -519,7 +537,7 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE DDraw4Interface::GetGDISurface(LPDIRECTDRAWSURFACE4 *lplpGDIDDSurface) {
     Logger::debug("<<< DDraw4Interface::GetGDISurface: Proxy");
 
-    if(unlikely(lplpGDIDDSurface == nullptr))
+    if (unlikely(lplpGDIDDSurface == nullptr))
       return DDERR_INVALIDPARAMS;
 
     InitReturnPtr(lplpGDIDDSurface);
@@ -532,19 +550,20 @@ namespace dxvk {
       return hr;
     }
 
-    if (unlikely(m_commonIntf->IsWrappedSurface(gdiSurface.ptr()))) {
+    if (unlikely(DDrawCommonInterface::IsWrappedSurface(gdiSurface.ptr()))) {
       *lplpGDIDDSurface = gdiSurface.ref();
     } else {
       Logger::debug("DDraw4Interface::GetGDISurface: Received a non-wrapped GDI surface");
       try {
-        *lplpGDIDDSurface = ref(new DDraw4Surface(nullptr, std::move(gdiSurface), this, nullptr, false));
+        *lplpGDIDDSurface = ref(new DDraw4Surface(nullptr, std::move(gdiSurface),
+                                                  this, nullptr, false));
       } catch (const DxvkError& e) {
         Logger::err(e.message());
         return DDERR_GENERIC;
       }
     }
 
-    return hr;
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDraw4Interface::GetMonitorFrequency(LPDWORD lpdwFrequency) {
@@ -602,7 +621,7 @@ namespace dxvk {
 
     m_commonIntf->SetCooperativeLevel(hWnd, dwFlags);
 
-    return hr;
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDraw4Interface::SetDisplayMode(DWORD dwWidth, DWORD dwHeight, DWORD dwBPP, DWORD dwRefreshRate, DWORD dwFlags) {
@@ -653,8 +672,8 @@ namespace dxvk {
 
       d3d9::D3DPRESENT_PARAMETERS resetParams = *commonDevice->GetPresentParameters();
       resetParams.PresentationInterval = D3DPRESENT_INTERVAL_DEFAULT;
-      HRESULT hrReset = commonDevice->ResetD3D9Swapchain(&resetParams);
-      if (likely(SUCCEEDED(hrReset)))
+      HRESULT hr = commonDevice->ResetD3D9Swapchain(&resetParams);
+      if (likely(SUCCEEDED(hr)))
         m_commonIntf->SetWaitForVBlank(true);
     }
 
@@ -738,6 +757,8 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDraw4Interface::GetSurfaceFromDC(HDC hdc, LPDIRECTDRAWSURFACE4 *pSurf) {
+    Logger::debug(">>> DDraw4Interface::GetSurfaceFromDC");
+
     if (unlikely(pSurf == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -745,7 +766,6 @@ namespace dxvk {
 
     Com<IDirectDrawSurface4> surface;
     HRESULT hr = m_proxy->GetSurfaceFromDC(hdc, &surface);
-
     if (unlikely(FAILED(hr))) {
       Logger::warn("DDraw4Interface::GetSurfaceFromDC: Failed to get surface from DC");
       return hr;
@@ -758,7 +778,7 @@ namespace dxvk {
       return DDERR_GENERIC;
     }
 
-    return hr;
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDraw4Interface::RestoreAllSurfaces() {
@@ -803,7 +823,8 @@ namespace dxvk {
     if (unlikely(dwFlags & DDGDI_GETHOSTIDENTIFIER)) {
       Logger::debug("DDraw4Interface::GetDeviceIdentifier: Retrieving secondary adapter info");
       CopyToStringArray(pDDDI->szDriver, "vga.dll");
-      CopyToStringArray(pDDDI->szDescription, "Standard VGA Adapter");
+      // The Matrox G400 TechDemo expects the description to be aligned with native
+      CopyToStringArray(pDDDI->szDescription, "DirectDraw HAL");
       pDDDI->liDriverVersion.QuadPart = 0;
       pDDDI->dwVendorId               = 0;
       pDDDI->dwDeviceId               = 0;
@@ -814,7 +835,8 @@ namespace dxvk {
       Logger::debug("DDraw4Interface::GetDeviceIdentifier: Retrieving primary adapter info");
       memcpy(&pDDDI->szDriver,      &adapterIdentifier9->Driver,      sizeof(adapterIdentifier9->Driver));
       memcpy(&pDDDI->szDescription, &adapterIdentifier9->Description, sizeof(adapterIdentifier9->Description));
-      pDDDI->liDriverVersion.QuadPart = adapterIdentifier9->DriverVersion.QuadPart;
+      // Neither ATI, nor Nvidia (Windows XP) native drivers at the time reported a version
+      pDDDI->liDriverVersion.QuadPart = 0;
       pDDDI->dwVendorId               = adapterIdentifier9->VendorId;
       pDDDI->dwDeviceId               = adapterIdentifier9->DeviceId;
       pDDDI->dwSubSysId               = adapterIdentifier9->SubSysId;

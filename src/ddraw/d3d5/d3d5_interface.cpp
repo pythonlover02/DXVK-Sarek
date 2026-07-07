@@ -7,6 +7,7 @@
 #include "../d3d_light.h"
 
 #include "../d3d3/d3d3_interface.h"
+#include "../d3d6/d3d6_interface.h"
 
 #include "../ddraw/ddraw_interface.h"
 #include "../ddraw/ddraw_surface.h"
@@ -15,15 +16,15 @@
 
 namespace dxvk {
 
-  uint32_t D3D5Interface::s_intfCount = 0;
+  std::atomic<uint32_t> D3D5Interface::s_intfCount = 0;
 
   D3D5Interface::D3D5Interface(
-        DDrawCommonInterface* m_commonIntf,
         D3DCommonInterface* commonD3DIntf,
+        DDrawCommonInterface* m_commonIntf,
         IUnknown* pParent)
     : DDrawChildObject<IUnknown, IDirect3D2>(pParent)
-    , m_commonIntf ( m_commonIntf )
-    , m_commonD3DIntf ( commonD3DIntf ) {
+    , m_commonD3DIntf ( commonD3DIntf )
+    , m_commonIntf ( m_commonIntf ) {
     if (m_commonD3DIntf == nullptr) {
       m_commonD3DIntf = new D3DCommonInterface();
 
@@ -96,7 +97,7 @@ namespace dxvk {
       Logger::debug("D3D5Interface::QueryInterface: Query for IDirectDraw2");
       return m_parent->QueryInterface(riid, ppvObject);
     }
-    // Some games query for legacy d3d interfaces
+    // Some games query for legacy D3D interfaces
     if (unlikely(riid == __uuidof(IDirect3D))) {
       if (m_commonD3DIntf->GetD3D3Interface() != nullptr) {
         Logger::debug("D3D5Interface::QueryInterface: Query for existing IDirect3D");
@@ -105,9 +106,29 @@ namespace dxvk {
 
       Logger::debug("D3D5Interface::QueryInterface: Query for IDirect3D");
 
-      Com<D3D3Interface> d3d3Intf = new D3D3Interface(m_commonIntf, m_commonD3DIntf.ptr(), m_parent);
-      m_commonIntf->SetD3D3Interface(d3d3Intf.ptr());
-      *ppvObject = d3d3Intf.ref();
+      m_d3d3Intf = new D3D3Interface(m_commonD3DIntf.ptr(), m_commonIntf, m_parent);
+      m_commonIntf->SetD3D3Interface(m_d3d3Intf.ptr());
+      *ppvObject = m_d3d3Intf.ref();
+
+      return S_OK;
+    }
+    if (unlikely(riid == __uuidof(IDirect3D3))) {
+      if (m_commonD3DIntf->GetD3D6Interface() != nullptr) {
+        Logger::debug("D3D5Interface::QueryInterface: Query for existing IDirect3D3");
+        return m_commonD3DIntf->GetD3D6Interface()->QueryInterface(riid, ppvObject);
+      }
+
+      Logger::debug("D3D5Interface::QueryInterface: Query for IDirect3D3");
+
+      // We don't have a proxied object on D3D5Interface, so use the parent
+      // DDraw interface to get a proxied object for the queried D3D6Interface
+      Com<IDirect3D3> ppvProxyObject;
+      HRESULT hr = m_parent->QueryInterface(riid, reinterpret_cast<void**>(&ppvProxyObject));
+      if (unlikely(FAILED(hr)))
+        return hr;
+
+      m_d3d6Intf = new D3D6Interface(m_commonD3DIntf.ptr(), m_commonIntf, std::move(ppvProxyObject), m_parent);
+      *ppvObject = m_d3d6Intf.ref();
 
       return S_OK;
     }
@@ -190,6 +211,7 @@ namespace dxvk {
     desc2RGB_HEL.dpcTriCaps.dwTextureCaps  |= D3DPTEXTURECAPS_POW2;
     memcpy(&descRGB_HAL, &desc2RGB_HAL, sizeof(D3DDEVICEDESC2));
     memcpy(&descRGB_HEL, &desc2RGB_HEL, sizeof(D3DDEVICEDESC2));
+
     if (likely(!d3dOptions->legacyDeviceNames)) {
       static char deviceDescRGB[100] = "D5VK RGB";
       static char deviceNameRGB[100] = "D5VK RGB";
@@ -221,6 +243,7 @@ namespace dxvk {
                             & ~D3DDEVCAPS_DRAWPRIMITIVES2EX;
     memcpy(&descHAL_HAL, &desc2HAL_HAL, sizeof(D3DDEVICEDESC2));
     memcpy(&descHAL_HEL, &desc2HAL_HEL, sizeof(D3DDEVICEDESC2));
+
     if (likely(!d3dOptions->legacyDeviceNames)) {
       static char deviceDescHAL[100] = "D5VK HAL";
       static char deviceNameHAL[100] = "D5VK HAL";
@@ -259,11 +282,7 @@ namespace dxvk {
 
     InitReturnPtr(lplpDirect3DMaterial);
 
-    D3DMATERIALHANDLE handle = m_commonD3DIntf->GetNextMaterialHandle();
-    Com<D3D5Material> d3d5Material = new D3D5Material(this, handle);
-    m_commonD3DIntf->EmplaceMaterial(d3d5Material->GetCommonMaterial(), handle);
-
-    *lplpDirect3DMaterial = d3d5Material.ref();
+    *lplpDirect3DMaterial = ref(new D3D5Material(this));
 
     return D3D_OK;
   }
@@ -401,12 +420,14 @@ namespace dxvk {
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
     DWORD deviceCreationFlags9 = D3DCREATE_SOFTWARE_VERTEXPROCESSING;
+    bool  isHALDevice          = false;
     bool  rgbFallback          = false;
 
     if (likely(!d3dOptions->forceSWVP)) {
       if (rclsid == IID_IDirect3DHALDevice || rclsid == IID_WineD3DDevice) {
         Logger::info("D3D5Interface::CreateDevice: Creating an IID_IDirect3DHALDevice device");
         deviceCreationFlags9 = D3DCREATE_MIXED_VERTEXPROCESSING;
+        isHALDevice = true;
       } else if (rclsid == IID_IDirect3DRGBDevice) {
         Logger::info("D3D5Interface::CreateDevice: Creating an IID_IDirect3DRGBDevice device");
       } else if (rclsid == IID_IDirect3DMMXDevice) {
@@ -431,9 +452,9 @@ namespace dxvk {
     }
 
     Com<DDrawSurface> rt;
-    if (unlikely(!m_commonIntf->IsWrappedSurface(lpDDS))) {
+    if (unlikely(!DDrawCommonInterface::IsWrappedSurface(lpDDS))) {
       // Nightmare Creatures passes an IDirectDrawSurface3 surface as RT
-      if (unlikely(m_commonIntf->IsWrappedSurface(reinterpret_cast<IDirectDrawSurface3*>(lpDDS)))) {
+      if (unlikely(DDrawCommonInterface::IsWrappedSurface(reinterpret_cast<IDirectDrawSurface3*>(lpDDS)))) {
         Logger::debug("D3D5Interface::CreateDevice: IDirectDrawSurface3 surface passed as RT");
         DDraw3Surface* ddraw3Surface = reinterpret_cast<DDraw3Surface*>(lpDDS);
         // A DDrawSurface usually exists, because a DDraw3Surface is obtained from it via
@@ -443,8 +464,13 @@ namespace dxvk {
         if (unlikely(rt == nullptr)) {
           Com<IDirectDrawSurface> surface;
           ddraw3Surface->GetProxied()->QueryInterface(__uuidof(IDirectDrawSurface), reinterpret_cast<void**>(&surface));
-          rt = new DDrawSurface(ddraw3Surface->GetCommonSurface(), std::move(surface),
-                                ddraw3Surface->GetCommonInterface()->GetDDInterface(), nullptr, false);
+          try {
+            rt = new DDrawSurface(ddraw3Surface->GetCommonSurface(), std::move(surface),
+                                  ddraw3Surface->GetCommonInterface()->GetDDInterface(), nullptr, false);
+          } catch (const DxvkError& e) {
+            Logger::err(e.message());
+            return DDERR_UNSUPPORTED;
+          }
           // Treat the new surface as the previously non-existent parent for our DDraw3Surface
           ddraw3Surface->UpdateParent(rt.ptr());
         }
@@ -455,6 +481,10 @@ namespace dxvk {
     } else {
       rt = static_cast<DDrawSurface*>(lpDDS);
     }
+
+    HRESULT hrRT = rt->GetCommonSurface()->ValidateRTUsage(isHALDevice, true);
+    if (unlikely(FAILED(hrRT)))
+      return hrRT;
 
     DDSURFACEDESC desc;
     desc.dwSize = sizeof(DDSURFACEDESC);
@@ -516,11 +546,11 @@ namespace dxvk {
     params.MultiSampleQuality = 0;
     params.SwapEffect         = d3d9::D3DSWAPEFFECT_DISCARD;
     params.hDeviceWindow      = hWnd;
-    params.Windowed           = TRUE; // Always use windowed, so that we can delegate mode switching to ddraw
+    params.Windowed           = TRUE; // Always use windowed, so that we can delegate mode switching to DDraw
     params.EnableAutoDepthStencil     = FALSE;
     params.AutoDepthStencilFormat     = d3d9::D3DFMT_UNKNOWN;
     params.Flags                      = D3DPRESENTFLAG_LOCKABLE_BACKBUFFER; // Needed for back buffer locks
-    params.FullScreen_RefreshRateInHz = 0; // We'll get the right mode/refresh rate set by ddraw, just play along
+    params.FullScreen_RefreshRateInHz = 0; // We'll get the right mode/refresh rate set by DDraw, just play along
     params.PresentationInterval       = D3DPRESENT_INTERVAL_DEFAULT; // A D3D5 device always uses VSync
 
     Com<d3d9::IDirect3DDevice9> device9;
