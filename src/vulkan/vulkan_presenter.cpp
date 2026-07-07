@@ -99,6 +99,9 @@ namespace dxvk::vk {
     if (m_swapchain)
       destroySwapchain();
 
+    if (!m_surface)
+      return VK_ERROR_SURFACE_LOST_KHR;
+
     // Query surface capabilities. Some properties might
     // have changed, including the size limits and supported
     // present modes, so we'll just query everything again.
@@ -123,10 +126,10 @@ namespace dxvk::vk {
         return status;
     }
 
-    if ((status = getSupportedFormats(formats, desc)) != VK_SUCCESS)
+    if ((status = getSupportedFormats(formats, desc.fullScreenExclusive)) != VK_SUCCESS)
       return status;
 
-    if ((status = getSupportedPresentModes(modes, desc)) != VK_SUCCESS)
+    if ((status = getSupportedPresentModes(modes, desc.fullScreenExclusive)) != VK_SUCCESS)
       return status;
 
     // Select actual swap chain properties and create swap chain
@@ -141,15 +144,10 @@ namespace dxvk::vk {
       return VK_SUCCESS;
     }
 
-    VkSurfaceFullScreenExclusiveInfoEXT fullScreenInfo;
-    fullScreenInfo.sType            = VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT;
-    fullScreenInfo.pNext            = nullptr;
+    VkSurfaceFullScreenExclusiveInfoEXT fullScreenInfo = { VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT };
     fullScreenInfo.fullScreenExclusive = desc.fullScreenExclusive;
 
-    VkSwapchainCreateInfoKHR swapInfo;
-    swapInfo.sType                  = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR;
-    swapInfo.pNext                  = nullptr;
-    swapInfo.flags                  = 0;
+    VkSwapchainCreateInfoKHR swapInfo = { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
     swapInfo.surface                = m_surface;
     swapInfo.minImageCount          = m_info.imageCount;
     swapInfo.imageFormat            = m_info.format.format;
@@ -159,8 +157,6 @@ namespace dxvk::vk {
     swapInfo.imageUsage             = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
                                     | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     swapInfo.imageSharingMode       = VK_SHARING_MODE_EXCLUSIVE;
-    swapInfo.queueFamilyIndexCount  = 0;
-    swapInfo.pQueueFamilyIndices    = nullptr;
     swapInfo.preTransform           = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR;
     swapInfo.compositeAlpha         = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
     swapInfo.presentMode            = m_info.presentMode;
@@ -173,6 +169,7 @@ namespace dxvk::vk {
     Logger::info(str::format(
       "Presenter: Actual swap chain properties:"
       "\n  Format:       ", m_info.format.format,
+      "\n  Color space:  ", m_info.format.colorSpace,
       "\n  Present mode: ", m_info.presentMode,
       "\n  Buffer size:  ", m_info.imageExtent.width, "x", m_info.imageExtent.height,
       "\n  Image count:  ", m_info.imageCount,
@@ -195,10 +192,7 @@ namespace dxvk::vk {
     for (uint32_t i = 0; i < m_info.imageCount; i++) {
       m_images[i].image = images[i];
 
-      VkImageViewCreateInfo viewInfo;
-      viewInfo.sType    = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
-      viewInfo.pNext    = nullptr;
-      viewInfo.flags    = 0;
+      VkImageViewCreateInfo viewInfo = { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
       viewInfo.image    = images[i];
       viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
       viewInfo.format   = m_info.format.format;
@@ -218,10 +212,7 @@ namespace dxvk::vk {
     m_semaphores.resize(m_info.imageCount);
 
     for (uint32_t i = 0; i < m_semaphores.size(); i++) {
-      VkSemaphoreCreateInfo semInfo;
-      semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
-      semInfo.pNext = nullptr;
-      semInfo.flags = 0;
+      VkSemaphoreCreateInfo semInfo = { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
 
       if ((status = m_vkd->vkCreateSemaphore(m_vkd->device(),
           &semInfo, nullptr, &m_semaphores[i].acquire)) != VK_SUCCESS)
