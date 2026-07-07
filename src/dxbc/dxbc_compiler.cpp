@@ -7613,7 +7613,9 @@ namespace dxvk {
     const char*             name) {
     const uint32_t varId = emitNewVariable(info);
 
-    m_module.setDebugName(varId, name);
+    if (name)
+      m_module.setDebugName(varId, name);
+
     m_module.decorateBuiltIn(varId, builtIn);
 
     if (m_programInfo.type() == DxbcProgramType::PixelShader
