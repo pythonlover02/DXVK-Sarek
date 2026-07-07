@@ -4,75 +4,85 @@
 
 namespace dxvk {
 
+  namespace {
+
+    bool is_dyasync_enabled(const DxvkDevice* device) {
+      return env::getEnvVar("DXVK_DISABLE_DYASYNC") != "1"
+          && device->config().enableDyasync;
+    }
+
+    bool is_state_cache_enabled(const DxvkDevice* device) {
+      return env::getEnvVar("DXVK_STATE_CACHE") != "0"
+          && device->config().enableStateCache;
+    }
+
+  }
+
+
   DxvkPipelineManager::DxvkPipelineManager(
           DxvkDevice*         device,
           DxvkRenderPassPool* passManager)
-  : m_device    (device),
-    m_cache     (new DxvkPipelineCache(device->vkd())) {
-
-    if (env::getEnvVar("DXVK_DISABLE_DYASYNC") != "1" && device->config().enableDyasync)
-      m_compiler = new DxvkPipelineCompiler(device);
-
-    if (env::getEnvVar("DXVK_STATE_CACHE") != "0" && device->config().enableStateCache)
-      m_stateCache = new DxvkStateCache(device, this, passManager);
-  }
-
-
-  DxvkPipelineManager::~DxvkPipelineManager() {
+    : m_device    (device)
+    , m_cache     (new DxvkPipelineCache(device->vkd()))
+    , m_stateCache(is_state_cache_enabled(device)
+          ? new DxvkStateCache(device, this, passManager)
+          : nullptr)
+    , m_compiler  (is_dyasync_enabled(device)
+          ? new DxvkPipelineCompiler(device)
+          : nullptr) {
 
   }
+
+
+  DxvkPipelineManager::~DxvkPipelineManager() = default;
 
 
   DxvkComputePipeline* DxvkPipelineManager::createComputePipeline(
-    const DxvkComputePipelineShaders& shaders) {
-    if (shaders.cs == nullptr)
-      return nullptr;
+          const DxvkComputePipelineShaders& shaders) {
+    return shaders.cs == nullptr
+      ? nullptr
+      : findOrCreateComputePipeline(shaders);
+  }
 
+
+  DxvkComputePipeline* DxvkPipelineManager::findOrCreateComputePipeline(
+          const DxvkComputePipelineShaders& shaders) {
     std::lock_guard<dxvk::mutex> lock(m_mutex);
 
-    auto pair = m_computePipelines.find(shaders);
-    if (pair != m_computePipelines.end())
-      return &pair->second;
-
-    auto iter = m_computePipelines.emplace(
-      std::piecewise_construct,
-      std::tuple(shaders),
-      std::tuple(this, shaders));
-    return &iter.first->second;
+    return &m_computePipelines.try_emplace(shaders, this, shaders).first->second;
   }
 
 
   DxvkGraphicsPipeline* DxvkPipelineManager::createGraphicsPipeline(
-    const DxvkGraphicsPipelineShaders& shaders) {
-    if (shaders.vs == nullptr)
-      return nullptr;
+          const DxvkGraphicsPipelineShaders& shaders) {
+    return shaders.vs == nullptr
+      ? nullptr
+      : findOrCreateGraphicsPipeline(shaders);
+  }
 
+
+  DxvkGraphicsPipeline* DxvkPipelineManager::findOrCreateGraphicsPipeline(
+          const DxvkGraphicsPipelineShaders& shaders) {
     std::lock_guard<dxvk::mutex> lock(m_mutex);
 
-    auto pair = m_graphicsPipelines.find(shaders);
-    if (pair != m_graphicsPipelines.end())
-      return &pair->second;
-
-    auto iter = m_graphicsPipelines.emplace(
-      std::piecewise_construct,
-      std::tuple(shaders),
-      std::tuple(this, shaders));
-    return &iter.first->second;
+    return &m_graphicsPipelines.try_emplace(shaders, this, shaders).first->second;
   }
 
 
   void DxvkPipelineManager::registerShader(
-    const Rc<DxvkShader>&         shader) {
-    if (m_stateCache != nullptr)
-      m_stateCache->registerShader(shader);
+          const Rc<DxvkShader>& shader) {
+    switch (m_stateCache != nullptr) {
+      case true:  m_stateCache->registerShader(shader); break;
+      case false: break;
+    }
   }
 
 
   DxvkPipelineCount DxvkPipelineManager::getPipelineCount() const {
-    DxvkPipelineCount result;
-    result.numComputePipelines  = m_numComputePipelines.load();
-    result.numGraphicsPipelines = m_numGraphicsPipelines.load();
-    return result;
+    return DxvkPipelineCount {
+      .numGraphicsPipelines = m_numGraphicsPipelines.load(),
+      .numComputePipelines  = m_numComputePipelines.load(),
+    };
   }
 
 
@@ -83,8 +93,10 @@ namespace dxvk {
 
 
   void DxvkPipelineManager::stopWorkerThreads() const {
-    if (m_stateCache != nullptr)
-      m_stateCache->stopWorkerThreads();
+    switch (m_stateCache != nullptr) {
+      case true:  m_stateCache->stopWorkerThreads(); break;
+      case false: break;
+    }
   }
 
 }

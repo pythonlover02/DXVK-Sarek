@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <mutex>
@@ -23,7 +22,6 @@ namespace dxvk {
     uint32_t numComputePipelines;
   };
 
-
   /**
    * \brief Pipeline manager
    *
@@ -41,7 +39,6 @@ namespace dxvk {
     DxvkPipelineManager(
             DxvkDevice*         device,
             DxvkRenderPassPool* passManager);
-
     ~DxvkPipelineManager();
 
     /**
@@ -77,7 +74,7 @@ namespace dxvk {
      * \param [in] shader Newly compiled shader
      */
     void registerShader(
-      const Rc<DxvkShader>&         shader);
+      const Rc<DxvkShader>& shader);
 
     /**
      * \brief Retrieves total pipeline count
@@ -98,13 +95,13 @@ namespace dxvk {
 
   private:
 
-    DxvkDevice*               m_device;
+    DxvkDevice*               m_device = nullptr;
     Rc<DxvkPipelineCache>     m_cache;
     Rc<DxvkStateCache>        m_stateCache;
     Rc<DxvkPipelineCompiler>  m_compiler;
 
-    std::atomic<uint32_t>     m_numComputePipelines  = { 0 };
-    std::atomic<uint32_t>     m_numGraphicsPipelines = { 0 };
+    std::atomic<uint32_t> m_numComputePipelines  = { 0 };
+    std::atomic<uint32_t> m_numGraphicsPipelines = { 0 };
 
     dxvk::mutex m_mutex;
 
@@ -117,6 +114,12 @@ namespace dxvk {
       DxvkGraphicsPipelineShaders,
       DxvkGraphicsPipeline,
       DxvkHash, DxvkEq> m_graphicsPipelines;
+
+    DxvkComputePipeline* findOrCreateComputePipeline(
+      const DxvkComputePipelineShaders& shaders);
+
+    DxvkGraphicsPipeline* findOrCreateGraphicsPipeline(
+      const DxvkGraphicsPipelineShaders& shaders);
 
   };
 
