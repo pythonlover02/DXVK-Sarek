@@ -5,7 +5,7 @@
 #include "../util/util_gdi.h"
 
 namespace dxvk {
-  
+
   D3D11GDISurface::D3D11GDISurface(
           ID3D11Resource*     pResource,
           UINT                Subresource)
@@ -33,7 +33,7 @@ namespace dxvk {
 
     if (D3DKMTCreateDCFromMemory(&desc))
       Logger::err(str::format("D3D11: Failed to create GDI DC"));
-    
+
     m_hdc     = desc.hDc;
     m_hbitmap = desc.hBitmap;
   }
@@ -49,16 +49,16 @@ namespace dxvk {
     D3DKMTDestroyDCFromMemory(&desc);
   }
 
-  
+
   HRESULT D3D11GDISurface::Acquire(BOOL Discard, HDC* phdc) {
     if (!phdc)
       return E_INVALIDARG;
-    
+
     *phdc = nullptr;
 
     if (m_acquired)
       return DXGI_ERROR_INVALID_CALL;
-    
+
     if (!Discard) {
       // Create a staging resource that we can map
       if (!m_readback && FAILED(CreateReadbackResource())) {
@@ -92,13 +92,13 @@ namespace dxvk {
 
       context->Unmap(m_readback, 0);
     }
-    
+
     m_acquired = true;
     *phdc      = m_hdc;
     return S_OK;
   }
 
-  
+
   HRESULT D3D11GDISurface::Release(const RECT* pDirtyRect) {
     if (!m_acquired)
       return DXGI_ERROR_INVALID_CALL;
@@ -140,7 +140,7 @@ namespace dxvk {
         sizeof(uint32_t) * tex->Width,
         sizeof(uint32_t) * tex->Width * tex->Height);
     }
-    
+
     m_acquired = false;
     return S_OK;
   }
@@ -149,11 +149,8 @@ namespace dxvk {
   HRESULT D3D11GDISurface::CreateReadbackResource() {
     auto tex = GetCommonTexture(m_resource);
 
-    Com<ID3D11Device>         device;
-    Com<ID3D11DeviceContext>  context;
-
+    Com<ID3D11Device> device;
     m_resource->GetDevice(&device);
-    device->GetImmediateContext(&context);
 
     D3D11_RESOURCE_DIMENSION dim = { };
     m_resource->GetType(&dim);
@@ -172,7 +169,7 @@ namespace dxvk {
         desc.BindFlags = 0;
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
         desc.MiscFlags = 0;
-        
+
         ID3D11Texture1D* tex1D = nullptr;
         HRESULT hr = device->CreateTexture1D(&desc, nullptr, &tex1D);
         m_readback = tex1D;
@@ -191,7 +188,7 @@ namespace dxvk {
         desc.BindFlags = 0;
         desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
         desc.MiscFlags = 0;
-        
+
         ID3D11Texture2D* tex2D = nullptr;
         HRESULT hr = device->CreateTexture2D(&desc, nullptr, &tex2D);
         m_readback = tex2D;
