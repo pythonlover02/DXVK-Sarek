@@ -485,11 +485,9 @@ namespace dxvk {
      || Height == 0 || Height > m_desc.Height)
       return E_INVALIDARG;
 
-    RECT region;
-    region.left   = 0;
-    region.top    = 0;
-    region.right  = Width;
-    region.bottom = Height;
+    std::lock_guard<dxvk::mutex> lock(m_lockBuffer);
+
+    RECT region = { 0, 0, LONG(Width), LONG(Height) };
     return m_presenter->SetPresentRegion(&region);
   }
 
