@@ -1,7 +1,7 @@
 #pragma once
 
 #include "d3d8_include.h"
-#include "d3d8_d3d9_util.h"
+#include "d3d8_util.h"
 #include "d3d8_options.h"
 #include "d3d8_format.h"
 #include "../d3d9/d3d9_bridge.h"
@@ -150,12 +150,13 @@ namespace dxvk {
         return D3DERR_INVALIDCALL;
 
       d3d9::D3DCAPS9 caps9;
-      HRESULT res = m_d3d9->GetDeviceCaps(Adapter, (d3d9::D3DDEVTYPE)DeviceType, &caps9);
+      HRESULT res = m_d3d9->GetDeviceCaps(Adapter, d3d9::D3DDEVTYPE(DeviceType), &caps9);
+      if (unlikely(FAILED(res)))
+        return res;
 
-      if (likely(SUCCEEDED(res)))
-        ConvertCaps8(caps9, pCaps);
+      ConvertCaps8(caps9, pCaps);
 
-      return res;
+      return D3D_OK;
     }
 
     HMONITOR STDMETHODCALLTYPE GetAdapterMonitor(UINT Adapter) {

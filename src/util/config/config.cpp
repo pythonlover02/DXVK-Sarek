@@ -1156,84 +1156,85 @@ namespace dxvk {
     /* D3D8 GAMES                                 */
     /**********************************************/
 
-    /* D&D - The Temple Of Elemental Evil        */
+    /* D&D - The Temple Of Elemental Evil         */
     { R"(\\ToEE(a)?\.exe$)", {{
       { "d3d9.allowDiscard",               "False" },
     }} },
-    /* Duke Nukem Forever (2001)                 */
+    /* Duke Nukem Forever (2001)                  */
     { R"(\\DukeForever\.exe$)", {{
-      { "d3d9.maxFrameRate",                "60"   },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
-    /* Anito: Defend a Land Enraged              */
+    /* Anito: Defend a Land Enraged               */
     { R"(\\Anito\.exe$)", {{
       { "d3d9.memoryTrackTest",             "True" },
       { "d3d9.maxAvailableMemory",          "1024" },
     }} },
-    /* Red Faction                               *
-     * Fixes crashing when starting a new game   */
+    /* Red Faction                                *
+     * Fixes crashing when starting a new game    */
     { R"(\\RF\.exe$)", {{
       { "d3d9.allowDirectBufferMapping",   "False" },
     }} },
-    /* Commandos 3                               *
-     * The game doesn't use NOOVERWRITE properly *
-     * and reads from actively modified buffers, *
-     * which causes graphical glitches at times  */
+    /* Commandos 3                                *
+     * The game doesn't use NOOVERWRITE properly  *
+     * and reads from actively modified buffers,  *
+     * which causes graphical glitches at times   */
     { R"(\\Commandos3\.exe$)", {{
       { "d3d9.allowDirectBufferMapping",   "False" },
     }} },
-    /* Motor City Online                         */
+    /* Motor City Online                          */
     { R"(\\MCity_d\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
       { "d3d8.batching",                    "True" },
     }} },
-    /* Railroad Tycoon 3                         */
+    /* Railroad Tycoon 3                          */
     { R"(\\RT3\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
-    /* Pure Pinball 2.0 REDUX                    *
-     * This game reads from undeclared vs inputs *
-     * but somehow works on native. Let's just   *
-     * change its declaration to make them work. */
+    /* Pure Pinball 2.0 REDUX                     *
+     * This game reads from undeclared vs inputs  *
+     * but somehow works on native. Let's just    *
+     * change its declaration to make them work.  */
     { R"(\\Pure Pinball 2\.0 REDUX\.exe$)", {{
       { "d3d8.forceVsDecl",  "0:2,4:2,7:4,9:1,8:1" },
     }} },
-    /* Need for Speed III: Hot Pursuit           *
-       (with the "Modern Patch")                 */
+    /* Need for Speed III: Hot Pursuit            *
+     * (with the "Modern Patch")                  */
     { R"(\\nfs3\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
       { "d3d8.batching",                    "True" },
     }} },
     /* Need for Speed: High Stakes / Road         *
-       Challenge (with the "Modern Patch") -      *
-       Won't actually render anything in game     *
-       without a memory limit in place            */
+     * Challenge (with the "Modern Patch") -      *
+     * Won't actually render anything in game     *
+     * without a memory limit in place            */
     { R"(\\nfs4\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
       { "d3d9.memoryTrackTest",             "True" },
       { "d3d9.maxAvailableMemory",          "1024" },
       { "d3d8.batching",                    "True" },
+      { "ddraw.forceSWVP",                  "True" },
     }} },
     /* Need for Speed: Hot Pursuit 2              */
     { R"(\\NFSHP2\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Project I.G.I. 2: Covert Strike            *
      * Very stuttery frametime with own framecap  */
     { R"(\\igi2\.exe$)", {{
-      { "d3d9.maxFrameRate",                "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
-    /* Treasure Planet: Battle at Procyon        *
-     * Declares v5 as color but shader uses v6   */
+    /* Treasure Planet: Battle at Procyon         *
+     * Declares v5 as color but shader uses v6    */
     { R"(\\TP_Win32\.exe$)", {{
       { "d3d8.forceVsDecl",      "0:2,3:2,6:4,7:1" },
     }} },
-    /* Scrapland (Remastered)                   */
+    /* Scrapland (Remastered)                     */
     { R"(\\Scrap\.exe$)", {{
       { "d3d9.deferSurfaceCreation",        "True" },
     }} },
     /* V-Rally 3                                  */
     { R"(\\VRally3(Demo)?\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Soldiers: Heroes Of World War II           *
      * Fills up all available memory and hangs    *
@@ -1245,11 +1246,11 @@ namespace dxvk {
     /* Cossacks II: Napoleonic Wars &             *
      * Battle for Europe                          */
     { R"(\\Cossacks II.*\\engine\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Alexander                                  */
     { R"(\\Alexander\\Data\\engine\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* 3DMark2001 (SE)                            *
      * Fixes a drastic performance drop in the    *
@@ -1259,21 +1260,21 @@ namespace dxvk {
     }} },
     /* Delta Force: Black Hawk Down               */
     { R"(\\dfbhd\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* X2: The Threat                             */
     { R"(\\X2\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* The Lord of the Rings:                     *
      * The Fellowship of the Ring                 */
     { R"(\\Fellowship\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
       { "d3d8.placeP8InScratch",            "True" },
     }} },
     /* Art of Murder FBI Confidential - CPU perf  */
     { R"(\\Art of Murder - FBI Confidential\\game\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Max Payne 1 - Stalls waiting for an index buffer */
     { R"(\\MaxPayne\.exe$)", {{
@@ -1281,42 +1282,42 @@ namespace dxvk {
     }} },
     /* Z: Steel Soldiers                          */
     { R"(\\z2\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* FIFA Football 2003                         */
     { R"(\\fifa2003(demo)?\.exe$)", {{
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Splinter Cell: Pandora Tomorrow (Retail)   *
      * Missing shadows without dref scaling and   *
      * broken inputs and physics above 60 FPS     */
     { R"(\\offline\\system\\SplinterCell2\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
       { "d3d8.scaleDref",                     "24" },
     }} },
     /* Splinter Cell: Pandora Tomorrow (Steam)    *
      * Broken inputs and physics above 60 FPS     */
     { R"(\\Splinter Cell Pandora Tomorrow\\system\\SplinterCell2\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Chrome: Gold Edition                       *
      * Broken character model motion at high FPS  */
     { R"(\\Chrome(Single|Net)\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
     /* Rayman 3: Hoodlum Havoc                    *
      * Missing geometry and textures without      *
      * legacy DISCARD behavior                    */
     { R"(\\Rayman3\.exe$)", {{
-      { "d3d9.maxFrameRate",                  "60" },
+      { "d3d9.maxFrameRate",                 "-60" },
       { "d3d8.forceLegacyDiscard",          "True" },
     }} },
     /* Tom Clancy's Splinter Cell                 *
      * Fixes shadow buffers, broken physics       *
      * above 60 FPS and game freezing on alt-tab  */
-     { R"(\\splintercell\.exe$)", {{
-      { "d3d9.customVendorId",              "10de" },
-      { "d3d9.maxFrameRate",                  "60" },
+    { R"(\\splintercell\.exe$)", {{
+      { "d3d9.hideAmdGpu",                  "True" },
+      { "d3d9.maxFrameRate",                 "-60" },
       { "d3d8.scaleDref",                     "24" },
       { "d3d8.shadowPerspectiveDivide",     "True" },
     }} },
@@ -1326,7 +1327,7 @@ namespace dxvk {
     { R"(\\GTR (- FIA GT Rac(e)?ing Game|Demo)\\(GTR(Demo)?|(3D)?Config)\.exe$)", {{
       { "d3d9.maxAvailableMemory",          "1024" },
       { "d3d9.memoryTrackTest",             "True" },
-      { "d3d9.cachedDynamicBuffers",        "True" },
+      { "d3d9.cachedWriteOnlyBuffers",      "True" },
     }} },
     /* Comanche 4 - Only enables the FSAA option  *
      * if it detects a device ID of 0x025x.       */
@@ -1351,9 +1352,24 @@ namespace dxvk {
     { R"(\\Smash up Derby\\cars\.exe$)", {{
       { "d3d9.allowDirectBufferMapping",   "False" },
     }} },
+    /* Age of Pirates: Caribbean Tales            *
+     * Crashes due to a texture UAF otherwise     */
+    { R"(\\(Age of Pirates|Sea Dogs).*Caribbean Tales\\ENGINE\.exe$)", {{
+      { "d3d8.textureUAFGuard",             "True" },
+    }} },
+    /* Age of Pirates 2: City of Abandoned Ships  *
+     * Crashes due to a texture UAF otherwise     */
+    { R"(\\(Age of Pirates|Sea Dogs).*City of Abandoned Ships\\START\.exe$)", {{
+      { "d3d8.textureUAFGuard",             "True" },
+    }} },
     /* Mafia - Improves poor texture filtering    */
     { R"(\\Mafia\\Game\.exe$)", {{
       { "d3d9.samplerAnisotropy",             "16" },
+    }} },
+    /* Manhunt                                    *
+     * Broken AI behavior above 60 FPS (game bug) */
+    { R"(\\manhunt\.exe$)", {{
+      { "d3d9.maxFrameRate",                 "-60" },
     }} },
 
     /**********************************************/
