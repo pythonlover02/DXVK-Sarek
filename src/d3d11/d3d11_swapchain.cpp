@@ -2,6 +2,8 @@
 #include "d3d11_device.h"
 #include "d3d11_swapchain.h"
 
+#include "../dxvk/framepacer/dxvk_framepacer.h"
+
 namespace dxvk {
 
   static uint16_t MapGammaControlPoint(float x) {
@@ -24,6 +26,7 @@ namespace dxvk {
     m_context   (m_device->createContext()),
     m_frameLatencyCap(pDevice->GetOptions()->maxFrameLatency) {
     CreateFrameLatencyEvent();
+    m_framePacer = std::make_unique<FramePacer>(m_device->config(), m_frameId);
 
     if (!pDevice->GetOptions()->deferSurfaceCreation)
       CreatePresenter();
@@ -266,6 +269,9 @@ namespace dxvk {
     // Bump our frame id.
     ++m_frameId;
 
+    if (m_framePacer)
+      m_framePacer->beginFrame();
+
     UpdateTargetFrameRate(SyncInterval);
 
     for (uint32_t i = 0; i < SyncInterval || i < 1; i++) {
@@ -304,8 +310,14 @@ namespace dxvk {
       if (m_hud != nullptr)
         m_hud->render(m_context, info.format, info.imageExtent);
 
-      if (i + 1 >= SyncInterval)
+      if (i + 1 >= SyncInterval) {
         m_context->signal(m_frameLatencySignal, m_frameId);
+
+        if (m_framePacer && m_framePacer->needsGpuSignal()) {
+          m_context->signal(m_framePacer->signal(), m_frameId);
+          m_framePacer->endFrame(m_frameId);
+        }
+      }
 
       SubmitPresent(immediateContext, sync, i);
     }
@@ -584,6 +596,10 @@ namespace dxvk {
       maxFrameLatency = std::min(maxFrameLatency, m_frameLatencyCap);
 
     maxFrameLatency = std::min(maxFrameLatency, m_desc.BufferCount + 1);
+
+    if (m_framePacer)
+      maxFrameLatency = m_framePacer->getEffectiveFrameLatency(maxFrameLatency);
+
     return maxFrameLatency;
   }
 

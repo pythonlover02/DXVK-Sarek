@@ -74,6 +74,9 @@ dxvk_src = [
   'dxvk_fence.cpp',
   'dxvk_format.cpp',
   'dxvk_framebuffer.cpp',
+
+  'framepacer/dxvk_framepacer.cpp',
+
   'dxvk_gpu_event.cpp',
   'dxvk_gpu_query.cpp',
   'dxvk_graphics.cpp',

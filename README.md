@@ -34,6 +34,8 @@ A huge thank-you to the following contributors for their invaluable help:
 - [Device Filter](#device-filter)
 - [State Cache](#state-cache)
 - [Shader Compilation (dyasync)](#shader-compilation-dyasync)
+- [Frame Pacing (low-latency mode)](#frame-pacing-low-latency-mode)
+- [Debugging](#debugging)
 - [Debugging](#debugging)
 - [Troubleshooting](#troubleshooting)
 
@@ -177,6 +179,21 @@ This approach is safer than the traditional async patch because something valid 
 Dyasync can be disabled by setting `dxvk.enableDyasync = False` in `dxvk.conf`, in the `DXVK_CONFIG` environment variable, or by using the environment variable `DXVK_DISABLE_DYASYNC=1`.
 
 `DXVK_ALL_CORES=1` overrides the default way cores are assigned for shader compilation. By default, DXVK-Sarek uses roughly half the available CPU cores for background compilation, leaving the rest free for the game. On CPUs with weak per-core performance that rely on all cores for good throughput, this may cause longer loading times. With `DXVK_ALL_CORES=1`, all available cores are used for both the game and shader compilation. This may cause brief unresponsiveness while compiling shaders but can improve the overall experience on such hardware.
+
+## Frame Pacing (low-latency mode)
+
+DXVK-Sarek includes an optional frame pacing mode adapted from and inspired by [netborg-afps/dxvk-low-latency](https://github.com/netborg-afps/dxvk-low-latency). It is not a direct port: that project relies on per submission GPU timing and an asynchronous presenter that upstream DXVK has but Sarek Vulkan 1.1/1.2-targeted presenter does not, so the mechanism here has been adapted to what Sarek can actually observe.
+
+The `dxvk.framePace` option in `dxvk.conf` (or the `DXVK_FRAME_PACE` environment variable) controls it:
+
+- `"max-frame-latency"` (default) is Sarek's existing, unchanged behaviour. Frame `i` wont start until frame `(i-1)-x` has finished, where `x` is `dxgi.maxFrameLatency` / `d3d9.maxFrameLatency`.
+- `"low-latency"` forces the effective frame latency down to the minimum needed for forward progress, and makes a best-effort prediction of when the previous frame will finish (based on a rolling average of recent frame durations) to reduce unnecessary CPU wake-up jitter. The prediction is never load-bearing for correctness; a wrong guess costs microseconds, not a broken frame.
+- `"min-latency"` forces the same minimal frame latency without the predictive sleep. Lowest possible latency, usually at a noticeable fps cost.
+
+`dxvk.lowLatencyOffset` fine-tunes `"low-latency"` mode: positive values (in microseconds) delay a frame's predicted start slightly, negative values start it earlier. Clamped to `-10000`..`10000`, defaults to `0`.
+
+> [!NOTE]
+> Because Sarek presenter has no per-submission GPU progress telemetry the way upstream DXVK's does, `"low-latency"` and `"min-latency"` currently share the same underlying latency-reduction mechanism rather than being two fully distinct algorithms. There's also no VRR-aware pacing mode and no HUD latency display yet, both of which the upstream project has.
 
 ## Debugging
 

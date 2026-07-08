@@ -4,6 +4,8 @@
 
 #include "d3d9_hud.h"
 
+#include "../dxvk/framepacer/dxvk_framepacer.h"
+
 namespace dxvk {
 
 
@@ -194,6 +196,8 @@ namespace dxvk {
     , m_frameLatencyCap  (pDevice->GetOptions()->maxFrameLatency)
     , m_frameLatencySignal(new sync::Fence(m_frameId))
     , m_dialog           (pDevice->GetOptions()->enableDialogMode) {
+    m_framePacer = std::make_unique<FramePacer>(m_device->config(), m_frameId);
+
     this->NormalizePresentParameters(pPresentParams);
     m_presentParams = *pPresentParams;
     m_window = m_presentParams.hDeviceWindow;
@@ -326,10 +330,10 @@ namespace dxvk {
     // Copies the front buffer between formats with an implicit resolve.
     // Oh, and the dest is systemmem...
     // This is a slow function anyway, it waits for the copy to finish.
-    // so there's no reason to not just make and throwaway temp images.
+    // so there no reason to not just make and throwaway temp images.
 
     // If extent of dst > src, then we blit to a subrect of the size
-    // of src onto a temp image of dst's extents,
+    // of src onto a temp image of dst extents,
     // then copy buffer back to dst (given dst is subresource)
 
     D3D9Surface* dst = static_cast<D3D9Surface*>(pDestSurface);
@@ -520,7 +524,7 @@ namespace dxvk {
     // So... we lie here and make some stuff up
     // enough that it makes games work.
 
-    // Assume there's 20 lines in a vBlank.
+    // Assume there 20 lines in a vBlank.
     constexpr uint32_t vBlankLineCount = 20;
 
     if (pRasterStatus == nullptr)
@@ -832,6 +836,9 @@ namespace dxvk {
     // Bump our frame id.
     ++m_frameId;
 
+    if (m_framePacer)
+      m_framePacer->beginFrame();
+
     UpdateTargetFrameRate(SyncInterval);
 
     for (uint32_t i = 0; i < SyncInterval || i < 1; i++) {
@@ -870,8 +877,14 @@ namespace dxvk {
       if (m_hud != nullptr)
         m_hud->render(m_context, info.format, info.imageExtent);
 
-      if (i + 1 >= SyncInterval)
+      if (i + 1 >= SyncInterval) {
         m_context->signal(m_frameLatencySignal, m_frameId);
+
+        if (m_framePacer && m_framePacer->needsGpuSignal()) {
+          m_context->signal(m_framePacer->signal(), m_frameId);
+          m_framePacer->endFrame(m_frameId);
+        }
+      }
 
       SubmitPresent(sync, i);
     }
@@ -1131,6 +1144,10 @@ namespace dxvk {
       maxFrameLatency = std::min(maxFrameLatency, m_frameLatencyCap);
 
     maxFrameLatency = std::min(maxFrameLatency, m_presentParams.BackBufferCount + 1);
+
+    if (m_framePacer)
+      maxFrameLatency = m_framePacer->getEffectiveFrameLatency(maxFrameLatency);
+
     return maxFrameLatency;
   }
 

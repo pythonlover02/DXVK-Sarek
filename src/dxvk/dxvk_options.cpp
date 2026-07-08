@@ -17,6 +17,8 @@ namespace dxvk {
     auto budget = config.getOption<int32_t>("dxvk.maxMemoryBudget", 0);
     maxMemoryBudget = VkDeviceSize(std::max(budget, 0)) << 20u;
     enableDyasync         = config.getOption<bool>    ("dxvk.enableDyasync",          true);
+    framePace        = config.getOption<std::string>("dxvk.framePace", "");
+    lowLatencyOffset  = config.getOption<int32_t>     ("dxvk.lowLatencyOffset", 0);
     numDyasyncThreads     = config.getOption<int32_t> ("dxvk.numDyasyncThreads",      0);
   }
 
