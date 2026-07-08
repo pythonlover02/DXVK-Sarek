@@ -170,6 +170,9 @@ namespace dxvk {
           DWORD           Usage,
           D3DRESOURCETYPE RType,
           D3D9Format      CheckFormat) {
+    if (unlikely(AdapterFormat == D3D9Format::Unknown))
+      return D3DERR_INVALIDCALL;
+
     if (!IsSupportedAdapterFormat(AdapterFormat))
       return D3DERR_NOTAVAILABLE;
 
@@ -190,7 +193,7 @@ namespace dxvk {
     if (rt && CheckFormat == D3D9Format::A8 && m_parent->GetOptions().disableA8RT)
       return D3DERR_NOTAVAILABLE;
 
-    if (ds && !IsDepthFormat(CheckFormat))
+    if (ds && !IsDepthStencilFormat(CheckFormat))
       return D3DERR_NOTAVAILABLE;
 
     if (rt && CheckFormat == D3D9Format::NULL_FORMAT && twoDimensional)
@@ -208,10 +211,8 @@ namespace dxvk {
         : D3DERR_NOTAVAILABLE;
 
     // I really don't want to support this...
-    if (dmap) {
-      Logger::warn("D3D9Adapter::CheckDeviceFormat: D3DUSAGE_DMAP is unsupported");
+    if (dmap)
       return D3DERR_NOTAVAILABLE;
-    }
 
     auto mapping = m_d3d9Formats.GetFormatMapping(CheckFormat);
     if (mapping.FormatColor == VK_FORMAT_UNDEFINED)
@@ -228,7 +229,11 @@ namespace dxvk {
       return D3D_OK;
 
     // Let's actually ask Vulkan now that we got some quirks out the way!
-    return CheckDeviceVkFormat(mapping.FormatColor, Usage, RType);
+    VkFormat format = mapping.FormatColor;
+    if (unlikely(mapping.ConversionFormatInfo.FormatColor != VK_FORMAT_UNDEFINED)) {
+      format = mapping.ConversionFormatInfo.FormatColor;
+    }
+    return CheckDeviceVkFormat(format, Usage, RType);
   }
 
 
