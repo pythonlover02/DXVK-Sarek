@@ -201,7 +201,7 @@ namespace dxvk {
         : MapImage (pResource, Subresource, &mapInfo);
 
       if (unlikely(FAILED(status))) {
-        pMappedResource->pData = nullptr;
+        *pMappedResource = D3D11_MAPPED_SUBRESOURCE();
         return status;
       }
 
@@ -214,7 +214,7 @@ namespace dxvk {
       auto entry = FindMapEntry(pResource, Subresource);
 
       if (unlikely(!entry)) {
-        pMappedResource->pData = nullptr;
+        *pMappedResource = D3D11_MAPPED_SUBRESOURCE();
         return D3D11_ERROR_DEFERRED_CONTEXT_MAP_WITHOUT_INITIAL_DISCARD;
       }
 
@@ -223,7 +223,7 @@ namespace dxvk {
       return S_OK;
     } else {
       // Not allowed on deferred contexts
-      pMappedResource->pData = nullptr;
+      *pMappedResource = D3D11_MAPPED_SUBRESOURCE();
       return E_INVALIDARG;
     }
   }
