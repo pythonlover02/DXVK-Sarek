@@ -254,10 +254,7 @@ namespace dxvk {
 
 
   UINT64 D3D9Query::GetTimestampQueryFrequency() const {
-    Rc<DxvkDevice>  device  = m_parent->GetDXVKDevice();
-    Rc<DxvkAdapter> adapter = device->adapter();
-
-    VkPhysicalDeviceLimits limits = adapter->deviceProperties().limits;
+    const auto& limits = m_parent->GetDXVKDevice()->properties().core.properties.limits;
     return uint64_t(1'000'000'000.0f / limits.timestampPeriod);
   }
 
