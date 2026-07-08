@@ -510,6 +510,11 @@ namespace dxvk {
           ID3D11VideoProcessor*           pVideoProcessor,
           BOOL                            Enable,
     const RECT*                           pRect) {
+    static bool errorShown = false;
+
+    if (!std::exchange(errorShown, true))
+      Logger::warn("D3D11VideoContext::VideoProcessorSetOutputTargetRect: Stub.");
+
     D3D10DeviceLock lock = m_ctx->LockContext();
 
     auto state = static_cast<D3D11VideoProcessor*>(pVideoProcessor)->GetState();
@@ -517,11 +522,6 @@ namespace dxvk {
 
     if (Enable)
       state->outputTargetRect = *pRect;
-
-    static bool errorShown = false;
-
-    if (!std::exchange(errorShown, true))
-      Logger::err("D3D11VideoContext::VideoProcessorSetOutputTargetRect: Stub.");
   }
 
 
@@ -529,16 +529,16 @@ namespace dxvk {
           ID3D11VideoProcessor*           pVideoProcessor,
           BOOL                            YCbCr,
     const D3D11_VIDEO_COLOR*              pColor) {
+    static bool errorShown = false;
+
+    if (!std::exchange(errorShown, true))
+      Logger::warn("D3D11VideoContext::VideoProcessorSetOutputBackgroundColor: Stub");
+
     D3D10DeviceLock lock = m_ctx->LockContext();
 
     auto state = static_cast<D3D11VideoProcessor*>(pVideoProcessor)->GetState();
     state->outputBackgroundColorIsYCbCr = YCbCr;
     state->outputBackgroundColor = *pColor;
-
-    static bool errorShown = false;
-
-    if (!std::exchange(errorShown, true))
-      Logger::err("D3D11VideoContext::VideoProcessorSetOutputBackgroundColor: Stub");
   }
 
 
@@ -630,7 +630,9 @@ namespace dxvk {
           D3D11_VIDEO_PROCESSOR_OUTPUT_RATE Rate,
           BOOL                            Repeat,
     const DXGI_RATIONAL*                  CustomRate) {
-    Logger::err("D3D11VideoContext::VideoProcessorSetStreamOutputRate: Stub");
+    Logger::warn(str::format("D3D11VideoContext::VideoProcessorSetStreamOutputRate: Stub, Rate ", Rate));
+    if (CustomRate)
+      Logger::warn(str::format("CustomRate ", CustomRate->Numerator, "/", CustomRate->Denominator));
   }
 
 
@@ -639,6 +641,11 @@ namespace dxvk {
           UINT                            StreamIndex,
           BOOL                            Enable,
     const RECT*                           pRect) {
+    static bool errorShown = false;
+
+    if (!std::exchange(errorShown, true))
+      Logger::warn("D3D11VideoContext::VideoProcessorSetStreamSourceRect: Stub.");
+
     D3D10DeviceLock lock = m_ctx->LockContext();
 
     auto state = static_cast<D3D11VideoProcessor*>(pVideoProcessor)->GetStreamState(StreamIndex);
@@ -650,11 +657,6 @@ namespace dxvk {
 
     if (Enable)
       state->srcRect = *pRect;
-
-    static bool errorShown = false;
-
-    if (!std::exchange(errorShown, true))
-      Logger::err("D3D11VideoContext::VideoProcessorSetStreamSourceRect: Stub.");
   }
 
 
