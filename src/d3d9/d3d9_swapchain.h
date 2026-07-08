@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "d3d9_device_child.h"
 #include "d3d9_device.h"
 #include "d3d9_format.h"
@@ -15,6 +17,7 @@
 namespace dxvk {
 
   class D3D9Surface;
+  class FramePacer;
 
   using D3D9SwapChainExBase = D3D9DeviceChild<IDirect3DSwapChain9Ex>;
   class D3D9SwapChainEx final : public D3D9SwapChainExBase {
@@ -118,6 +121,8 @@ namespace dxvk {
     uint64_t                  m_frameId           = D3D9DeviceEx::MaxFrameLatency;
     uint32_t                  m_frameLatencyCap   = 0;
     Rc<sync::Fence>           m_frameLatencySignal;
+
+    std::unique_ptr<FramePacer> m_framePacer;
 
     bool                      m_dirty    = true;
     bool                      m_vsync    = true;

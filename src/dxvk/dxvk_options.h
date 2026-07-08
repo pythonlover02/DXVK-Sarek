@@ -50,6 +50,14 @@ namespace dxvk {
     // when using Dyasync
     int32_t numDyasyncThreads;
 
+    /// Frame pacing mode. Supported values: "", "low-latency", "min-latency".
+    /// Empty (default) preserves Sarek existing behaviour unchanged.
+    std::string framePace;
+
+    /// Fine-tuning offset for low-latency frame pacing, in microseconds.
+    /// Clamped to [-10000, 10000]. Defaults to 0.
+    int32_t lowLatencyOffset = 0;
+
     /// Shader-related options
     Tristate useRawSsbo;
 

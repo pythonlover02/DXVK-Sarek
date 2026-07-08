@@ -1,5 +1,7 @@
 #pragma once
 
+#include <memory>
+
 #include "d3d11_texture.h"
 
 #include "../dxvk/hud/dxvk_hud.h"
@@ -12,6 +14,7 @@ namespace dxvk {
 
   class D3D11Device;
   class D3D11DXGIDevice;
+  class FramePacer;
 
   class D3D11SwapChain : public ComObject<IDXGIVkSwapChain> {
     constexpr static uint32_t DefaultFrameLatency = 1;
@@ -108,6 +111,8 @@ namespace dxvk {
     uint32_t                m_frameLatencyCap = 0;
     HANDLE                  m_frameLatencyEvent = nullptr;
     Rc<sync::CallbackFence> m_frameLatencySignal;
+
+    std::unique_ptr<FramePacer> m_framePacer;
 
     bool                    m_dirty = true;
     bool                    m_vsync = true;
