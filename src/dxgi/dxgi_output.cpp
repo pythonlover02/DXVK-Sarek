@@ -381,14 +381,18 @@ namespace dxvk {
     if (FAILED(hr))
       return hr;
 
-    static bool s_errorShown = false;
-
-    if (!std::exchange(s_errorShown, true))
-      Logger::warn("DxgiOutput::GetFrameStatistics: Stub");
-
-    *pStats = monitorInfo->FrameStats;
+    // Need to acquire swap chain and unlock monitor data, since querying
+    // frame statistics from the swap chain will also access monitor data.
+    Com<IDXGISwapChain> swapChain = monitorInfo->pSwapChain;
     m_monitorInfo->ReleaseMonitorData();
-    return S_OK;
+
+    // This API only works if there is a full-screen swap chain active.
+    if (swapChain == nullptr) {
+      *pStats = DXGI_FRAME_STATISTICS();
+      return S_OK;
+    }
+
+    return swapChain->GetFrameStatistics(pStats);
   }
 
 
