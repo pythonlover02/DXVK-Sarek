@@ -887,6 +887,9 @@ namespace dxvk {
           REFIID                  riid,
           void**                  ppParentResource,
           UINT*                   pSubresourceIndex) {
+    if (!ppParentResource)
+      return E_POINTER;
+
     HRESULT hr = m_resource->QueryInterface(riid, ppParentResource);
     if (pSubresourceIndex)
       *pSubresourceIndex = 0;
