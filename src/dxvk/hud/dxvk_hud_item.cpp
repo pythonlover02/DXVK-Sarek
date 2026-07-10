@@ -514,6 +514,8 @@ namespace dxvk::hud {
   void HudMemoryStatsItem::update(dxvk::high_resolution_clock::time_point time) {
     for (uint32_t i = 0; i < m_memory.memoryHeapCount; i++)
       m_heaps[i] = m_device->getMemoryStats(i);
+
+    m_poolStats = m_device->getMemoryPoolStats();
   }
 
 
@@ -535,6 +537,29 @@ namespace dxvk::hud {
       renderer.drawText(16.0f,
         { position.x, position.y },
         { 1.0f, 1.0f, 0.25f, 1.0f },
+        label);
+
+      renderer.drawText(16.0f,
+        { position.x + 168.0f, position.y },
+        { 1.0f, 1.0f, 1.0f, 1.0f },
+        text);
+      position.y += 4.0f;
+    }
+
+    for (uint32_t i = 0; i < m_memory.memoryTypeCount; i++) {
+      const DxvkMemoryPoolTypeStats& stats = m_poolStats[i];
+
+      if (!stats.chunkCount)
+        continue;
+
+      std::string label = str::format("  Pool type ", i, ": ");
+      std::string text  = str::format(std::setfill(' '), std::setw(2), stats.chunkCount, " chunks, ",
+        std::setw(5), stats.pagesTotal - stats.pagesFree, " / ", std::setw(5), stats.pagesTotal, " pages used");
+
+      position.y += 16.0f;
+      renderer.drawText(16.0f,
+        { position.x, position.y },
+        { 0.25f, 1.0f, 1.0f, 1.0f },
         label);
 
       renderer.drawText(16.0f,

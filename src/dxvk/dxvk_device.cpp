@@ -191,6 +191,11 @@ namespace dxvk {
   }
 
 
+  DxvkMemoryPoolStats DxvkDevice::getMemoryPoolStats() {
+    return m_objects.memoryManager().getMemoryPoolStats();
+  }
+
+
   uint32_t DxvkDevice::getCurrentFrameId() const {
     return m_statCounters.getCtr(DxvkStatCounter::QueuePresentCount);
   }

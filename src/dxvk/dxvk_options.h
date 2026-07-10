@@ -50,6 +50,11 @@ namespace dxvk {
     // when using Dyasync
     int32_t numDyasyncThreads;
 
+    // Enable or disable the paged memory allocator. Falls back to
+    // the legacy chunk allocator per-request when disabled, or
+    // when a request doesn't fit the paged allocator's model.
+    bool enablePagedAllocator;
+
     /// Frame pacing mode. Supported values: "", "low-latency", "min-latency".
     /// Empty (default) preserves Sarek existing behaviour unchanged.
     std::string framePace;

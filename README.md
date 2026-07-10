@@ -34,6 +34,7 @@ A huge thank-you to the following contributors for their invaluable help:
 - [Device Filter](#device-filter)
 - [State Cache](#state-cache)
 - [Shader Compilation (dyasync)](#shader-compilation-dyasync)
+- [Memory Allocator (paged)](#memory-allocator-paged)
 - [Frame Pacing (low-latency mode)](#frame-pacing-low-latency-mode)
 - [Debugging](#debugging)
 - [Debugging](#debugging)
@@ -134,7 +135,7 @@ The `DXVK_HUD` environment variable controls a HUD that can display the framerat
 - `submissions` shows the number of command buffers submitted per frame
 - `drawcalls` shows the number of draw calls and render passes per frame
 - `pipelines` shows the total number of graphics and compute pipelines
-- `memory` shows the amount of device memory allocated and used
+- `memory` shows the amount of device memory allocated and used, including per-chunk page usage for the paged memory allocator when active, see [Memory Allocator (paged)](#memory-allocator-paged)
 - `gpuload` shows estimated GPU load (may be inaccurate)
 - `version` shows DXVK version
 - `api` shows the D3D feature level used by the application
@@ -179,6 +180,24 @@ This approach is safer than the traditional async patch because something valid 
 Dyasync can be disabled by setting `dxvk.enableDyasync = False` in `dxvk.conf`, in the `DXVK_CONFIG` environment variable, or by using the environment variable `DXVK_DISABLE_DYASYNC=1`.
 
 `DXVK_ALL_CORES=1` overrides the default way cores are assigned for shader compilation. By default, DXVK-Sarek uses roughly half the available CPU cores for background compilation, leaving the rest free for the game. On CPUs with weak per-core performance that rely on all cores for good throughput, this may cause longer loading times. With `DXVK_ALL_CORES=1`, all available cores are used for both the game and shader compilation. This may cause brief unresponsiveness while compiling shaders but can improve the overall experience on such hardware.
+
+## Memory Allocator (paged)
+
+DXVK-Sarek includes an alternative memory allocator, enabled by default, that runs alongside the original chunk-based allocator from DXVK 1.10.x. Its inspired by the free-list and pooling rework upstream landed after the 1.10.x branch (DXVK 2.5+), reimplemented from scratch and scoped down to fit Sarek Vulkan 1.1/1.2 codebase. It has two tiers:
+
+- Small, frequently churned allocations (up to 8 KiB — constant buffers being the main case) are served from fixed-size slabs: a single 64 KiB page split into equal-size slots for one size class. A 256-byte buffer only ever costs 256 bytes of a shared page instead of a whole page to itself.
+- Everything else that fits within a bounded size is served from a single best-fit free list per Vulkan memory type at 64 KiB granularity, replacing the original per-chunk worst-fit search.
+
+On top of both tiers:
+
+- Chunks start small and grow based on how much memory is already allocated on a given heap, up to a cap of 256 MiB per chunk (64 MiB on 32-bit builds, to conserve address space).
+- A small number of fully empty chunks (1-4, depending on platform) are kept in reserve rather than freed on the spot, mirroring the original allocator's own retention behavior. This avoids repeatedly allocating and freeing a chunk when a workload happens to sit right at that boundary. The reserve is bypassed once the heap is genuinely under memory pressure.
+- Any allocation neither tier can service (oversized requests, unusual alignment, dedicated allocations) transparently falls back to the original allocator on a per-request basis. That fallback path stays compiled in and available even with the paged allocator enabled by default, the same way dyasync always keeps the synchronous compile path available.
+
+`dxvk.enablePagedAllocator = False` in `dxvk.conf` or `DXVK_CONFIG` disables it, reverting to the original allocator for everything. `DXVK_DISABLE_PAGED_ALLOCATOR=1` does the same via environment variable.
+
+> [!NOTE]
+> This does not include memory defragmentation, i.e. relocating a live resource backing memory to consolidate free space. Only chunks and slabs that are already fully empty get freed; a single long lived allocation pinning an otherwise empty chunk (or slab) will keep it around until that allocation is freed itself. Full defragmentation would need deeper changes to how buffer and image objects own their backing memory, similar to what upstream needed for DXVK 2.5+, and hasn't been backported.
 
 ## Frame Pacing (low-latency mode)
 

@@ -1,11 +1,13 @@
 #pragma once
 
 #include "dxvk_adapter.h"
+#include "dxvk_memory_pool.h"
 
 namespace dxvk {
 
   class DxvkMemoryAllocator;
   class DxvkMemoryChunk;
+  class DxvkMemoryPool;
 
   /**
    * \brief Memory stats
@@ -110,6 +112,15 @@ namespace dxvk {
       VkDeviceSize          offset,
       VkDeviceSize          length,
       void*                 mapPtr);
+    DxvkMemory(
+      DxvkMemoryAllocator*  alloc,
+      DxvkMemoryChunk*      chunk,
+      DxvkMemoryType*       type,
+      VkDeviceMemory        memory,
+      VkDeviceSize          offset,
+      VkDeviceSize          length,
+      void*                 mapPtr,
+      DxvkMemoryOwner       owner);
     DxvkMemory             (DxvkMemory&& other);
     DxvkMemory& operator = (DxvkMemory&& other);
     ~DxvkMemory();
@@ -174,6 +185,7 @@ namespace dxvk {
     VkDeviceSize          m_offset = 0;
     VkDeviceSize          m_length = 0;
     void*                 m_mapPtr = nullptr;
+    DxvkMemoryOwner       m_owner  = DxvkMemoryOwner::Dedicated;
 
     void free();
 
@@ -257,6 +269,16 @@ namespace dxvk {
      */
     bool isCompatible(const Rc<DxvkMemoryChunk>& other) const;
 
+    /**
+     * \brief Backing device memory handle
+     *
+     * Lets external suballocators (DxvkMemoryPool) use this
+     * chunk purely as a device memory / mapping owner.
+     */
+    const DxvkDeviceMemory& handle() const {
+      return m_memory;
+    }
+
   private:
 
     struct FreeSlice {
@@ -285,6 +307,7 @@ namespace dxvk {
   class DxvkMemoryAllocator {
     friend class DxvkMemory;
     friend class DxvkMemoryChunk;
+    friend class DxvkMemoryPool;
 
     constexpr static VkDeviceSize SmallAllocationThreshold = 256 << 10;
   public:
@@ -334,6 +357,20 @@ namespace dxvk {
     }
 
     /**
+     * \brief Queries paged allocator stats
+     *
+     * Returns per-memory-type chunk and page counts for the
+     * paged allocator. Zeroed out when the legacy strategy
+     * is active, since there's nothing to report.
+     * \returns Paged allocator stats
+     */
+    DxvkMemoryPoolStats getMemoryPoolStats() const {
+      return m_strategy == DxvkMemoryStrategy::Paged
+        ? m_memoryPool.getStats()
+        : DxvkMemoryPoolStats();
+    }
+
+    /**
      * \brief Whether mapped memory should be zero-initialized
      * \returns \c true if zeroMappedMemory is enabled
      */
@@ -349,6 +386,8 @@ namespace dxvk {
     dxvk::mutex                                     m_mutex;
     std::array<DxvkMemoryHeap, VK_MAX_MEMORY_HEAPS> m_memHeaps;
     std::array<DxvkMemoryType, VK_MAX_MEMORY_TYPES> m_memTypes;
+    DxvkMemoryStrategy                              m_strategy;
+    DxvkMemoryPool                                  m_memoryPool;
 
     DxvkMemory tryAlloc(
       const VkMemoryRequirements*             req,
@@ -362,6 +401,21 @@ namespace dxvk {
             VkDeviceSize                      size,
             VkDeviceSize                      align,
             DxvkMemoryFlags                   hints,
+      const VkMemoryDedicatedAllocateInfo*    dedAllocInfo);
+
+    DxvkMemory tryAllocFromTypeLegacy(
+            DxvkMemoryType*                   type,
+            VkMemoryPropertyFlags             flags,
+            VkDeviceSize                      size,
+            VkDeviceSize                      align,
+            DxvkMemoryFlags                   hints,
+      const VkMemoryDedicatedAllocateInfo*    dedAllocInfo);
+
+    DxvkMemory tryAllocPaged(
+            DxvkMemoryType*                   type,
+            VkMemoryPropertyFlags             flags,
+            VkDeviceSize                      size,
+            VkDeviceSize                      align,
       const VkMemoryDedicatedAllocateInfo*    dedAllocInfo);
 
     DxvkDeviceMemory tryAllocDeviceMemory(
