@@ -79,10 +79,10 @@ namespace dxvk {
 
 
   DxvkPipelineCount DxvkPipelineManager::getPipelineCount() const {
-    return DxvkPipelineCount {
-      .numGraphicsPipelines = m_numGraphicsPipelines.load(),
-      .numComputePipelines  = m_numComputePipelines.load(),
-    };
+    DxvkPipelineCount result;
+      result.numGraphicsPipelines = m_numGraphicsPipelines.load();
+      result.numComputePipelines  = m_numComputePipelines.load();
+      return result;
   }
 
 
