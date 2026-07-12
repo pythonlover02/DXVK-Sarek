@@ -358,7 +358,6 @@ namespace dxvk::hud {
     Rc<DxvkDevice>                    m_device;
     VkPhysicalDeviceMemoryProperties  m_memory;
     DxvkMemoryStats                   m_heaps[VK_MAX_MEMORY_HEAPS];
-    DxvkMemoryPoolStats               m_poolStats;
 
   };
 

@@ -370,12 +370,6 @@ namespace dxvk {
     DxvkMemoryStats getMemoryStats(uint32_t heap);
 
     /**
-     * \brief Retrieves paged allocator statistics
-     * \returns Paged allocator stats
-     */
-    DxvkMemoryPoolStats getMemoryPoolStats();
-
-    /**
      * \brief Retreves current frame ID
      * \returns Current frame ID
      */

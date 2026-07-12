@@ -15,27 +15,13 @@ namespace dxvk {
           VkDeviceSize          offset,
           VkDeviceSize          length,
           void*                 mapPtr)
-  : DxvkMemory(alloc, chunk, type, memory, offset, length, mapPtr,
-      chunk ? DxvkMemoryOwner::Chunk : DxvkMemoryOwner::Dedicated) { }
-
-
-  DxvkMemory::DxvkMemory(
-          DxvkMemoryAllocator*  alloc,
-          DxvkMemoryChunk*      chunk,
-          DxvkMemoryType*       type,
-          VkDeviceMemory        memory,
-          VkDeviceSize          offset,
-          VkDeviceSize          length,
-          void*                 mapPtr,
-          DxvkMemoryOwner       owner)
   : m_alloc   (alloc),
     m_chunk   (chunk),
     m_type    (type),
     m_memory  (memory),
     m_offset  (offset),
     m_length  (length),
-    m_mapPtr  (mapPtr),
-    m_owner   (owner) { }
+    m_mapPtr  (mapPtr) { }
 
 
   DxvkMemory::DxvkMemory(DxvkMemory&& other)
@@ -45,8 +31,7 @@ namespace dxvk {
     m_memory  (std::exchange(other.m_memory, VkDeviceMemory(VK_NULL_HANDLE))),
     m_offset  (std::exchange(other.m_offset, 0)),
     m_length  (std::exchange(other.m_length, 0)),
-    m_mapPtr  (std::exchange(other.m_mapPtr, nullptr)),
-    m_owner   (std::exchange(other.m_owner,  DxvkMemoryOwner::Dedicated)) { }
+    m_mapPtr  (std::exchange(other.m_mapPtr, nullptr)) { }
 
 
   DxvkMemory& DxvkMemory::operator = (DxvkMemory&& other) {
@@ -58,7 +43,6 @@ namespace dxvk {
     m_offset  = std::exchange(other.m_offset, 0);
     m_length  = std::exchange(other.m_length, 0);
     m_mapPtr  = std::exchange(other.m_mapPtr, nullptr);
-    m_owner   = std::exchange(other.m_owner,  DxvkMemoryOwner::Dedicated);
     return *this;
   }
 
@@ -209,11 +193,7 @@ namespace dxvk {
   : m_vkd             (device->vkd()),
     m_device          (device),
     m_devProps        (device->adapter()->deviceProperties()),
-    m_memProps        (device->adapter()->memoryProperties()),
-    m_strategy        (env::getEnvVar("DXVK_DISABLE_PAGED_ALLOCATOR") != "1" && device->config().enablePagedAllocator
-                          ? DxvkMemoryStrategy::Paged
-                          : DxvkMemoryStrategy::Legacy),
-    m_memoryPool      (this) {
+    m_memProps        (device->adapter()->memoryProperties()) {
     VkDeviceSize maxBudget = m_device->config().maxMemoryBudget;
 
     for (uint32_t i = 0; i < m_memProps.memoryHeapCount; i++) {
@@ -407,41 +387,6 @@ namespace dxvk {
           VkDeviceSize                      align,
           DxvkMemoryFlags                   hints,
     const VkMemoryDedicatedAllocateInfo*    dedAllocInfo) {
-    switch (m_strategy) {
-      case DxvkMemoryStrategy::Paged:  return this->tryAllocPaged(type, flags, size, align, dedAllocInfo);
-      case DxvkMemoryStrategy::Legacy: return this->tryAllocFromTypeLegacy(type, flags, size, align, hints, dedAllocInfo);
-    }
-
-    return DxvkMemory();
-  }
-
-
-  DxvkMemory DxvkMemoryAllocator::tryAllocPaged(
-          DxvkMemoryType*                   type,
-          VkMemoryPropertyFlags             flags,
-          VkDeviceSize                      size,
-          VkDeviceSize                      align,
-    const VkMemoryDedicatedAllocateInfo*    dedAllocInfo) {
-    DxvkMemory memory = m_memoryPool.alloc(type, flags, size, align, dedAllocInfo);
-
-    switch (bool(memory)) {
-      case true:  type->heap->stats.memoryUsed += size; break;
-      case false: break;
-    }
-
-    return memory
-      ? std::move(memory)
-      : this->tryAllocFromTypeLegacy(type, flags, size, align, DxvkMemoryFlags(), dedAllocInfo);
-  }
-
-
-  DxvkMemory DxvkMemoryAllocator::tryAllocFromTypeLegacy(
-          DxvkMemoryType*                   type,
-          VkMemoryPropertyFlags             flags,
-          VkDeviceSize                      size,
-          VkDeviceSize                      align,
-          DxvkMemoryFlags                   hints,
-    const VkMemoryDedicatedAllocateInfo*    dedAllocInfo) {
     VkDeviceSize chunkSize = pickChunkSize(type->memTypeId, hints);
 
     DxvkMemory memory;
@@ -547,31 +492,18 @@ namespace dxvk {
     std::lock_guard<dxvk::mutex> lock(m_mutex);
     memory.m_type->heap->stats.memoryUsed -= memory.m_length;
 
-    switch (memory.m_owner) {
-      case DxvkMemoryOwner::Pool:
-        m_memoryPool.free(memory.m_type, memory.m_chunk, memory.m_offset, memory.m_length);
-        break;
-
-      case DxvkMemoryOwner::SmallPool:
-        m_memoryPool.freeSmall(memory.m_type, memory.m_chunk, memory.m_offset, memory.m_length);
-        break;
-
-      case DxvkMemoryOwner::Chunk:
-        this->freeChunkMemory(
-          memory.m_type,
-          memory.m_chunk,
-          memory.m_offset,
-          memory.m_length);
-        break;
-
-      case DxvkMemoryOwner::Dedicated: {
-        DxvkDeviceMemory devMem;
-        devMem.memHandle  = memory.m_memory;
-        devMem.memPointer = nullptr;
-        devMem.memSize    = memory.m_length;
-        this->freeDeviceMemory(memory.m_type, devMem);
-        break;
-      }
+    if (memory.m_chunk != nullptr) {
+      this->freeChunkMemory(
+        memory.m_type,
+        memory.m_chunk,
+        memory.m_offset,
+        memory.m_length);
+    } else {
+      DxvkDeviceMemory devMem;
+      devMem.memHandle  = memory.m_memory;
+      devMem.memPointer = nullptr;
+      devMem.memSize    = memory.m_length;
+      this->freeDeviceMemory(memory.m_type, devMem);
     }
   }
 
