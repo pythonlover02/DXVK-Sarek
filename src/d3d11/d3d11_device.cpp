@@ -130,6 +130,9 @@ namespace dxvk {
     if (FAILED(hr))
       return hr;
 
+    if (desc.MiscFlags & D3D11_RESOURCE_MISC_TILED)
+      return E_INVALIDARG;
+
     if (!ppTexture1D)
       return S_FALSE;
 
