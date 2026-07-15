@@ -77,10 +77,14 @@ namespace dxvk {
         std::string adjusted = outstream.str();
 
         if (!adjusted.empty()) {
+          #ifdef _WIN32
           if (m_wineLogOutput)
             m_wineLogOutput(adjusted.c_str());
           else
             std::cerr << adjusted;
+#else
+          std::cerr << adjusted;
+#endif
         }
 
         if (m_fileStream)
