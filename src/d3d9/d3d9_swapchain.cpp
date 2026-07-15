@@ -514,6 +514,13 @@ namespace dxvk {
       return D3DERR_INVALIDCALL;
     }
 
+    if (m_backBuffers.empty()) {
+      // The backbuffers were destroyed and not recreated.
+      // This can happen when a call to Reset fails.
+      *ppBackBuffer = nullptr;
+      return D3D_OK;
+    }
+
     *ppBackBuffer = ref(m_backBuffers[iBackBuffer].ptr());
     return D3D_OK;
   }
