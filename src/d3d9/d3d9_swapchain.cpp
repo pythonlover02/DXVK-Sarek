@@ -514,6 +514,13 @@ namespace dxvk {
       return D3DERR_INVALIDCALL;
     }
 
+    if (m_backBuffers.empty()) {
+      // The backbuffers were destroyed and not recreated.
+      // This can happen when a call to Reset fails.
+      *ppBackBuffer = nullptr;
+      return D3D_OK;
+    }
+
     *ppBackBuffer = ref(m_backBuffers[iBackBuffer].ptr());
     return D3D_OK;
   }
@@ -591,6 +598,10 @@ namespace dxvk {
 
     if (!std::exchange(s_errorShown, true))
       Logger::warn("D3D9SwapChainEx::GetLastPresentCount: Stub");
+
+    if (likely(pLastPresentCount != nullptr))
+      *pLastPresentCount = 0;
+
     return D3D_OK;
   }
 
@@ -1164,11 +1175,10 @@ namespace dxvk {
 
       case D3D9Format::A8R8G8B8:
       case D3D9Format::X8R8G8B8:
-        pDstFormats[n++] = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
-        break;
       case D3D9Format::A8B8G8R8:
       case D3D9Format::X8B8G8R8: {
         pDstFormats[n++] = { VK_FORMAT_R8G8B8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
+        pDstFormats[n++] = { VK_FORMAT_B8G8R8A8_UNORM, VK_COLOR_SPACE_SRGB_NONLINEAR_KHR };
       } break;
 
       case D3D9Format::A2R10G10B10:

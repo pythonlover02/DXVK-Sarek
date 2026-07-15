@@ -5,7 +5,7 @@
 #include "../util/util_shared_res.h"
 
 namespace dxvk {
-  
+
   D3D11CommonTexture::D3D11CommonTexture(
           ID3D11Resource*             pInterface,
           D3D11Device*                pDevice,
@@ -54,7 +54,7 @@ namespace dxvk {
         throw DxvkError(str::format("D3D11: Cannot create shared texture:",
           "\n  MiscFlags:  ", m_desc.MiscFlags,
           "\n  FeatureLevel:  ", pDevice->GetFeatureLevel()));
-          
+
       if (m_desc.MiscFlags & D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX)
         Logger::warn("D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX: not supported.");
 
@@ -80,7 +80,7 @@ namespace dxvk {
     // by a view with a different format. Depth-stencil formats cannot
     // be reinterpreted in Vulkan, so we'll ignore those.
     auto formatProperties = imageFormatInfo(formatInfo.Format);
-    
+
     bool isMutable = formatFamily.FormatCount > 1;
     bool isMultiPlane = (formatProperties->aspectMask & VK_IMAGE_ASPECT_PLANE_0_BIT) != 0;
     bool isColorFormat = (formatProperties->aspectMask & VK_IMAGE_ASPECT_COLOR_BIT) != 0;
@@ -97,14 +97,14 @@ namespace dxvk {
       imageInfo.stages |= pDevice->GetEnabledShaderStages();
       imageInfo.access |= VK_ACCESS_SHADER_READ_BIT;
     }
-    
+
     if (m_desc.BindFlags & D3D11_BIND_RENDER_TARGET) {
       imageInfo.usage  |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
       imageInfo.stages |= VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
       imageInfo.access |= VK_ACCESS_COLOR_ATTACHMENT_READ_BIT
                        |  VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
     }
-    
+
     if (m_desc.BindFlags & D3D11_BIND_DEPTH_STENCIL) {
       imageInfo.usage  |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
       imageInfo.stages |= VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT
@@ -112,7 +112,7 @@ namespace dxvk {
       imageInfo.access |= VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT
                        |  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
     }
-    
+
     if (m_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS) {
       imageInfo.usage  |= VK_IMAGE_USAGE_STORAGE_BIT;
       imageInfo.stages |= pDevice->GetEnabledShaderStages();
@@ -133,21 +133,21 @@ namespace dxvk {
       imageInfo.flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
                       |  VK_IMAGE_CREATE_EXTENDED_USAGE_BIT;
     }
-    
+
     // Access pattern for meta-resolve operations
     if (imageInfo.sampleCount != VK_SAMPLE_COUNT_1_BIT && isColorFormat) {
       imageInfo.usage  |= VK_IMAGE_USAGE_SAMPLED_BIT;
       imageInfo.stages |= VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
       imageInfo.access |= VK_ACCESS_SHADER_READ_BIT;
     }
-    
+
     if (m_desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE)
       imageInfo.flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
-    
+
     if (Dimension == D3D11_RESOURCE_DIMENSION_TEXTURE3D &&
         (m_desc.BindFlags & D3D11_BIND_RENDER_TARGET))
       imageInfo.flags |= VK_IMAGE_CREATE_2D_ARRAY_COMPATIBLE_BIT;
-    
+
     // Swap chain back buffers need to be shader readable
     if (DxgiUsage & DXGI_USAGE_BACK_BUFFER) {
       imageInfo.usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
@@ -160,10 +160,10 @@ namespace dxvk {
     // only supported with linear tiling on most GPUs
     if (!CheckImageSupport(&imageInfo, VK_IMAGE_TILING_OPTIMAL))
       imageInfo.tiling = VK_IMAGE_TILING_LINEAR;
-    
+
     // Determine map mode based on our findings
     m_mapMode = DetermineMapMode(&imageInfo);
-    
+
     // If the image is mapped directly to host memory, we need
     // to enable linear tiling, and DXVK needs to be aware that
     // the image can be accessed by the host.
@@ -171,7 +171,7 @@ namespace dxvk {
       imageInfo.tiling        = VK_IMAGE_TILING_LINEAR;
       imageInfo.initialLayout = VK_IMAGE_LAYOUT_PREINITIALIZED;
     }
-    
+
     // If necessary, create the mapped linear buffer
     if (m_mapMode != D3D11_COMMON_TEXTURE_MAP_MODE_NONE) {
       for (uint32_t i = 0; i < m_desc.ArraySize; i++) {
@@ -199,7 +199,7 @@ namespace dxvk {
     // should in no way affect the default image layout
     imageInfo.usage |= EnableMetaCopyUsage(imageInfo.format, imageInfo.tiling);
     imageInfo.usage |= EnableMetaPackUsage(imageInfo.format, m_desc.CPUAccessFlags);
-    
+
     // Check if we can actually create the image
     if (!CheckImageSupport(&imageInfo, imageInfo.tiling)) {
       throw DxvkError(str::format(
@@ -214,14 +214,14 @@ namespace dxvk {
         "\n  Usage:   ", std::hex, m_desc.BindFlags,
         "\n  Flags:   ", std::hex, m_desc.MiscFlags));
     }
-    
+
     // Create the image on a host-visible memory type
     // in case it is going to be mapped directly.
     VkMemoryPropertyFlags memoryProperties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-    
+
     if (m_mapMode == D3D11_COMMON_TEXTURE_MAP_MODE_DIRECT)
       memoryProperties = GetMemoryFlags();
-    
+
     if (vkImage == VK_NULL_HANDLE)
       m_image = m_device->GetDXVKDevice()->createImage(imageInfo, memoryProperties);
     else
@@ -230,13 +230,13 @@ namespace dxvk {
     if (imageInfo.sharing.mode == DxvkSharedHandleMode::Export)
       ExportImageInfo();
   }
-  
-  
+
+
   D3D11CommonTexture::~D3D11CommonTexture() {
-    
+
   }
-  
-  
+
+
   VkDeviceSize D3D11CommonTexture::ComputeMappedOffset(UINT Subresource, UINT Plane, VkOffset3D Offset) const {
     auto packedFormatInfo = imageFormatInfo(m_packedFormat);
 
@@ -270,8 +270,8 @@ namespace dxvk {
     result.arrayLayer     = Subresource / m_desc.MipLevels;
     return result;
   }
-  
-  
+
+
   D3D11_COMMON_TEXTURE_SUBRESOURCE_LAYOUT D3D11CommonTexture::GetSubresourceLayout(
           VkImageAspectFlags    AspectMask,
           UINT                  Subresource) const {
@@ -334,14 +334,14 @@ namespace dxvk {
   DXGI_VK_FORMAT_MODE D3D11CommonTexture::GetFormatMode() const {
     if (m_desc.BindFlags & D3D11_BIND_RENDER_TARGET)
       return DXGI_VK_FORMAT_MODE_COLOR;
-    
+
     if (m_desc.BindFlags & D3D11_BIND_DEPTH_STENCIL)
       return DXGI_VK_FORMAT_MODE_DEPTH;
-    
+
     return DXGI_VK_FORMAT_MODE_ANY;
   }
-  
-  
+
+
   uint32_t D3D11CommonTexture::GetPlaneCount() const {
     return vk::getPlaneCount(m_image->formatInfo()->aspectMask);
   }
@@ -358,7 +358,7 @@ namespace dxvk {
     DXGI_VK_FORMAT_MODE formatMode = GetFormatMode();
     DXGI_VK_FORMAT_INFO viewFormat = m_device->LookupFormat(Format,        formatMode);
     DXGI_VK_FORMAT_INFO baseFormat = m_device->LookupFormat(m_desc.Format, formatMode);
-    
+
     // Check whether the plane index is valid for the given format
     uint32_t planeCount = GetPlaneCount();
 
@@ -369,17 +369,17 @@ namespace dxvk {
       // Check whether the given combination of image
       // view type and view format is actually supported
       VkFormatFeatureFlags features = GetImageFormatFeatures(BindFlags);
-      
+
       if (!CheckFormatFeatureSupport(viewFormat.Format, features))
         return false;
 
       // Using the image format itself is supported for non-planar formats
       if (viewFormat.Format == baseFormat.Format && planeCount == 1)
         return true;
-      
+
       // If there is a list of compatible formats, the view format must be
       // included in that list. For planar formats, the list is laid out in
-      // such a way that the n-th format is supported for the n-th plane. 
+      // such a way that the n-th format is supported for the n-th plane.
       for (size_t i = Plane; i < imageInfo.viewFormatCount; i += planeCount) {
         if (imageInfo.viewFormats[i] == viewFormat.Format) {
           return true;
@@ -390,7 +390,7 @@ namespace dxvk {
       if (imageInfo.viewFormatCount == 0 && planeCount == 1) {
         auto baseFormatInfo = imageFormatInfo(baseFormat.Format);
         auto viewFormatInfo = imageFormatInfo(viewFormat.Format);
-        
+
         return baseFormatInfo->aspectMask  == viewFormatInfo->aspectMask
             && baseFormatInfo->elementSize == viewFormatInfo->elementSize;
       }
@@ -402,15 +402,15 @@ namespace dxvk {
       return viewFormat.Format == baseFormat.Format && planeCount == 1;
     }
   }
-  
-  
+
+
   HRESULT D3D11CommonTexture::NormalizeTextureProperties(D3D11_COMMON_TEXTURE_DESC* pDesc) {
     if (pDesc->Width == 0 || pDesc->Height == 0 || pDesc->Depth == 0 || pDesc->ArraySize == 0)
       return E_INVALIDARG;
-    
+
     if (FAILED(DecodeSampleCount(pDesc->SampleDesc.Count, nullptr)))
       return E_INVALIDARG;
-    
+
     if ((pDesc->MiscFlags & D3D11_RESOURCE_MISC_GDI_COMPATIBLE)
      && (pDesc->Usage == D3D11_USAGE_STAGING
       || (pDesc->Format != DXGI_FORMAT_B8G8R8A8_TYPELESS
@@ -432,10 +432,10 @@ namespace dxvk {
     const uint32_t maxMipLevelCount = (pDesc->SampleDesc.Count <= 1)
       ? util::computeMipLevelCount({ pDesc->Width, pDesc->Height, pDesc->Depth })
       : 1u;
-    
+
     if (pDesc->MipLevels == 0 || pDesc->MipLevels > maxMipLevelCount)
       pDesc->MipLevels = maxMipLevelCount;
-    
+
     // Row-major is only supported for textures with one single
     // subresource and one sample and cannot have bind flags.
     if (pDesc->TextureLayout == D3D11_TEXTURE_LAYOUT_ROW_MAJOR
@@ -448,13 +448,13 @@ namespace dxvk {
 
     return S_OK;
   }
-  
-  
+
+
   BOOL D3D11CommonTexture::CheckImageSupport(
     const DxvkImageCreateInfo*  pImageInfo,
           VkImageTiling         Tiling) const {
     const Rc<DxvkAdapter> adapter = m_device->GetDXVKDevice()->adapter();
-    
+
     VkImageUsageFlags usage = pImageInfo->usage;
 
     if (pImageInfo->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)
@@ -464,10 +464,10 @@ namespace dxvk {
     VkResult status = adapter->imageFormatProperties(
       pImageInfo->format, pImageInfo->type, Tiling,
       usage, pImageInfo->flags, formatProps);
-    
+
     if (status != VK_SUCCESS)
       return FALSE;
-    
+
     return (pImageInfo->extent.width  <= formatProps.maxExtent.width)
         && (pImageInfo->extent.height <= formatProps.maxExtent.height)
         && (pImageInfo->extent.depth  <= formatProps.maxExtent.depth)
@@ -485,8 +485,8 @@ namespace dxvk {
     return (properties.linearTilingFeatures  & Features) == Features
         || (properties.optimalTilingFeatures & Features) == Features;
   }
-  
-  
+
+
   VkImageUsageFlags D3D11CommonTexture::EnableMetaCopyUsage(
           VkFormat              Format,
           VkImageTiling         Tiling) const {
@@ -514,15 +514,15 @@ namespace dxvk {
     requestedFeatures &= Tiling == VK_IMAGE_TILING_OPTIMAL
       ? properties.optimalTilingFeatures
       : properties.linearTilingFeatures;
-    
+
     VkImageUsageFlags requestedUsage = 0;
 
     if (requestedFeatures & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)
       requestedUsage |= VK_IMAGE_USAGE_SAMPLED_BIT;
-    
+
     if (requestedFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT)
       requestedUsage |= VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
-    
+
     if (requestedFeatures & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT)
       requestedUsage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
 
@@ -535,7 +535,7 @@ namespace dxvk {
           UINT                  CpuAccess) const {
     if ((CpuAccess & D3D11_CPU_ACCESS_READ) == 0)
       return 0;
-    
+
     const auto dsMask = VK_IMAGE_ASPECT_DEPTH_BIT
                       | VK_IMAGE_ASPECT_STENCIL_BIT;
 
@@ -546,7 +546,7 @@ namespace dxvk {
       : 0;
   }
 
-  
+
   VkMemoryPropertyFlags D3D11CommonTexture::GetMemoryFlags() const {
     VkMemoryPropertyFlags memoryFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
                                       | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
@@ -568,7 +568,7 @@ namespace dxvk {
     // Don't map an image unless the application requests it
     if (!m_desc.CPUAccessFlags)
       return D3D11_COMMON_TEXTURE_MAP_MODE_NONE;
-    
+
     // If the resource cannot be used in the actual rendering pipeline, we
     // do not need to create an actual image and can instead implement copy
     // functions as buffer-to-image and image-to-buffer copies.
@@ -608,8 +608,8 @@ namespace dxvk {
     // bugs where games ignore the pitch when mapping the image.
     return D3D11_COMMON_TEXTURE_MAP_MODE_BUFFER;
   }
-  
-  
+
+
   void D3D11CommonTexture::ExportImageInfo() {
     HANDLE hSharedHandle;
 
@@ -639,8 +639,8 @@ namespace dxvk {
     if (hSharedHandle != INVALID_HANDLE_VALUE)
       CloseHandle(hSharedHandle);
   }
-  
-  
+
+
   BOOL D3D11CommonTexture::IsR32UavCompatibleFormat(
           DXGI_FORMAT           Format) {
     return Format == DXGI_FORMAT_R8G8B8A8_TYPELESS
@@ -655,7 +655,7 @@ namespace dxvk {
   D3D11CommonTexture::MappedBuffer D3D11CommonTexture::CreateMappedBuffer(UINT MipLevel) const {
     const DxvkFormatInfo* formatInfo = imageFormatInfo(
       m_device->LookupPackedFormat(m_desc.Format, GetFormatMode()).Format);
-    
+
     DxvkBufferCreateInfo info;
     info.size   = GetSubresourceLayout(formatInfo->aspectMask, MipLevel).Size;
     info.usage  = VK_BUFFER_USAGE_TRANSFER_SRC_BIT
@@ -669,22 +669,22 @@ namespace dxvk {
                 | VK_ACCESS_TRANSFER_WRITE_BIT
                 | VK_ACCESS_SHADER_READ_BIT
                 | VK_ACCESS_SHADER_WRITE_BIT;
-    
+
     VkMemoryPropertyFlags memType = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
                                   | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-    
+
     bool useCached = m_device->GetOptions()->cachedDynamicResources == ~0u;
 
     if (m_desc.Usage == D3D11_USAGE_STAGING || useCached)
       memType |= VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
-    
+
     MappedBuffer result;
     result.buffer = m_device->GetDXVKDevice()->createBuffer(info, memType);
     result.slice = result.buffer->getSliceHandle();
     return result;
   }
-  
-  
+
+
   VkImageType D3D11CommonTexture::GetImageTypeFromResourceDim(D3D11_RESOURCE_DIMENSION Dimension) {
     switch (Dimension) {
       case D3D11_RESOURCE_DIMENSION_TEXTURE1D: return VK_IMAGE_TYPE_1D;
@@ -693,27 +693,27 @@ namespace dxvk {
       default: throw DxvkError("D3D11CommonTexture: Unhandled resource dimension");
     }
   }
-  
-  
+
+
   VkImageLayout D3D11CommonTexture::OptimizeLayout(VkImageUsageFlags Usage) {
     const VkImageUsageFlags usageFlags = Usage;
-    
+
     // Filter out unnecessary flags. Transfer operations
     // are handled by the backend in a transparent manner.
     Usage &= ~(VK_IMAGE_USAGE_TRANSFER_DST_BIT
              | VK_IMAGE_USAGE_TRANSFER_SRC_BIT);
-    
+
     // If the image is used only as an attachment, we never
     // have to transform the image back to a different layout
     if (Usage == VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT)
       return VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-    
+
     if (Usage == VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
       return VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
-    
+
     Usage &= ~(VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
              | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT);
-    
+
     // If the image is used for reading but not as a storage
     // image, we can optimize the image for texture access
     if (Usage == VK_IMAGE_USAGE_SAMPLED_BIT) {
@@ -721,12 +721,12 @@ namespace dxvk {
         ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL
         : VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     }
-    
+
     // Otherwise, we have to stick with the default layout
     return VK_IMAGE_LAYOUT_GENERAL;
   }
-  
-  
+
+
 
 
   D3D11DXGISurface::D3D11DXGISurface(
@@ -739,23 +739,23 @@ namespace dxvk {
       m_gdiSurface = new D3D11GDISurface(m_resource, 0);
   }
 
-  
+
   D3D11DXGISurface::~D3D11DXGISurface() {
     if (m_gdiSurface)
       delete m_gdiSurface;
   }
 
-  
+
   ULONG STDMETHODCALLTYPE D3D11DXGISurface::AddRef() {
     return m_resource->AddRef();
   }
 
-  
+
   ULONG STDMETHODCALLTYPE D3D11DXGISurface::Release() {
     return m_resource->Release();
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11DXGISurface::QueryInterface(
           REFIID                  riid,
           void**                  ppvObject) {
@@ -770,7 +770,7 @@ namespace dxvk {
     return m_resource->GetPrivateData(Name, pDataSize, pData);
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11DXGISurface::SetPrivateData(
           REFGUID                 Name,
           UINT                    DataSize,
@@ -778,21 +778,21 @@ namespace dxvk {
     return m_resource->SetPrivateData(Name, DataSize, pData);
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11DXGISurface::SetPrivateDataInterface(
           REFGUID                 Name,
     const IUnknown*               pUnknown) {
     return m_resource->SetPrivateDataInterface(Name, pUnknown);
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11DXGISurface::GetParent(
           REFIID                  riid,
           void**                  ppParent) {
     return GetDevice(riid, ppParent);
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11DXGISurface::GetDevice(
           REFIID                  riid,
           void**                  ppDevice) {
@@ -801,7 +801,7 @@ namespace dxvk {
     return device->QueryInterface(riid, ppDevice);
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11DXGISurface::GetDesc(
           DXGI_SURFACE_DESC*      pDesc) {
     if (!pDesc)
@@ -815,7 +815,7 @@ namespace dxvk {
     return S_OK;
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11DXGISurface::Map(
             DXGI_MAPPED_RECT*       pLockedRect,
             UINT                    MapFlags) {
@@ -832,17 +832,17 @@ namespace dxvk {
 
     D3D11_MAP mapType;
 
-    if (MapFlags & (DXGI_MAP_READ | DXGI_MAP_WRITE))
+    if (MapFlags & DXGI_MAP_READ && MapFlags & DXGI_MAP_WRITE)
       mapType = D3D11_MAP_READ_WRITE;
     else if (MapFlags & DXGI_MAP_READ)
       mapType = D3D11_MAP_READ;
-    else if (MapFlags & (DXGI_MAP_WRITE | DXGI_MAP_DISCARD))
+    else if (MapFlags & DXGI_MAP_WRITE && MapFlags & DXGI_MAP_DISCARD)
       mapType = D3D11_MAP_WRITE_DISCARD;
     else if (MapFlags & DXGI_MAP_WRITE)
       mapType = D3D11_MAP_WRITE;
     else
       return DXGI_ERROR_INVALID_CALL;
-    
+
     D3D11_MAPPED_SUBRESOURCE sr;
     HRESULT hr = context->Map(m_resource, 0,
       mapType, 0, pLockedRect ? &sr : nullptr);
@@ -855,14 +855,14 @@ namespace dxvk {
     return hr;
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11DXGISurface::Unmap() {
     Com<ID3D11Device>        device;
     Com<ID3D11DeviceContext> context;
 
     m_resource->GetDevice(&device);
     device->GetImmediateContext(&context);
-    
+
     context->Unmap(m_resource, 0);
     return S_OK;
   }
@@ -873,7 +873,7 @@ namespace dxvk {
           HDC*                    phdc) {
     if (!m_gdiSurface)
       return DXGI_ERROR_INVALID_CALL;
-    
+
     return m_gdiSurface->Acquire(Discard, phdc);
   }
 
@@ -886,20 +886,31 @@ namespace dxvk {
     return m_gdiSurface->Release(pDirtyRect);
   }
 
-  
+
   HRESULT STDMETHODCALLTYPE D3D11DXGISurface::GetResource(
           REFIID                  riid,
           void**                  ppParentResource,
           UINT*                   pSubresourceIndex) {
+    if (!ppParentResource)
+      return E_POINTER;
+
+    InitReturnPtr(ppParentResource);
     HRESULT hr = m_resource->QueryInterface(riid, ppParentResource);
-    if (pSubresourceIndex)
+
+    if (SUCCEEDED(hr) && pSubresourceIndex)
       *pSubresourceIndex = 0;
+
     return hr;
   }
-  
-  
+
+
   bool D3D11DXGISurface::isSurfaceCompatible() const {
-    auto desc = m_texture->Desc();
+    auto texture = GetCommonTexture(m_resource);
+
+    if (!texture)
+      return false;
+
+    auto desc = texture->Desc();
 
     return desc->ArraySize == 1
         && desc->MipLevels == 1;
@@ -913,62 +924,62 @@ namespace dxvk {
           D3D11CommonTexture* pTexture)
   : m_resource(pResource),
     m_texture (pTexture) {
-      
+
   }
-  
-  
+
+
   D3D11VkInteropSurface::~D3D11VkInteropSurface() {
-    
+
   }
-  
-  
+
+
   ULONG STDMETHODCALLTYPE D3D11VkInteropSurface::AddRef() {
     return m_resource->AddRef();
   }
-  
-  
+
+
   ULONG STDMETHODCALLTYPE D3D11VkInteropSurface::Release() {
     return m_resource->Release();
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE D3D11VkInteropSurface::QueryInterface(
           REFIID                  riid,
           void**                  ppvObject) {
     return m_resource->QueryInterface(riid, ppvObject);
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE D3D11VkInteropSurface::GetDevice(
           IDXGIVkInteropDevice**  ppDevice) {
     Com<ID3D11Device> device;
     m_resource->GetDevice(&device);
-    
+
     return device->QueryInterface(
       __uuidof(IDXGIVkInteropDevice),
       reinterpret_cast<void**>(ppDevice));
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE D3D11VkInteropSurface::GetVulkanImageInfo(
           VkImage*              pHandle,
           VkImageLayout*        pLayout,
           VkImageCreateInfo*    pInfo) {
     const Rc<DxvkImage> image = m_texture->GetImage();
     const DxvkImageCreateInfo& info = image->info();
-    
+
     if (pHandle != nullptr)
       *pHandle = image->handle();
-    
+
     if (pLayout != nullptr)
       *pLayout = info.layout;
-    
+
     if (pInfo != nullptr) {
       // We currently don't support any extended structures
       if (pInfo->sType != VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO
        || pInfo->pNext != nullptr)
         return E_INVALIDARG;
-      
+
       pInfo->flags          = 0;
       pInfo->imageType      = info.type;
       pInfo->format         = info.format;
@@ -982,11 +993,11 @@ namespace dxvk {
       pInfo->queueFamilyIndexCount = 0;
       pInfo->initialLayout  = VK_IMAGE_LAYOUT_UNDEFINED;
     }
-    
+
     return S_OK;
   }
-  
-  
+
+
   ///////////////////////////////////////////
   //      D 3 D 1 1 T E X T U R E 1 D
   D3D11Texture1D::D3D11Texture1D(
@@ -998,21 +1009,21 @@ namespace dxvk {
     m_surface (this, &m_texture),
     m_resource(this),
     m_d3d10   (this) {
-    
+
   }
-  
-  
+
+
   D3D11Texture1D::~D3D11Texture1D() {
-    
+
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE D3D11Texture1D::QueryInterface(REFIID riid, void** ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
 
     *ppvObject = nullptr;
-    
+
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(ID3D11DeviceChild)
      || riid == __uuidof(ID3D11Resource)
@@ -1020,14 +1031,14 @@ namespace dxvk {
       *ppvObject = ref(this);
       return S_OK;
     }
-    
+
     if (riid == __uuidof(ID3D10DeviceChild)
      || riid == __uuidof(ID3D10Resource)
      || riid == __uuidof(ID3D10Texture1D)) {
       *ppvObject = ref(&m_d3d10);
       return S_OK;
     }
-    
+
     if (m_surface.isSurfaceCompatible()
      && (riid == __uuidof(IDXGISurface)
       || riid == __uuidof(IDXGISurface1)
@@ -1043,36 +1054,36 @@ namespace dxvk {
        *ppvObject = ref(&m_resource);
        return S_OK;
     }
-    
+
     if (riid == __uuidof(IDXGIVkInteropSurface)) {
       *ppvObject = ref(&m_interop);
       return S_OK;
     }
-    
+
     Logger::warn("D3D11Texture1D::QueryInterface: Unknown interface query");
     Logger::warn(str::format(riid));
     return E_NOINTERFACE;
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture1D::GetType(D3D11_RESOURCE_DIMENSION *pResourceDimension) {
     *pResourceDimension = D3D11_RESOURCE_DIMENSION_TEXTURE1D;
   }
-  
-  
+
+
   UINT STDMETHODCALLTYPE D3D11Texture1D::GetEvictionPriority() {
     return DXGI_RESOURCE_PRIORITY_NORMAL;
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture1D::SetEvictionPriority(UINT EvictionPriority) {
     static bool s_errorShown = false;
 
     if (!std::exchange(s_errorShown, true))
       Logger::warn("D3D11Texture1D::SetEvictionPriority: Stub");
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture1D::GetDesc(D3D11_TEXTURE1D_DESC *pDesc) {
     pDesc->Width          = m_texture.Desc()->Width;
     pDesc->MipLevels      = m_texture.Desc()->MipLevels;
@@ -1083,8 +1094,8 @@ namespace dxvk {
     pDesc->CPUAccessFlags = m_texture.Desc()->CPUAccessFlags;
     pDesc->MiscFlags      = m_texture.Desc()->MiscFlags;
   }
-  
-  
+
+
   ///////////////////////////////////////////
   //      D 3 D 1 1 T E X T U R E 2 D
   D3D11Texture2D::D3D11Texture2D(
@@ -1113,7 +1124,7 @@ namespace dxvk {
     m_resource  (this),
     m_d3d10     (this),
     m_swapChain (nullptr) {
-    
+
   }
 
 
@@ -1129,15 +1140,15 @@ namespace dxvk {
     m_resource  (this),
     m_d3d10     (this),
     m_swapChain (pSwapChain) {
-    
+
   }
-  
-  
+
+
   D3D11Texture2D::~D3D11Texture2D() {
-    
+
   }
-  
-  
+
+
   ULONG STDMETHODCALLTYPE D3D11Texture2D::AddRef() {
     uint32_t refCount = D3D11DeviceChild<ID3D11Texture2D1>::AddRef();
 
@@ -1148,7 +1159,7 @@ namespace dxvk {
 
     return refCount;
   }
-  
+
 
   ULONG STDMETHODCALLTYPE D3D11Texture2D::Release() {
     IUnknown* swapChain = m_swapChain;
@@ -1168,7 +1179,7 @@ namespace dxvk {
       return E_POINTER;
 
     *ppvObject = nullptr;
-    
+
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(ID3D11DeviceChild)
      || riid == __uuidof(ID3D11Resource)
@@ -1192,7 +1203,7 @@ namespace dxvk {
       *ppvObject = ref(&m_surface);
       return S_OK;
     }
-    
+
     if (riid == __uuidof(IDXGIObject)
      || riid == __uuidof(IDXGIDeviceSubObject)
      || riid == __uuidof(IDXGIResource)
@@ -1200,36 +1211,36 @@ namespace dxvk {
        *ppvObject = ref(&m_resource);
        return S_OK;
     }
-    
+
     if (riid == __uuidof(IDXGIVkInteropSurface)) {
       *ppvObject = ref(&m_interop);
       return S_OK;
     }
-    
+
     Logger::warn("D3D11Texture2D::QueryInterface: Unknown interface query");
     Logger::warn(str::format(riid));
     return E_NOINTERFACE;
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture2D::GetType(D3D11_RESOURCE_DIMENSION *pResourceDimension) {
     *pResourceDimension = D3D11_RESOURCE_DIMENSION_TEXTURE2D;
   }
-  
-  
+
+
   UINT STDMETHODCALLTYPE D3D11Texture2D::GetEvictionPriority() {
     return DXGI_RESOURCE_PRIORITY_NORMAL;
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture2D::SetEvictionPriority(UINT EvictionPriority) {
     static bool s_errorShown = false;
 
     if (!std::exchange(s_errorShown, true))
       Logger::warn("D3D11Texture2D::SetEvictionPriority: Stub");
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture2D::GetDesc(D3D11_TEXTURE2D_DESC* pDesc) {
     pDesc->Width          = m_texture.Desc()->Width;
     pDesc->Height         = m_texture.Desc()->Height;
@@ -1242,8 +1253,8 @@ namespace dxvk {
     pDesc->CPUAccessFlags = m_texture.Desc()->CPUAccessFlags;
     pDesc->MiscFlags      = m_texture.Desc()->MiscFlags;
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture2D::GetDesc1(D3D11_TEXTURE2D_DESC1* pDesc) {
     pDesc->Width          = m_texture.Desc()->Width;
     pDesc->Height         = m_texture.Desc()->Height;
@@ -1257,8 +1268,8 @@ namespace dxvk {
     pDesc->MiscFlags      = m_texture.Desc()->MiscFlags;
     pDesc->TextureLayout  = m_texture.Desc()->TextureLayout;
   }
-  
-  
+
+
   ///////////////////////////////////////////
   //      D 3 D 1 1 T E X T U R E 3 D
   D3D11Texture3D::D3D11Texture3D(
@@ -1269,21 +1280,21 @@ namespace dxvk {
     m_interop (this, &m_texture),
     m_resource(this),
     m_d3d10   (this) {
-    
+
   }
-  
-  
+
+
   D3D11Texture3D::~D3D11Texture3D() {
-    
+
   }
-  
-  
+
+
   HRESULT STDMETHODCALLTYPE D3D11Texture3D::QueryInterface(REFIID riid, void** ppvObject) {
     if (ppvObject == nullptr)
       return E_POINTER;
 
     *ppvObject = nullptr;
-    
+
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(ID3D11DeviceChild)
      || riid == __uuidof(ID3D11Resource)
@@ -1292,14 +1303,14 @@ namespace dxvk {
       *ppvObject = ref(this);
       return S_OK;
     }
-    
+
     if (riid == __uuidof(ID3D10DeviceChild)
      || riid == __uuidof(ID3D10Resource)
      || riid == __uuidof(ID3D10Texture3D)) {
       *ppvObject = ref(&m_d3d10);
       return S_OK;
     }
-    
+
     if (riid == __uuidof(IDXGIObject)
      || riid == __uuidof(IDXGIDeviceSubObject)
      || riid == __uuidof(IDXGIResource)
@@ -1307,36 +1318,36 @@ namespace dxvk {
        *ppvObject = ref(&m_resource);
        return S_OK;
     }
-    
+
     if (riid == __uuidof(IDXGIVkInteropSurface)) {
       *ppvObject = ref(&m_interop);
       return S_OK;
     }
-    
+
     Logger::warn("D3D11Texture3D::QueryInterface: Unknown interface query");
     Logger::warn(str::format(riid));
     return E_NOINTERFACE;
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture3D::GetType(D3D11_RESOURCE_DIMENSION *pResourceDimension) {
     *pResourceDimension = D3D11_RESOURCE_DIMENSION_TEXTURE3D;
   }
-  
-  
+
+
   UINT STDMETHODCALLTYPE D3D11Texture3D::GetEvictionPriority() {
     return DXGI_RESOURCE_PRIORITY_NORMAL;
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture3D::SetEvictionPriority(UINT EvictionPriority) {
     static bool s_errorShown = false;
 
     if (!std::exchange(s_errorShown, true))
       Logger::warn("D3D11Texture3D::SetEvictionPriority: Stub");
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture3D::GetDesc(D3D11_TEXTURE3D_DESC* pDesc) {
     pDesc->Width          = m_texture.Desc()->Width;
     pDesc->Height         = m_texture.Desc()->Height;
@@ -1348,8 +1359,8 @@ namespace dxvk {
     pDesc->CPUAccessFlags = m_texture.Desc()->CPUAccessFlags;
     pDesc->MiscFlags      = m_texture.Desc()->MiscFlags;
   }
-  
-  
+
+
   void STDMETHODCALLTYPE D3D11Texture3D::GetDesc1(D3D11_TEXTURE3D_DESC1* pDesc) {
     pDesc->Width          = m_texture.Desc()->Width;
     pDesc->Height         = m_texture.Desc()->Height;
@@ -1361,25 +1372,25 @@ namespace dxvk {
     pDesc->CPUAccessFlags = m_texture.Desc()->CPUAccessFlags;
     pDesc->MiscFlags      = m_texture.Desc()->MiscFlags;
   }
-  
-  
+
+
   D3D11CommonTexture* GetCommonTexture(ID3D11Resource* pResource) {
     D3D11_RESOURCE_DIMENSION dimension = D3D11_RESOURCE_DIMENSION_UNKNOWN;
     pResource->GetType(&dimension);
-    
+
     switch (dimension) {
       case D3D11_RESOURCE_DIMENSION_TEXTURE1D:
         return static_cast<D3D11Texture1D*>(pResource)->GetCommonTexture();
-      
+
       case D3D11_RESOURCE_DIMENSION_TEXTURE2D:
         return static_cast<D3D11Texture2D*>(pResource)->GetCommonTexture();
-      
+
       case D3D11_RESOURCE_DIMENSION_TEXTURE3D:
         return static_cast<D3D11Texture3D*>(pResource)->GetCommonTexture();
-      
+
       default:
         return nullptr;
     }
   }
-  
+
 }

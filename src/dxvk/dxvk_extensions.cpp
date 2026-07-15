@@ -1,7 +1,7 @@
 #include "dxvk_extensions.h"
 
 namespace dxvk {
-  
+
   DxvkNameSet::DxvkNameSet() { }
   DxvkNameSet::~DxvkNameSet() { }
 
@@ -22,7 +22,7 @@ namespace dxvk {
 
     if (entry == m_names.end())
       return 0;
-    
+
     return entry->second != 0
       ? entry->second
       : 1;
@@ -40,7 +40,7 @@ namespace dxvk {
 
       if (ext->mode() == DxvkExtMode::Disabled)
         continue;
-      
+
       uint32_t revision = supports(ext->name());
 
       if (revision) {
@@ -68,8 +68,10 @@ namespace dxvk {
 
   DxvkNameList DxvkNameSet::toNameList() const {
     DxvkNameList nameList;
-    for (const auto& pair : m_names)
-      nameList.add(pair.first.c_str());
+    for (const auto& pair : m_names) {
+      if (pair.second)
+        nameList.add(pair.first.c_str());
+    }
     return nameList;
   }
 
@@ -79,7 +81,7 @@ namespace dxvk {
     if (vkl->vkEnumerateInstanceLayerProperties(
           &entryCount, nullptr) != VK_SUCCESS)
       return DxvkNameSet();
-    
+
     std::vector<VkLayerProperties> entries(entryCount);
     if (vkl->vkEnumerateInstanceLayerProperties(
           &entryCount, entries.data()) != VK_SUCCESS)
@@ -90,14 +92,14 @@ namespace dxvk {
       set.m_names.insert({ entries[i].layerName, entries[i].specVersion });
     return set;
   }
-  
+
 
   DxvkNameSet DxvkNameSet::enumInstanceExtensions(const Rc<vk::LibraryFn>& vkl) {
     uint32_t entryCount = 0;
     if (vkl->vkEnumerateInstanceExtensionProperties(
           nullptr, &entryCount, nullptr) != VK_SUCCESS)
       return DxvkNameSet();
-    
+
     std::vector<VkExtensionProperties> entries(entryCount);
     if (vkl->vkEnumerateInstanceExtensionProperties(
           nullptr, &entryCount, entries.data()) != VK_SUCCESS)
@@ -109,7 +111,7 @@ namespace dxvk {
     return set;
   }
 
-  
+
   DxvkNameSet DxvkNameSet::enumDeviceExtensions(
     const Rc<vk::InstanceFn>& vki,
           VkPhysicalDevice    device) {
@@ -117,7 +119,7 @@ namespace dxvk {
     if (vki->vkEnumerateDeviceExtensionProperties(
           device, nullptr, &entryCount, nullptr) != VK_SUCCESS)
       return DxvkNameSet();
-    
+
     std::vector<VkExtensionProperties> entries(entryCount);
     if (vki->vkEnumerateDeviceExtensionProperties(
           device, nullptr, &entryCount, entries.data()) != VK_SUCCESS)
@@ -128,5 +130,5 @@ namespace dxvk {
       set.m_names.insert({ entries[i].extensionName, entries[i].specVersion });
     return set;
   }
-  
+
 }

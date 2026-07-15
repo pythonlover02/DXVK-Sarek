@@ -87,6 +87,8 @@ namespace dxvk {
     VkMemoryType      memType;
     uint32_t          memTypeId;
 
+    VkDeviceSize      chunkSize;
+
     std::vector<Rc<DxvkMemoryChunk>> chunks;
   };
 
@@ -257,6 +259,14 @@ namespace dxvk {
      */
     bool isCompatible(const Rc<DxvkMemoryChunk>& other) const;
 
+    /**
+     * \brief Queries chunk size
+     * \returns Chunk size, in bytes
+     */
+    VkDeviceSize size() const {
+      return m_memory.memSize;
+    }
+
   private:
 
     struct FreeSlice {
@@ -287,6 +297,9 @@ namespace dxvk {
     friend class DxvkMemoryChunk;
 
     constexpr static VkDeviceSize SmallAllocationThreshold = 256 << 10;
+
+    constexpr static VkDeviceSize MinChunkSize =   4ull << 20;
+    constexpr static VkDeviceSize MaxChunkSize = 256ull << 20;
   public:
 
     DxvkMemoryAllocator(const DxvkDevice* device);
@@ -386,7 +399,13 @@ namespace dxvk {
 
     VkDeviceSize pickChunkSize(
             uint32_t              memTypeId,
+            VkDeviceSize          requiredSize,
             DxvkMemoryFlags       hints) const;
+
+    void adjustChunkSize(
+            uint32_t              memTypeId,
+            VkDeviceSize          allocatedSize,
+            DxvkMemoryFlags       hints);
 
     bool shouldFreeChunk(
       const DxvkMemoryType*       type,
@@ -398,6 +417,11 @@ namespace dxvk {
 
     void freeEmptyChunks(
       const DxvkMemoryHeap*       heap);
+
+    void logMemoryError(
+      const VkMemoryRequirements& req) const;
+
+    void logMemoryStats() const;
 
   };
 

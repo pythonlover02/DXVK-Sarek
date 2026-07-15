@@ -1598,8 +1598,15 @@ namespace dxvk {
 
       case DxbcOpcode::Mad:
       case DxbcOpcode::DFma:
-        dst.id = m_module.opFFma(typeId,
-          src.at(0).id, src.at(1).id, src.at(2).id);
+        if (ins.controls.precise()) {
+          // FXC only emits precise mad if the shader explicitly uses
+          // the HLSL mad()/fma() intrinsics, let's preserve that.
+          dst.id = m_module.opFFma(typeId,
+            src.at(0).id, src.at(1).id, src.at(2).id);
+        } else {
+          dst.id = m_module.opFMul(typeId, src.at(0).id, src.at(1).id);
+          dst.id = m_module.opFAdd(typeId, dst.id, src.at(2).id);
+        }
         break;
 
       case DxbcOpcode::Max:
@@ -2015,13 +2022,28 @@ namespace dxvk {
     dst.type.ctype  = ins.dst[0].dataType;
     dst.type.ccount = 1;
 
-    dst.id = m_module.opDot(
-      getVectorTypeId(dst.type),
-      src.at(0).id,
-      src.at(1).id);
+    dst.id = 0;
 
-    if (ins.controls.precise() || m_precise)
+    uint32_t componentType = getVectorTypeId(dst.type);
+    uint32_t componentCount = srcMask.popCount();
+
+    for (uint32_t i = 0; i < componentCount; i++) {
+      if (dst.id) {
+        dst.id = m_module.opFFma(componentType,
+          m_module.opCompositeExtract(componentType, src.at(0).id, 1, &i),
+          m_module.opCompositeExtract(componentType, src.at(1).id, 1, &i),
+          dst.id);
+      } else {
+        dst.id = m_module.opFMul(componentType,
+          m_module.opCompositeExtract(componentType, src.at(0).id, 1, &i),
+          m_module.opCompositeExtract(componentType, src.at(1).id, 1, &i));
+      }
+
+      // Unconditionally mark as precise since the exact order of operation
+      // matters for some games, even if the instruction itself is not marked
+      // as precise.
       m_module.decorate(dst.id, spv::DecorationNoContraction);
+    }
 
     dst = emitDstOperandModifiers(dst, ins.modifiers);
     emitRegisterStore(ins.dst[0], dst);
@@ -3111,8 +3133,20 @@ namespace dxvk {
       } break;
 
       case DxbcOpcode::EvalSnapped: {
-        const DxbcRegisterValue offset = emitRegisterLoad(
+        // The offset is encoded as a 4-bit fixed point value
+        DxbcRegisterValue offset = emitRegisterLoad(
           ins.src[1], DxbcRegMask(true, true, false, false));
+        offset.id = m_module.opBitFieldSExtract(
+          getVectorTypeId(offset.type), offset.id,
+          m_module.consti32(0), m_module.consti32(4));
+
+        offset.type.ctype = DxbcScalarType::Float32;
+        offset.id = m_module.opConvertStoF(
+          getVectorTypeId(offset.type), offset.id);
+
+        offset.id = m_module.opFMul(
+          getVectorTypeId(offset.type), offset.id,
+          m_module.constvec2f32(1.0f / 16.0f, 1.0f / 16.0f));
 
         result.id = m_module.opInterpolateAtOffset(
           getVectorTypeId(result.type),
@@ -3153,6 +3187,13 @@ namespace dxvk {
     // result into a four-component vector later.
     DxbcRegisterValue imageSize   = emitQueryTextureSize(ins.src[1], mipLod);
     DxbcRegisterValue imageLevels = emitQueryTextureLods(ins.src[1]);
+
+    // If the mip level is out of bounds, D3D requires us to return
+    // zero before applying modifiers, whereas SPIR-V is undefined,
+    // so we need to fix it up manually here.
+    imageSize.id = m_module.opSelect(getVectorTypeId(imageSize.type),
+      m_module.opULessThan(m_module.defBoolType(), mipLod.id, imageLevels.id),
+      imageSize.id, emitBuildZeroVector(imageSize.type).id);
 
     // Convert intermediates to the requested type
     if (returnType == DxbcScalarType::Float32) {
@@ -5373,12 +5414,12 @@ namespace dxvk {
     result.type.ctype  = DxbcScalarType::Uint32;
     result.type.ccount = 1;
 
-    if (info.image.sampled == 1) {
+    if (info.image.ms == 0 && info.image.sampled == 1) {
       result.id = m_module.opImageQueryLevels(
         getVectorTypeId(result.type),
         m_module.opLoad(info.typeId, info.varId));
     } else {
-      // Report one LOD in case of UAVs
+      // Report one LOD in case of UAVs or multisampled images
       result.id = m_module.constu32(1);
     }
 
@@ -6028,7 +6069,7 @@ namespace dxvk {
 
       DxbcRegisterValue value = emitValueLoad(ptr);
 
-      value.id = m_module.opFClamp(
+      value.id = m_module.opNClamp(
         getVectorTypeId(ptr.type),
         value.id,
         m_module.constf32(0.0f),
@@ -6481,7 +6522,7 @@ namespace dxvk {
       }
 
       DxbcRegisterValue tessValue = emitRegisterExtract(value, mask);
-      tessValue.id = m_module.opFClamp(getVectorTypeId(tessValue.type),
+      tessValue.id = m_module.opNClamp(getVectorTypeId(tessValue.type),
         tessValue.id, m_module.constf32(0.0f),
         m_module.constf32(maxTessFactor));
 
@@ -6696,7 +6737,7 @@ namespace dxvk {
       case DxbcProgramType::GeometryShader: emitGsInit(); break;
       case DxbcProgramType::PixelShader:    emitPsInit(); break;
       case DxbcProgramType::ComputeShader:  emitCsInit(); break;
-      default: break;
+      default: throw DxvkError("Invalid shader stage");
     }
   }
 

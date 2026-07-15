@@ -170,6 +170,18 @@ namespace dxvk {
           DWORD           Usage,
           D3DRESOURCETYPE RType,
           D3D9Format      CheckFormat) {
+    if (unlikely(AdapterFormat == D3D9Format::Unknown))
+      return D3DERR_INVALIDCALL;
+
+    if (unlikely(RType == D3DRTYPE_VERTEXBUFFER || RType == D3DRTYPE_INDEXBUFFER))
+      return D3DERR_INVALIDCALL;
+
+    if (unlikely(AdapterFormat == D3D9Format::Unknown))
+      return D3DERR_INVALIDCALL;
+
+    if (unlikely(RType == D3DRTYPE_VERTEXBUFFER || RType == D3DRTYPE_INDEXBUFFER))
+      return D3DERR_INVALIDCALL;
+
     if (!IsSupportedAdapterFormat(AdapterFormat))
       return D3DERR_NOTAVAILABLE;
 
@@ -208,10 +220,8 @@ namespace dxvk {
         : D3DERR_NOTAVAILABLE;
 
     // I really don't want to support this...
-    if (dmap) {
-      Logger::warn("D3D9Adapter::CheckDeviceFormat: D3DUSAGE_DMAP is unsupported");
+    if (dmap)
       return D3DERR_NOTAVAILABLE;
-    }
 
     auto mapping = m_d3d9Formats.GetFormatMapping(CheckFormat);
     if (mapping.FormatColor == VK_FORMAT_UNDEFINED)
@@ -223,9 +233,6 @@ namespace dxvk {
     if (RType == D3DRTYPE_CUBETEXTURE && mapping.Aspect != VK_IMAGE_ASPECT_COLOR_BIT
      && !m_parent->GetOptions().supportCubeDepthFormats)
       return D3DERR_NOTAVAILABLE;
-
-    if (RType == D3DRTYPE_VERTEXBUFFER || RType == D3DRTYPE_INDEXBUFFER)
-      return D3D_OK;
 
     // Let's actually ask Vulkan now that we got some quirks out the way!
     return CheckDeviceVkFormat(mapping.FormatColor, Usage, RType);
@@ -274,9 +281,8 @@ namespace dxvk {
     // Therefore...
     VkSampleCountFlags sampleFlags = VkSampleCountFlags(sampleCount);
 
-    auto availableFlags = !IsDepthFormat(SurfaceFormat)
-      ? m_adapter->deviceProperties().limits.framebufferColorSampleCounts
-      : m_adapter->deviceProperties().limits.framebufferDepthSampleCounts;
+    auto availableFlags = m_adapter->deviceProperties().limits.framebufferColorSampleCounts
+                        & m_adapter->deviceProperties().limits.framebufferDepthSampleCounts;
 
     if (!(availableFlags & sampleFlags))
       return D3DERR_NOTAVAILABLE;

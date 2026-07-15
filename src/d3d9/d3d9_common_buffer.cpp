@@ -41,7 +41,20 @@ namespace dxvk {
 
 
   HRESULT D3D9CommonBuffer::ValidateBufferProperties(const D3D9_BUFFER_DESC* pDesc) {
-    if (pDesc->Size == 0)
+    if (unlikely(pDesc->Size == 0))
+      return D3DERR_INVALIDCALL;
+
+    // Neither vertex nor index buffers can be created in D3DPOOL_SCRATCH
+    // or in D3DPOOL_MANAGED with D3DUSAGE_DYNAMIC.
+    if (unlikely(pDesc->Pool == D3DPOOL_SCRATCH
+             || (pDesc->Pool == D3DPOOL_MANAGED && (pDesc->Usage & D3DUSAGE_DYNAMIC))))
+      return D3DERR_INVALIDCALL;
+
+    // D3DUSAGE_AUTOGENMIPMAP, D3DUSAGE_DEPTHSTENCIL and D3DUSAGE_RENDERTARGET
+    // are not permitted on index or vertex buffers.
+    if (unlikely((pDesc->Usage & D3DUSAGE_AUTOGENMIPMAP)
+              || (pDesc->Usage & D3DUSAGE_DEPTHSTENCIL)
+              || (pDesc->Usage & D3DUSAGE_RENDERTARGET)))
       return D3DERR_INVALIDCALL;
 
     return D3D_OK;
@@ -104,6 +117,7 @@ namespace dxvk {
     }
 
     if ((memoryFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) && m_parent->GetOptions()->cachedDynamicBuffers) {
+      memoryFlags &= ~VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
       memoryFlags |= VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
                   |  VK_MEMORY_PROPERTY_HOST_CACHED_BIT;
     }
@@ -126,7 +140,7 @@ namespace dxvk {
     if (!(m_desc.Usage & D3DUSAGE_WRITEONLY))
       info.access |= VK_ACCESS_HOST_READ_BIT;
 
-    VkMemoryPropertyFlags memoryFlags = 
+    VkMemoryPropertyFlags memoryFlags =
       VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT
     | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
     | VK_MEMORY_PROPERTY_HOST_CACHED_BIT;

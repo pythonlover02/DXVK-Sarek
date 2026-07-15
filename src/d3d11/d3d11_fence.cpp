@@ -2,7 +2,7 @@
 #include "d3d11_device.h"
 
 namespace dxvk {
-  
+
   D3D11Fence::D3D11Fence(
           D3D11Device*        pDevice,
           UINT64              InitialValue,
@@ -39,7 +39,7 @@ namespace dxvk {
       return E_POINTER;
 
     *ppvObject = nullptr;
-    
+
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(ID3D11DeviceChild)
      || riid == __uuidof(ID3D11Fence)) {
@@ -97,5 +97,5 @@ namespace dxvk {
 
     return m_fence->getValue();
   }
-  
+
 }
