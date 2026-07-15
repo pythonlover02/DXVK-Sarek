@@ -144,6 +144,7 @@ namespace dxvk {
 
 
   INT STDMETHODCALLTYPE D3D9UserDefinedAnnotation::EndEvent() {
+    D3D9DeviceLock lock = m_container->LockDevice();
     m_container->EmitCs([](DxvkContext *ctx) {
       ctx->endDebugLabel();
     });
