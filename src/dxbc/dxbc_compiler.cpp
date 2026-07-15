@@ -1598,8 +1598,15 @@ namespace dxvk {
 
       case DxbcOpcode::Mad:
       case DxbcOpcode::DFma:
-        dst.id = m_module.opFFma(typeId,
-          src.at(0).id, src.at(1).id, src.at(2).id);
+        if (ins.controls.precise()) {
+          // FXC only emits precise mad if the shader explicitly uses
+          // the HLSL mad()/fma() intrinsics, let's preserve that.
+          dst.id = m_module.opFFma(typeId,
+            src.at(0).id, src.at(1).id, src.at(2).id);
+        } else {
+          dst.id = m_module.opFMul(typeId, src.at(0).id, src.at(1).id);
+          dst.id = m_module.opFAdd(typeId, dst.id, src.at(2).id);
+        }
         break;
 
       case DxbcOpcode::Max:
