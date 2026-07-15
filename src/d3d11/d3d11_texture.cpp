@@ -905,7 +905,12 @@ namespace dxvk {
 
 
   bool D3D11DXGISurface::isSurfaceCompatible() const {
-    auto desc = m_texture->Desc();
+    auto texture = GetCommonTexture(m_resource);
+
+    if (!texture)
+      return false;
+
+    auto desc = texture->Desc();
 
     return desc->ArraySize == 1
         && desc->MipLevels == 1;
