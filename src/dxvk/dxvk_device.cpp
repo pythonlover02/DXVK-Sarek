@@ -317,7 +317,10 @@ namespace dxvk {
           uint32_t                family,
           uint32_t                index) const {
     VkQueue queue = VK_NULL_HANDLE;
-    m_vkd->vkGetDeviceQueue(m_vkd->device(), family, index, &queue);
+
+    if (family != VK_QUEUE_FAMILY_IGNORED)
+      m_vkd->vkGetDeviceQueue(m_vkd->device(), family, index, &queue);
+
     return DxvkDeviceQueue { queue, family, index };
   }
 
