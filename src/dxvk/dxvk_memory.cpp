@@ -569,6 +569,11 @@ namespace dxvk {
     if (this->shouldFreeEmptyChunks(type->heap, 0))
       return true;
 
+    // Free chunks that are below the current chunk size since it probably
+    // not going to be able to serve enough allocations to be useful.
+    if (chunk->size() < type->chunkSize)
+      return true;
+
     // Only keep a small number of chunks of each type around to save memory.
     uint32_t numEmptyChunks = 0;
 
