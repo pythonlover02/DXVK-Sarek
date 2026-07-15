@@ -36,7 +36,6 @@ A huge thank-you to the following contributors for their invaluable help:
 - [Shader Compilation (dyasync)](#shader-compilation-dyasync)
 - [Frame Pacing (low-latency mode)](#frame-pacing-low-latency-mode)
 - [Debugging](#debugging)
-- [Debugging](#debugging)
 - [Troubleshooting](#troubleshooting)
 
 ## Proton-Sarek: discontinued
