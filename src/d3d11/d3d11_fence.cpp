@@ -83,13 +83,10 @@ namespace dxvk {
     // TODO in case of rewinds, the stored value may be higher.
     // For shared fences, calling vkWaitSemaphores here could alleviate the issue.
 
-    if (hEvent) {
-      m_fence->enqueueWait(Value, [hEvent] {
-        SetEvent(hEvent);
-      });
-    } else {
-      m_fence->wait(Value);
-    }
+    m_fence->enqueueWait(Value, [hEvent] {
+      SetEvent(hEvent);
+    });
+
     return S_OK;
   }
 
