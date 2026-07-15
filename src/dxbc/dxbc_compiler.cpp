@@ -6522,7 +6522,7 @@ namespace dxvk {
       }
 
       DxbcRegisterValue tessValue = emitRegisterExtract(value, mask);
-      tessValue.id = m_module.opFClamp(getVectorTypeId(tessValue.type),
+      tessValue.id = m_module.opNClamp(getVectorTypeId(tessValue.type),
         tessValue.id, m_module.constf32(0.0f),
         m_module.constf32(maxTessFactor));
 
