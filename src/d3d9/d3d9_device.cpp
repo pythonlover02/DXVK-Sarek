@@ -2328,11 +2328,10 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D9DeviceEx::EndStateBlock(IDirect3DStateBlock9** ppSB) {
     D3D9DeviceLock lock = LockDevice();
 
-    // Recording a state block can't end if recording hasn't been started.
+    InitReturnPtr(ppSB);
+
     if (unlikely(ppSB == nullptr || m_recorder == nullptr))
       return D3DERR_INVALIDCALL;
-
-    InitReturnPtr(ppSB);
 
     *ppSB = m_recorder.ref();
     m_recorder = nullptr;
