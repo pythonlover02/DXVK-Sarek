@@ -1415,6 +1415,23 @@ namespace dxvk {
     const void*                       pSrcData,
           UINT                        SrcRowPitch,
           UINT                        SrcDepthPitch) {
+    auto texture = GetCommonTexture(pDstResource);
+
+    if (!texture)
+      return;
+
+    if (texture->Desc()->Usage != D3D11_USAGE_DEFAULT
+     || texture->GetMapMode() == D3D11_COMMON_TEXTURE_MAP_MODE_NONE
+     || texture->CountSubresources() <= DstSubresource)
+      return;
+
+    uint32_t map = texture->GetMapType(DstSubresource);
+
+    if (map != uint32_t(D3D11_MAP_WRITE)
+     && map != uint32_t(D3D11_MAP_WRITE_NO_OVERWRITE)
+     && map != uint32_t(D3D11_MAP_READ_WRITE))
+      return;
+
     CopySubresourceData(
       pSrcData, SrcRowPitch, SrcRowPitch,
       pDstResource, DstSubresource, pDstBox);
