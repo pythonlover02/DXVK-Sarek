@@ -259,6 +259,14 @@ namespace dxvk {
      */
     bool isCompatible(const Rc<DxvkMemoryChunk>& other) const;
 
+    /**
+     * \brief Queries chunk size
+     * \returns Chunk size, in bytes
+     */
+    VkDeviceSize size() const {
+      return m_memory.memSize;
+    }
+
   private:
 
     struct FreeSlice {
