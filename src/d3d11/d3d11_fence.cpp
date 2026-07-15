@@ -2,7 +2,7 @@
 #include "d3d11_device.h"
 
 namespace dxvk {
-  
+
   D3D11Fence::D3D11Fence(
           D3D11Device*        pDevice,
           UINT64              InitialValue,
@@ -39,7 +39,7 @@ namespace dxvk {
       return E_POINTER;
 
     *ppvObject = nullptr;
-    
+
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(ID3D11DeviceChild)
      || riid == __uuidof(ID3D11Fence)) {
@@ -83,10 +83,13 @@ namespace dxvk {
     // TODO in case of rewinds, the stored value may be higher.
     // For shared fences, calling vkWaitSemaphores here could alleviate the issue.
 
-    m_fence->enqueueWait(Value, [hEvent] {
-      SetEvent(hEvent);
-    });
-
+    if (hEvent) {
+      m_fence->enqueueWait(Value, [hEvent] {
+        SetEvent(hEvent);
+      });
+    } else {
+      m_fence->wait(Value);
+    }
     return S_OK;
   }
 
@@ -97,5 +100,5 @@ namespace dxvk {
 
     return m_fence->getValue();
   }
-  
+
 }
