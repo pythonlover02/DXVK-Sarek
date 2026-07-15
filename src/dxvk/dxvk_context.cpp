@@ -2246,7 +2246,8 @@ namespace dxvk {
     // Discard previous subresource contents
     barriers->accessImage(image,
       vk::makeSubresourceRange(subresources),
-      VK_IMAGE_LAYOUT_UNDEFINED, 0, 0,
+      VK_IMAGE_LAYOUT_UNDEFINED,
+      VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
       image->pickLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL),
       VK_PIPELINE_STAGE_TRANSFER_BIT,
       VK_ACCESS_TRANSFER_WRITE_BIT);
