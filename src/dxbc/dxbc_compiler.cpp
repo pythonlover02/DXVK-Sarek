@@ -6696,7 +6696,7 @@ namespace dxvk {
       case DxbcProgramType::GeometryShader: emitGsInit(); break;
       case DxbcProgramType::PixelShader:    emitPsInit(); break;
       case DxbcProgramType::ComputeShader:  emitCsInit(); break;
-      default: break;
+      default: throw DxvkError("Invalid shader stage");
     }
   }
 
