@@ -2316,7 +2316,7 @@ namespace dxvk {
     D3D9DeviceLock lock = LockDevice();
 
     // Only one state block can be recorded at a given time.
-    if (unlikely(m_recorder != nullptr))
+    if (unlikely(ShouldRecord()))
       return D3DERR_INVALIDCALL;
 
     m_recorder = new D3D9StateBlock(this, D3D9StateBlockType::None);
