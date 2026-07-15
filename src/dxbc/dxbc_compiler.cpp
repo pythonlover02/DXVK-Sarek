@@ -6069,7 +6069,7 @@ namespace dxvk {
 
       DxbcRegisterValue value = emitValueLoad(ptr);
 
-      value.id = m_module.opFClamp(
+      value.id = m_module.opNClamp(
         getVectorTypeId(ptr.type),
         value.id,
         m_module.constf32(0.0f),
