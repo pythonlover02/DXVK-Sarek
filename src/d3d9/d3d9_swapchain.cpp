@@ -598,6 +598,10 @@ namespace dxvk {
 
     if (!std::exchange(s_errorShown, true))
       Logger::warn("D3D9SwapChainEx::GetLastPresentCount: Stub");
+
+    if (likely(pLastPresentCount != nullptr))
+      *pLastPresentCount = 0;
+
     return D3D_OK;
   }
 
