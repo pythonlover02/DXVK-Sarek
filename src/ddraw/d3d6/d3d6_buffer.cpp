@@ -35,8 +35,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6VertexBuffer::QueryInterface(REFIID riid, void** ppvObject) {
-    Logger::debug(">>> D3D6VertexBuffer::QueryInterface");
-
     if (unlikely(ppvObject == nullptr))
       return E_POINTER;
 
@@ -54,8 +52,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6VertexBuffer::GetVertexBufferDesc(LPD3DVERTEXBUFFERDESC lpVBDesc) {
-    Logger::debug(">>> D3D6VertexBuffer::GetVertexBufferDesc");
-
     if (unlikely(lpVBDesc == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -70,8 +66,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6VertexBuffer::Lock(DWORD flags, void **data, DWORD *data_size) {
-    Logger::debug(">>> D3D6VertexBuffer::Lock");
-
     if (unlikely(IsOptimized()))
       return D3DERR_VERTEXBUFFEROPTIMIZED;
 
@@ -95,8 +89,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6VertexBuffer::Unlock() {
-    Logger::debug(">>> D3D6VertexBuffer::Unlock");
-
     RefreshD3DDevice();
     if (unlikely(!IsInitialized())) {
       HRESULT hrInit = InitializeD3D9();
@@ -114,8 +106,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6VertexBuffer::ProcessVertices(DWORD dwVertexOp, DWORD dwDestIndex, DWORD dwCount, LPDIRECT3DVERTEXBUFFER lpSrcBuffer, DWORD dwSrcIndex, LPDIRECT3DDEVICE3 lpD3DDevice, DWORD dwFlags) {
-    Logger::debug(">>> D3D6VertexBuffer::ProcessVertices");
-
     if (unlikely(!dwCount))
       return D3D_OK;
 
@@ -249,8 +239,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6VertexBuffer::Optimize(LPDIRECT3DDEVICE3 lpD3DDevice, DWORD dwFlags) {
-    Logger::debug(">>> D3D6VertexBuffer::Optimize");
-
     if (unlikely(lpD3DDevice == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -272,22 +260,23 @@ namespace dxvk {
       return DDERR_GENERIC;
     }
 
-    d3d9::IDirect3DDevice9* device9 = m_d3d6Device->GetCommonD3DDevice()->GetD3D9Device();
+    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
-    const d3d9::D3DPOOL pool = (m_desc.dwCaps & D3DVBCAPS_SYSTEMMEMORY) ? d3d9::D3DPOOL_SYSTEMMEM : d3d9::D3DPOOL_DEFAULT;
-    const char* poolPlacement = pool == d3d9::D3DPOOL_DEFAULT ? "D3DPOOL_DEFAULT" : "D3DPOOL_SYSTEMMEM";
+    const d3d9::D3DPOOL pool = (m_desc.dwCaps & D3DVBCAPS_SYSTEMMEMORY) ? d3d9::D3DPOOL_SYSTEMMEM :
+                               d3dOptions->managedVertexBuffers ? d3d9::D3DPOOL_MANAGED : d3d9::D3DPOOL_DEFAULT;
+    const DWORD usage = ConvertD3D6UsageFlags(m_desc.dwCaps, m_creationFlags, pool);
 
+    const char* poolPlacement = pool == d3d9::D3DPOOL_DEFAULT ? "D3DPOOL_DEFAULT" :
+                                pool == d3d9::D3DPOOL_SYSTEMMEM ? "D3DPOOL_SYSTEMMEM" : "D3DPOOL_MANAGED";
     Logger::debug(str::format("D3D6VertexBuffer::InitializeD3D9: Placing in: ", poolPlacement));
 
-    const DWORD usage = ConvertD3D6UsageFlags(m_desc.dwCaps, m_creationFlags);
+    d3d9::IDirect3DDevice9* device9 = m_d3d6Device->GetCommonD3DDevice()->GetD3D9Device();
     HRESULT hr = device9->CreateVertexBuffer(m_size, usage, m_desc.dwFVF, pool, &m_vb9, nullptr);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6VertexBuffer::InitializeD3D9: Failed to create D3D9 vertex buffer");
       return hr;
     }
-
-    Logger::debug("D3D6VertexBuffer::InitializeD3D9: Created D3D9 vertex buffer");
 
     return D3D_OK;
   }

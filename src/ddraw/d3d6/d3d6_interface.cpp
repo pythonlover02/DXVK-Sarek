@@ -83,33 +83,24 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Interface::QueryInterface(REFIID riid, void** ppvObject) {
-    Logger::debug(">>> D3D6Interface::QueryInterface");
-
     if (unlikely(ppvObject == nullptr))
       return E_POINTER;
 
     InitReturnPtr(ppvObject);
 
     if (unlikely(riid == __uuidof(IDirectDraw))) {
-      Logger::debug("D3D6Interface::QueryInterface: Query for IDirectDraw");
       return m_parent->QueryInterface(riid, ppvObject);
     }
     if (unlikely(riid == __uuidof(IDirectDraw2))) {
-      Logger::debug("D3D6Interface::QueryInterface: Query for IDirectDraw2");
       return m_parent->QueryInterface(riid, ppvObject);
     }
     if (riid == __uuidof(IDirectDraw4)) {
-      Logger::debug("D3D6Interface::QueryInterface: Query for IDirectDraw4");
       return m_parent->QueryInterface(riid, ppvObject);
     }
     // Some games query for legacy D3D interfaces
     if (unlikely(riid == __uuidof(IDirect3D))) {
-      if (m_commonD3DIntf->GetD3D3Interface() != nullptr) {
-        Logger::debug("D3D6Interface::QueryInterface: Query for existing IDirect3D");
+      if (m_commonD3DIntf->GetD3D3Interface() != nullptr)
         return m_commonD3DIntf->GetD3D3Interface()->QueryInterface(riid, ppvObject);
-      }
-
-      Logger::debug("D3D6Interface::QueryInterface: Query for IDirect3D");
 
       m_d3d3Intf = new D3D3Interface(m_commonD3DIntf.ptr(), m_commonIntf, m_parent);
       m_commonIntf->SetD3D3Interface(m_d3d3Intf.ptr());
@@ -118,12 +109,8 @@ namespace dxvk {
       return S_OK;
     }
     if (unlikely(riid == __uuidof(IDirect3D2))) {
-      if (m_commonD3DIntf->GetD3D5Interface() != nullptr) {
-        Logger::debug("D3D6Interface::QueryInterface: Query for existing IDirect3D2");
+      if (m_commonD3DIntf->GetD3D5Interface() != nullptr)
         return m_commonD3DIntf->GetD3D5Interface()->QueryInterface(riid, ppvObject);
-      }
-
-      Logger::debug("D3D6Interface::QueryInterface: Query for IDirect3D2");
 
       m_d3d5Intf = new D3D5Interface(m_commonD3DIntf.ptr(), m_commonIntf, m_parent);
       *ppvObject = m_d3d5Intf.ref();
@@ -143,8 +130,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Interface::EnumDevices(LPD3DENUMDEVICESCALLBACK lpEnumDevicesCallback, LPVOID lpUserArg) {
-    Logger::debug(">>> D3D6Interface::EnumDevices");
-
     if (unlikely(lpEnumDevicesCallback == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -162,15 +147,13 @@ namespace dxvk {
     D3DDEVICEDESC descRGB_HEL = descRGB_HAL;
     descRGB_HAL.dwFlags = 0;
     descRGB_HAL.dcmColorModel = 0;
-    // Some applications apparently care about RGB texture caps
+    // Some applications apparently care about HAL texture caps
     descRGB_HAL.dpcLineCaps.dwTextureCaps &= ~D3DPTEXTURECAPS_PERSPECTIVE
-                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL
-                                           & ~D3DPTEXTURECAPS_POW2;
+                                           & ~D3DPTEXTURECAPS_POW2
+                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
     descRGB_HAL.dpcTriCaps.dwTextureCaps  &= ~D3DPTEXTURECAPS_PERSPECTIVE
-                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL
-                                           & ~D3DPTEXTURECAPS_POW2;
-    descRGB_HEL.dpcLineCaps.dwTextureCaps |= D3DPTEXTURECAPS_POW2;
-    descRGB_HEL.dpcTriCaps.dwTextureCaps  |= D3DPTEXTURECAPS_POW2;
+                                           & ~D3DPTEXTURECAPS_POW2
+                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
 
     if (likely(!d3dOptions->legacyDeviceNames)) {
       static char deviceDescRGB[100] = "D6VK RGB";
@@ -193,11 +176,11 @@ namespace dxvk {
     descHAL_HEL.dcmColorModel = 0;
     // Some applications apparently care about RGB texture caps
     descHAL_HEL.dpcLineCaps.dwTextureCaps &= ~D3DPTEXTURECAPS_PERSPECTIVE
-                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL
-                                           & ~D3DPTEXTURECAPS_POW2;
+                                           & ~D3DPTEXTURECAPS_POW2
+                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
     descHAL_HEL.dpcTriCaps.dwTextureCaps &= ~D3DPTEXTURECAPS_PERSPECTIVE
-                                          & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL
-                                          & ~D3DPTEXTURECAPS_POW2;
+                                          & ~D3DPTEXTURECAPS_POW2
+                                          & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
     descHAL_HEL.dwDevCaps &= ~D3DDEVCAPS_HWTRANSFORMANDLIGHT
                            & ~D3DDEVCAPS_DRAWPRIMITIVES2
                            & ~D3DDEVCAPS_DRAWPRIMITIVES2EX;
@@ -220,8 +203,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Interface::CreateLight(LPDIRECT3DLIGHT *lplpDirect3DLight, IUnknown *pUnkOuter) {
-    Logger::debug(">>> D3D6Interface::CreateLight");
-
     if (unlikely(lplpDirect3DLight == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -233,8 +214,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Interface::CreateMaterial(LPDIRECT3DMATERIAL3 *lplpDirect3DMaterial, IUnknown *pUnkOuter) {
-    Logger::debug(">>> D3D6Interface::CreateMaterial");
-
     if (unlikely(lplpDirect3DMaterial == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -246,8 +225,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Interface::CreateViewport(LPDIRECT3DVIEWPORT3 *lplpD3DViewport, IUnknown *pUnkOuter) {
-    Logger::debug(">>> D3D6Interface::CreateViewport");
-
     InitReturnPtr(lplpD3DViewport);
 
     *lplpD3DViewport = ref(new D3D6Viewport(nullptr, this));
@@ -257,8 +234,6 @@ namespace dxvk {
 
   // Minimal implementation which should suffice in most cases
   HRESULT STDMETHODCALLTYPE D3D6Interface::FindDevice(D3DFINDDEVICESEARCH *lpD3DFDS, D3DFINDDEVICERESULT *lpD3DFDR) {
-    Logger::debug(">>> D3D6Interface::FindDevice");
-
     if (unlikely(lpD3DFDS == nullptr || lpD3DFDR == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -275,27 +250,25 @@ namespace dxvk {
     D3DDEVICEDESC descRGB_HEL = descRGB_HAL;
     descRGB_HAL.dwFlags = 0;
     descRGB_HAL.dcmColorModel = 0;
-    // Some applications apparently care about RGB texture caps
+    // Some applications apparently care about HAL texture caps
     descRGB_HAL.dpcLineCaps.dwTextureCaps &= ~D3DPTEXTURECAPS_PERSPECTIVE
-                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL
-                                           & ~D3DPTEXTURECAPS_POW2;
+                                           & ~D3DPTEXTURECAPS_POW2
+                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
     descRGB_HAL.dpcTriCaps.dwTextureCaps  &= ~D3DPTEXTURECAPS_PERSPECTIVE
-                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL
-                                           & ~D3DPTEXTURECAPS_POW2;
-    descRGB_HEL.dpcLineCaps.dwTextureCaps |= D3DPTEXTURECAPS_POW2;
-    descRGB_HEL.dpcTriCaps.dwTextureCaps  |= D3DPTEXTURECAPS_POW2;
+                                           & ~D3DPTEXTURECAPS_POW2
+                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
 
     // Hardware acceleration
     D3DDEVICEDESC descHAL_HAL = GetD3D6Caps(IID_IDirect3DHALDevice, d3dOptions);
     D3DDEVICEDESC descHAL_HEL = descHAL_HAL;
     descHAL_HEL.dcmColorModel = 0;
-    // Some applications apparently care about RGB texture caps
+    // Some applications apparently care about HEL texture caps
     descHAL_HEL.dpcLineCaps.dwTextureCaps &= ~D3DPTEXTURECAPS_PERSPECTIVE
-                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL
-                                           & ~D3DPTEXTURECAPS_POW2;
+                                           & ~D3DPTEXTURECAPS_POW2
+                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
     descHAL_HEL.dpcTriCaps.dwTextureCaps &= ~D3DPTEXTURECAPS_PERSPECTIVE
-                                          & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL
-                                          & ~D3DPTEXTURECAPS_POW2;
+                                          & ~D3DPTEXTURECAPS_POW2
+                                          & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
     descHAL_HEL.dwDevCaps &= ~D3DDEVCAPS_HWTRANSFORMANDLIGHT
                            & ~D3DDEVCAPS_DRAWPRIMITIVES2
                            & ~D3DDEVCAPS_DRAWPRIMITIVES2EX;
@@ -303,16 +276,12 @@ namespace dxvk {
     lpD3DFDR->dwSize = sizeof(D3DFINDDEVICERESULT);
 
     if (lpD3DFDS->dwFlags & D3DFDS_GUID) {
-      Logger::debug("D3D6Interface::FindDevice: Matching by device GUID");
-
       // IID_IDirect3DRampDevice and IID_IDirect3DMMXDevice return DDERR_NOTFOUND in D3D6
       if (lpD3DFDS->guid == IID_IDirect3DRGBDevice) {
-        Logger::debug("D3D6Interface::FindDevice: Matched IID_IDirect3DRGBDevice");
         lpD3DFDR->guid = IID_IDirect3DRGBDevice;
         lpD3DFDR->ddHwDesc = descRGB_HAL;
         lpD3DFDR->ddSwDesc = descRGB_HEL;
       } else if (lpD3DFDS->guid == IID_IDirect3DHALDevice) {
-        Logger::debug("D3D6Interface::FindDevice: Matched IID_IDirect3DHALDevice");
         lpD3DFDR->guid = IID_IDirect3DHALDevice;
         lpD3DFDR->ddHwDesc = descHAL_HAL;
         lpD3DFDR->ddSwDesc = descHAL_HEL;
@@ -321,30 +290,20 @@ namespace dxvk {
         return DDERR_NOTFOUND;
       }
     } else if (lpD3DFDS->dwFlags & D3DFDS_HARDWARE) {
-      Logger::debug("D3D6Interface::FindDevice: Matching by hardware flag");
-
       if (likely(lpD3DFDS->bHardware == TRUE)) {
-        Logger::debug("D3D6Interface::FindDevice: Matched IID_IDirect3DHALDevice");
         lpD3DFDR->guid = IID_IDirect3DHALDevice;
         lpD3DFDR->ddHwDesc = descHAL_HAL;
         lpD3DFDR->ddSwDesc = descHAL_HEL;
       } else {
-        Logger::debug("D3D6Interface::FindDevice: Matched IID_IDirect3DRGBDevice");
         lpD3DFDR->guid = IID_IDirect3DRGBDevice;
         lpD3DFDR->ddHwDesc = descRGB_HAL;
         lpD3DFDR->ddSwDesc = descRGB_HEL;
       }
     } else if (lpD3DFDS->dwFlags & D3DFDS_COLORMODEL) {
-      Logger::debug("D3D6Interface::FindDevice: Matching by color model");
-
-      Logger::debug("D3D6Interface::FindDevice: Matched IID_IDirect3DHALDevice");
       lpD3DFDR->guid = IID_IDirect3DHALDevice;
       lpD3DFDR->ddHwDesc = descHAL_HAL;
       lpD3DFDR->ddSwDesc = descHAL_HEL;
     } else if (lpD3DFDS->dwFlags == 0) {
-      Logger::debug("D3D6Interface::FindDevice: No matching criteria specified");
-
-      Logger::debug("D3D6Interface::FindDevice: Matched IID_IDirect3DHALDevice");
       lpD3DFDR->guid = IID_IDirect3DHALDevice;
       lpD3DFDR->ddHwDesc = descHAL_HAL;
       lpD3DFDR->ddSwDesc = descHAL_HEL;
@@ -357,26 +316,23 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Interface::CreateDevice(REFCLSID rclsid, LPDIRECTDRAWSURFACE4 lpDDS, LPDIRECT3DDEVICE3 *lplpD3DDevice, IUnknown *pUnkOuter) {
-    Logger::debug(">>> D3D6Interface::CreateDevice");
-
     if (unlikely(lplpD3DDevice == nullptr))
       return DDERR_INVALIDPARAMS;
 
     InitReturnPtr(lplpD3DDevice);
 
-    if (unlikely(lpDDS == nullptr)) {
-      Logger::err("D3D6Interface::CreateDevice: Null surface provided");
+    if (unlikely(lpDDS == nullptr))
       return DDERR_INVALIDPARAMS;
-    }
 
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
     DWORD deviceCreationFlags9 = D3DCREATE_SOFTWARE_VERTEXPROCESSING;
     bool  isHALDevice          = false;
+    bool  halFallback          = false;
     bool  rgbFallback          = false;
 
     if (likely(!d3dOptions->forceSWVP)) {
-      if (rclsid == IID_IDirect3DHALDevice || rclsid == IID_WineD3DDevice) {
+      if (rclsid == IID_IDirect3DHALDevice) {
         Logger::info("D3D6Interface::CreateDevice: Creating an IID_IDirect3DHALDevice device");
         deviceCreationFlags9 = D3DCREATE_MIXED_VERTEXPROCESSING;
         isHALDevice = true;
@@ -385,15 +341,24 @@ namespace dxvk {
       } else if (rclsid == IID_IDirect3DMMXDevice) {
         Logger::warn("D3D6Interface::CreateDevice: Unsupported MMX device, falling back to RGB");
         rgbFallback = true;
-      } else {
-        // Revenant uses a rclsid of 7a31a548-0000-0007-26ed-780000000000...
-        Logger::warn("D3D6Interface::CreateDevice: Unsupported device type, falling back to RGB");
-        Logger::warn(str::format(rclsid));
+      } else if (rclsid == IID_IDirect3DRampDevice) {
+        Logger::warn("D3D6Interface::CreateDevice: Unsupported Ramp device, falling back to RGB");
         rgbFallback = true;
+      } else {
+        // Revenant uses a bogus rclsid (not WineD3D's), so fall back to HAL in these cases
+        if (unlikely(rclsid != IID_WineD3DDevice)) {
+          Logger::warn("D3D6Interface::CreateDevice: Unknown device type, falling back to HAL");
+          Logger::warn(str::format(rclsid));
+        } else {
+          Logger::info("D3D6Interface::CreateDevice: Creating an IID_WineD3DDevice HAL device");
+        }
+        halFallback = true;
+        // Don't enforce isHALDevice RT validations
       }
     }
 
-    const IID rclsidOverride = rgbFallback ? IID_IDirect3DRGBDevice : rclsid;
+    const IID rclsidOverride = halFallback ? IID_IDirect3DHALDevice :
+                               rgbFallback ? IID_IDirect3DRGBDevice : rclsid;
 
     HWND hWnd = m_commonIntf->GetHWND();
     // Needed to sometimes safely skip intro playback on legacy devices
@@ -430,7 +395,6 @@ namespace dxvk {
         if ((modeSize->width  && modeSize->width  < desc.dwWidth)
          || (modeSize->height && modeSize->height < desc.dwHeight)) {
           Logger::info("D3D6Interface::CreateDevice: Enforcing mode dimensions");
-
           backBufferWidth  = modeSize->width;
           BackBufferHeight = modeSize->height;
         }
@@ -517,8 +481,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Interface::CreateVertexBuffer(LPD3DVERTEXBUFFERDESC lpVBDesc, LPDIRECT3DVERTEXBUFFER *lpD3DVertexBuffer, DWORD dwFlags, IUnknown *pUnkOuter) {
-    Logger::debug(">>> D3D6Interface::CreateVertexBuffer");
-
     if (unlikely(lpVBDesc == nullptr || lpD3DVertexBuffer == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -532,8 +494,6 @@ namespace dxvk {
   // Total Club Manager 2003 uses a D3D6 interface to query for supported Z buffer formats,
   // so report what we know is supported by D3D9, otherwise the game will error out on startup
   HRESULT STDMETHODCALLTYPE D3D6Interface::EnumZBufferFormats(REFCLSID riidDevice, LPD3DENUMPIXELFORMATSCALLBACK lpEnumCallback, LPVOID lpContext) {
-    Logger::debug(">>> D3D6Interface::EnumZBufferFormats");
-
     if (unlikely(lpEnumCallback == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -578,8 +538,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D6Interface::EvictManagedTextures() {
-    Logger::debug(">>> D3D6Interface::EvictManagedTextures");
-
     HRESULT hr = m_proxy->EvictManagedTextures();
     if (unlikely(FAILED(hr)))
       return hr;

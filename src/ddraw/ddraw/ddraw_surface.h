@@ -129,6 +129,10 @@ namespace dxvk {
       return m_commonIntf;
     }
 
+    void SetNextFlippable(DDrawSurface* nextFlippable) {
+      m_nextFlippable = nextFlippable;
+    }
+
     DDrawSurface* GetNextFlippable() const {
       return m_nextFlippable;
     }
@@ -170,18 +174,17 @@ namespace dxvk {
       return m_depthStencil.ptr();
     }
 
-    void ClearAttachedDepthStencil() {
-      m_depthStencil = nullptr;
-    }
-
     void SetParentSurface(DDrawSurface* surface) {
       m_parentSurf = surface;
-      m_commonSurf->SetIsAttached(true);
+
+      if (m_parentSurf != nullptr)
+        m_commonSurf->SetIsAttached(true);
+      else
+        m_commonSurf->SetIsAttached(false);
     }
 
-    void ClearParentSurface() {
-      m_parentSurf = nullptr;
-      m_commonSurf->SetIsAttached(false);
+    DDrawSurface* GetParentSurface() const {
+      return m_parentSurf;
     }
 
     void SetParentSurface4(DDraw4Surface* surface4) {

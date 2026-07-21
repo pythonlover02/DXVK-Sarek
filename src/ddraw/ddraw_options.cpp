@@ -6,19 +6,21 @@ namespace dxvk {
     // D3D7/6/5/3/DDraw options
     this->forceMultiThreaded     = config.getOption<bool>   ("ddraw.forceMultiThreaded",     false);
     this->forceSWVP              = config.getOption<bool>   ("ddraw.forceSWVP",              false);
+    this->managedVertexBuffers   = config.getOption<bool>   ("ddraw.managedVertexBuffers",   false);
     this->supportR3G3B2          = config.getOption<bool>   ("ddraw.supportR3G3B2",          false);
     this->supportD16             = config.getOption<bool>   ("ddraw.supportD16",              true);
     this->support32BitDepth      = config.getOption<bool>   ("ddraw.support32BitDepth",       true);
     this->useD24X8forD32         = config.getOption<bool>   ("ddraw.useD24X8forD32",         false);
+    this->useD16forD24X8         = config.getOption<bool>   ("ddraw.useD16forD24X8",         false);
     this->mask8BitModes          = config.getOption<bool>   ("ddraw.mask8BitModes",          false);
     this->viewportZCorrection    = config.getOption<bool>   ("ddraw.viewportZCorrection",    false);
-    this->forcePOW2Textures      = config.getOption<bool>   ("ddraw.forcePOW2Textures",      false);
     this->forceLegacyDiscard     = config.getOption<bool>   ("ddraw.forceLegacyDiscard",     false);
     this->cpuProcessVertices     = config.getOption<bool>   ("ddraw.cpuProcessVertices",      true);
     this->vertexOffset           = config.getOption<float>  ("ddraw.vertexOffset",            0.0f);
     this->backBufferResize       = config.getOption<bool>   ("ddraw.backBufferResize",        true);
     this->forceLegacyPresent     = config.getOption<bool>   ("ddraw.forceLegacyPresent",     false);
     this->forceRTFlip            = config.getOption<bool>   ("ddraw.forceRTFlip",            false);
+    this->forceDCForwarding      = config.getOption<bool>   ("ddraw.forceDCForwarding",      false);
     this->emulateFrontBuffer     = config.getOption<bool>   ("ddraw.emulateFrontBuffer",     false);
     this->ignoreGammaRamp        = config.getOption<bool>   ("ddraw.ignoreGammaRamp",        false);
     this->autoGenMipMaps         = config.getOption<bool>   ("ddraw.autoGenMipMaps",         false);

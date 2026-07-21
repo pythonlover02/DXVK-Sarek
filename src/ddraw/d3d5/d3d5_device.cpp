@@ -60,14 +60,6 @@ namespace dxvk {
         Logger::warn("D3D5Device: Force enabling AA");
         device9->SetRenderState(d3d9::D3DRS_MULTISAMPLEANTIALIAS, TRUE);
       }
-
-      // The default value of D3DRENDERSTATE_TEXTUREMAPBLEND in D3D5 is D3DTBLEND_MODULATE
-      device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG1, D3DTA_TEXTURE);
-      device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
-      device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_MODULATE);
-      device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG1);
-      device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-      device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
     } else {
       device9 = m_commonD3DDevice->GetD3D9Device();
       // Very important, otherwise the depth stencil isn't dirtied on draws
@@ -131,20 +123,14 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::QueryInterface(REFIID riid, void** ppvObject) {
-    Logger::debug(">>> D3D5Device::QueryInterface");
-
     if (unlikely(ppvObject == nullptr))
       return E_POINTER;
 
     InitReturnPtr(ppvObject);
 
     if (unlikely(riid == __uuidof(IDirect3DDevice))) {
-      if (m_commonD3DDevice->GetD3D3Device() != nullptr) {
-        Logger::debug("D3D3Device::QueryInterface: Query for existing IDirect3DDevice");
+      if (m_commonD3DDevice->GetD3D3Device() != nullptr)
         return m_commonD3DDevice->GetD3D3Device()->QueryInterface(riid, ppvObject);
-      }
-
-      Logger::debug("D3D5Device::QueryInterface: Query for IDirect3DDevice");
 
       // Reuse the existing D3D9 device in situations where games want
       // to get access only to D3D3 execute buffers on a D3D5 device
@@ -157,14 +143,11 @@ namespace dxvk {
       return S_OK;
     }
     if (unlikely(riid == __uuidof(IDirect3DDevice3))) {
-      if (m_commonD3DDevice->GetD3D6Device() != nullptr) {
-        Logger::debug("D3D5Device::QueryInterface: Query for existing IDirect3DDevice3");
+      if (m_commonD3DDevice->GetD3D6Device() != nullptr)
         return m_commonD3DDevice->GetD3D6Device()->QueryInterface(riid, ppvObject);
-      }
 
       // A D3D5 device shouldn't be able to create a D3D6 device
       // if it doesn't previously exist as a parent/origin device
-      Logger::err("D3D5Device::QueryInterface: Query for IDirect3DDevice3");
       return E_NOINTERFACE;
     }
 
@@ -180,8 +163,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::GetCaps(D3DDEVICEDESC *hal_desc, D3DDEVICEDESC *hel_desc) {
-    Logger::debug(">>> D3D5Device::GetCaps");
-
     if (unlikely(hal_desc == nullptr || hel_desc == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -197,13 +178,13 @@ namespace dxvk {
     if (deviceGUID == IID_IDirect3DRGBDevice) {
       desc_HAL.dwFlags = 0;
       desc_HAL.dcmColorModel = 0;
-      // Some applications apparently care about RGB texture caps
+      // Some applications apparently care about HAL texture caps
       desc_HAL.dpcLineCaps.dwTextureCaps &= ~D3DPTEXTURECAPS_PERSPECTIVE
+                                          & ~D3DPTEXTURECAPS_POW2
                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
       desc_HAL.dpcTriCaps.dwTextureCaps  &= ~D3DPTEXTURECAPS_PERSPECTIVE
+                                          & ~D3DPTEXTURECAPS_POW2
                                           & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
-      desc_HEL.dpcLineCaps.dwTextureCaps |= D3DPTEXTURECAPS_POW2;
-      desc_HEL.dpcTriCaps.dwTextureCaps  |= D3DPTEXTURECAPS_POW2;
     } else if (deviceGUID == IID_IDirect3DHALDevice) {
       desc_HEL.dcmColorModel = 0;
       desc_HEL.dwDevCaps &= ~D3DDEVCAPS_HWTRANSFORMANDLIGHT
@@ -221,8 +202,6 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D5Device::SwapTextureHandles(IDirect3DTexture2 *tex1, IDirect3DTexture2 *tex2) {
     D3DDeviceLock lock = LockDevice();
-
-    Logger::debug(">>> D3D5Device::SwapTextureHandles");
 
     D3D5Texture* texture1 = static_cast<D3D5Texture*>(tex1);
     D3D5Texture* texture2 = static_cast<D3D5Texture*>(tex2);
@@ -248,8 +227,6 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::GetStats(D3DSTATS *stats) {
     D3DDeviceLock lock = LockDevice();
 
-    Logger::debug(">>> D3D5Device::GetStats");
-
     if (unlikely(stats == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -272,8 +249,6 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::AddViewport(IDirect3DViewport2 *viewport) {
     D3DDeviceLock lock = LockDevice();
 
-    Logger::debug(">>> D3D5Device::AddViewport");
-
     if (unlikely(viewport == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -284,8 +259,6 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D5Device::DeleteViewport(IDirect3DViewport2 *viewport) {
     D3DDeviceLock lock = LockDevice();
-
-    Logger::debug(">>> D3D5Device::DeleteViewport");
 
     if (unlikely(viewport == nullptr))
       return DDERR_INVALIDPARAMS;
@@ -302,8 +275,6 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D5Device::NextViewport(IDirect3DViewport2 *lpDirect3DViewport, IDirect3DViewport2 **lplpAnotherViewport, DWORD flags) {
     D3DDeviceLock lock = LockDevice();
-
-    Logger::debug(">>> D3D5Device::NextViewport");
 
     if (unlikely(lplpAnotherViewport == nullptr))
       return DDERR_INVALIDPARAMS;
@@ -328,8 +299,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::EnumTextureFormats(LPD3DENUMTEXTUREFORMATSCALLBACK cb, void *ctx) {
-    Logger::debug(">>> D3D5Device::EnumTextureFormats");
-
     if (unlikely(cb == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -395,8 +364,6 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::BeginScene() {
     D3DDeviceLock lock = LockDevice();
 
-    Logger::debug(">>> D3D5Device::BeginScene");
-
     RefreshLastUsedDevice();
 
     if (unlikely(m_commonD3DDevice->IsInScene()))
@@ -414,8 +381,6 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::EndScene() {
     D3DDeviceLock lock = LockDevice();
 
-    Logger::debug(">>> D3D5Device::EndScene");
-
     RefreshLastUsedDevice();
 
     if (unlikely(!m_commonD3DDevice->IsInScene()))
@@ -431,8 +396,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::GetDirect3D(IDirect3D2 **d3d) {
-    Logger::debug(">>> D3D5Device::GetDirect3D");
-
     if (unlikely(d3d == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -450,8 +413,6 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D5Device::SetCurrentViewport(IDirect3DViewport2 *viewport) {
     D3DDeviceLock lock = LockDevice();
-
-    Logger::debug(">>> D3D5Device::SetCurrentViewport");
 
     if (unlikely(viewport == nullptr))
       return DDERR_INVALIDPARAMS;
@@ -482,8 +443,6 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::GetCurrentViewport(IDirect3DViewport2 **viewport) {
     D3DDeviceLock lock = LockDevice();
 
-    Logger::debug(">>> D3D5Device::GetCurrentViewport");
-
     // This does indeed return D3DERR_NOCURRENTVIEWPORT...
     if (unlikely(viewport == nullptr))
       return D3DERR_NOCURRENTVIEWPORT;
@@ -502,12 +461,8 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::SetRenderTarget(IDirectDrawSurface *surface, DWORD flags) {
     D3DDeviceLock lock = LockDevice();
 
-    Logger::debug(">>> D3D5Device::SetRenderTarget");
-
-    if (unlikely(surface == nullptr)) {
-      Logger::err("D3D5Device::SetRenderTarget: NULL render target");
+    if (unlikely(surface == nullptr))
       return DDERR_INVALIDPARAMS;
-    }
 
     if (unlikely(!DDrawCommonInterface::IsWrappedSurface(surface))) {
       Logger::err("D3D5Device::SetRenderTarget: Received an unwrapped RT");
@@ -538,8 +493,6 @@ namespace dxvk {
     m_ds = m_rt->GetAttachedDepthStencil();
 
     if (m_ds != nullptr) {
-      Logger::debug("D3D5Device::SetRenderTarget: Found an attached DS");
-
       hr = m_ds->InitializeD3D9DepthStencil();
       if (unlikely(FAILED(hr))) {
         Logger::err("D3D5Device::SetRenderTarget: Failed to initialize/upload D3D9 DS");
@@ -552,8 +505,6 @@ namespace dxvk {
         return hr;
       }
     } else {
-      Logger::debug("D3D5Device::SetRenderTarget: RT has no depth stencil attached");
-
       hr = device9->SetDepthStencilSurface(nullptr);
       if (unlikely(FAILED(hr))) {
         Logger::err("D3D5Device::SetRenderTarget: Failed to clear the D3D9 DS");
@@ -567,8 +518,6 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::GetRenderTarget(IDirectDrawSurface **surface) {
     D3DDeviceLock lock = LockDevice();
 
-    Logger::debug(">>> D3D5Device::GetRenderTarget");
-
     if (unlikely(surface == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -579,8 +528,6 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D5Device::Begin(D3DPRIMITIVETYPE d3dptPrimitiveType, D3DVERTEXTYPE dwVertexTypeDesc, DWORD dwFlags) {
     D3DDeviceLock lock = LockDevice();
-
-    Logger::debug(">>> D3D5Device::Begin");
 
     m_vertexStreamInfo.d3dpt = d3dptPrimitiveType;
     m_vertexStreamInfo.d3dvt = dwVertexTypeDesc;
@@ -596,8 +543,6 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D5Device::Vertex(void *vertex) {
     D3DDeviceLock lock = LockDevice();
-
-    Logger::debug(">>> D3D5Device::Vertex");
 
     if (unlikely(vertex == nullptr))
       return DDERR_INVALIDPARAMS;
@@ -623,8 +568,6 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D5Device::End(DWORD dwFlags) {
     D3DDeviceLock lock = LockDevice();
-
-    Logger::debug(">>> D3D5Device::End");
 
     HRESULT hr;
     if (m_vertexStreamInfo.d3dvt == D3DVT_VERTEX) {
@@ -655,8 +598,6 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::GetRenderState(D3DRENDERSTATETYPE dwRenderStateType, LPDWORD lpdwRenderState) {
     D3DDeviceLock lock = LockDevice();
 
-    Logger::debug(str::format(">>> D3D5Device::GetRenderState: ", dwRenderStateType));
-
     if (unlikely(lpdwRenderState == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -664,7 +605,6 @@ namespace dxvk {
     // unknown or invalid render states.
     if (unlikely(!IsValidD3D5RenderStateType(dwRenderStateType)
               && !m_commonIntf->GetOptions()->apitraceMode)) {
-      Logger::debug(str::format("D3D5Device::GetRenderState: Invalid render state ", dwRenderStateType));
       *lpdwRenderState = 0;
       return D3D_OK;
     }
@@ -856,14 +796,10 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::SetRenderState(D3DRENDERSTATETYPE dwRenderStateType, DWORD dwRenderState) {
     D3DDeviceLock lock = LockDevice();
 
-    Logger::debug(str::format(">>> D3D5Device::SetRenderState: ", dwRenderStateType));
-
     // As opposed to D3D7, D3D5 does not error out on
     // unknown or invalid render states.
-    if (unlikely(!IsValidD3D5RenderStateType(dwRenderStateType))) {
-      Logger::debug(str::format("D3D5Device::SetRenderState: Invalid render state ", dwRenderStateType));
+    if (unlikely(!IsValidD3D5RenderStateType(dwRenderStateType)))
       return D3D_OK;
-    }
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
     d3d9::D3DRENDERSTATETYPE State9 = d3d9::D3DRENDERSTATETYPE(dwRenderStateType);
@@ -956,19 +892,9 @@ namespace dxvk {
         return D3D_OK;
 
       case D3DRENDERSTATE_MONOENABLE:
-        static bool s_monoEnableErrorShown;
-
-        if (dwRenderState && !std::exchange(s_monoEnableErrorShown, true))
-          Logger::warn("D3D5Device::SetRenderState: Unimplemented render state D3DRENDERSTATE_MONOENABLE");
-
         return D3D_OK;
 
       case D3DRENDERSTATE_ROP2:
-        static bool s_ROP2ErrorShown;
-
-        if (!std::exchange(s_ROP2ErrorShown, true))
-          Logger::warn("D3D5Device::SetRenderState: Unimplemented render state D3DRENDERSTATE_ROP2");
-
         return D3D_OK;
 
       // "This render state is not supported by the software rasterizers, and is often ignored by hardware drivers."
@@ -1052,8 +978,8 @@ namespace dxvk {
             device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
             device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_MODULATE);
             device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG1);
-            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_CURRENT);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_CURRENT);
             break;
           // "In this mode, the RGB and alpha values of the texture are blended with the colors
           //  that would have been used with no texturing, according to the following formulas [...]"
@@ -1062,8 +988,8 @@ namespace dxvk {
             device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
             device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_BLENDTEXTUREALPHA);
             device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG2);
-            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_CURRENT);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_CURRENT);
             break;
           // "In this mode, the RGB values of the texture are multiplied with the RGB values that
           //  would have been used with no texturing, and the alpha values of the texture
@@ -1073,8 +999,8 @@ namespace dxvk {
             device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
             device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_MODULATE);
             device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_MODULATE);
-            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_CURRENT);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_CURRENT);
             break;
           // "Add the Gouraud interpolants to the texture lookup with saturation semantics
           //  (that is, if the color value overflows it is set to the maximum possible value)."
@@ -1083,8 +1009,8 @@ namespace dxvk {
             device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG1, D3DTA_TEXTURE);
             device9->SetTextureStageState(0, d3d9::D3DTSS_COLOROP,   D3DTOP_ADD);
             device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP,   D3DTOP_SELECTARG2);
-            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_DIFFUSE);
-            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_DIFFUSE);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_COLORARG2, D3DTA_CURRENT);
+            device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAARG2, D3DTA_CURRENT);
             break;
           // Unsupported
           default:
@@ -1113,24 +1039,12 @@ namespace dxvk {
       case D3DRENDERSTATE_SUBPIXELX:
         return D3D_OK;
 
-      // Tests have shown age accurate GPUs didn't offer support for
-      // stippling at all, so this should be safe to ignore
+      // Tests have shown age accurate GPUs didn't offer support for stippling at all
       case D3DRENDERSTATE_STIPPLEDALPHA:
-        static bool s_stippledAlphaErrorShown;
-
-        if (dwRenderState && !std::exchange(s_stippledAlphaErrorShown, true))
-          Logger::warn("D3D5Device::SetRenderState: Unimplemented render state D3DRENDERSTATE_STIPPLEDALPHA");
-
         return D3D_OK;
 
-      // Tests have shown age accurate GPUs didn't offer support for
-      // stippling at all, so this should be safe to ignore
+      // Tests have shown age accurate GPUs didn't offer support for stippling at all
       case D3DRENDERSTATE_STIPPLEENABLE:
-        static bool s_stippleEnableErrorShown;
-
-        if (dwRenderState && !std::exchange(s_stippleEnableErrorShown, true))
-          Logger::warn("D3D5Device::SetRenderState: Unimplemented render state D3DRENDERSTATE_STIPPLEENABLE");
-
         return D3D_OK;
 
       case D3DRENDERSTATE_EDGEANTIALIAS:
@@ -1190,7 +1104,7 @@ namespace dxvk {
       case D3DRENDERSTATE_FLUSHBATCH:
         return D3D_OK;
 
-      // TODO:
+      // Tests have shown age accurate GPUs didn't offer support for stippling at all
       case D3DRENDERSTATE_STIPPLEPATTERN00:
       case D3DRENDERSTATE_STIPPLEPATTERN01:
       case D3DRENDERSTATE_STIPPLEPATTERN02:
@@ -1223,11 +1137,6 @@ namespace dxvk {
       case D3DRENDERSTATE_STIPPLEPATTERN29:
       case D3DRENDERSTATE_STIPPLEPATTERN30:
       case D3DRENDERSTATE_STIPPLEPATTERN31:
-        static bool s_stipplePatternErrorShown;
-
-        if (!std::exchange(s_stipplePatternErrorShown, true))
-          Logger::warn("D3D5Device::SetRenderState: Unimplemented render state D3DRENDERSTATE_STIPPLEPATTERN");
-
         return D3D_OK;
     }
 
@@ -1237,8 +1146,6 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D5Device::GetLightState(D3DLIGHTSTATETYPE dwLightStateType, LPDWORD lpdwLightState) {
     D3DDeviceLock lock = LockDevice();
-
-    Logger::debug(">>> D3D5Device::GetLightState");
 
     if (unlikely(lpdwLightState == nullptr))
       return DDERR_INVALIDPARAMS;
@@ -1277,14 +1184,14 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::SetLightState(D3DLIGHTSTATETYPE dwLightStateType, DWORD dwLightState) {
     D3DDeviceLock lock = LockDevice();
 
-    Logger::debug(">>> D3D5Device::SetLightState");
-
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
     switch (dwLightStateType) {
       case D3DLIGHTSTATE_MATERIAL: {
         if (unlikely(!dwLightState)) {
           m_commonD3DDevice->SetCurrentMaterialHandle(dwLightState);
+          static constexpr d3d9::D3DMATERIAL9 DefaultMaterial9 = { };
+          device9->SetMaterial(&DefaultMaterial9);
           return D3D_OK;
         }
 
@@ -1293,7 +1200,7 @@ namespace dxvk {
           return DDERR_INVALIDPARAMS;
 
         m_commonD3DDevice->SetCurrentMaterialHandle(dwLightState);
-        Logger::debug(str::format("D3D5Device::SetLightState: Applying material nr. ", dwLightState, " to D3D9"));
+        //Logger::debug(str::format("D3D5Device::SetLightState: Applying material nr. ", dwLightState, " to D3D9"));
         device9->SetMaterial(material9);
 
         break;
@@ -1325,24 +1232,19 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::SetTransform(D3DTRANSFORMSTATETYPE state, D3DMATRIX *matrix) {
-    Logger::debug(">>> D3D5Device::SetTransform");
     return m_commonD3DDevice->GetD3D9Device()->SetTransform(ConvertTransformState(state), matrix);
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::GetTransform(D3DTRANSFORMSTATETYPE state, D3DMATRIX *matrix) {
-    Logger::debug(">>> D3D5Device::GetTransform");
     return m_commonD3DDevice->GetD3D9Device()->GetTransform(ConvertTransformState(state), matrix);
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::MultiplyTransform(D3DTRANSFORMSTATETYPE state, D3DMATRIX *matrix) {
-    Logger::debug(">>> D3D5Device::MultiplyTransform");
     return m_commonD3DDevice->GetD3D9Device()->MultiplyTransform(ConvertTransformState(state), matrix);
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::DrawPrimitive(D3DPRIMITIVETYPE primitive_type, D3DVERTEXTYPE vertex_type, void *vertices, DWORD vertex_count, DWORD flags) {
     D3DDeviceLock lock = LockDevice();
-
-    Logger::debug(">>> D3D5Device::DrawPrimitive");
 
     RefreshLastUsedDevice();
 
@@ -1388,8 +1290,6 @@ namespace dxvk {
 
   HRESULT STDMETHODCALLTYPE D3D5Device::DrawIndexedPrimitive(D3DPRIMITIVETYPE primitive_type, D3DVERTEXTYPE fvf, void *vertices, DWORD vertex_count, WORD *indices, DWORD index_count, DWORD flags) {
     D3DDeviceLock lock = LockDevice();
-
-    Logger::debug(">>> D3D5Device::DrawIndexedPrimitive");
 
     RefreshLastUsedDevice();
 
@@ -1438,8 +1338,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::SetClipStatus(D3DCLIPSTATUS *clip_status) {
-    Logger::debug(">>> D3D5Device::SetClipStatus");
-
     if (unlikely(clip_status == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -1447,8 +1345,6 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE D3D5Device::GetClipStatus(D3DCLIPSTATUS *clip_status) {
-    Logger::debug(">>> D3D5Device::GetClipStatus");
-
     if (unlikely(clip_status == nullptr))
       return DDERR_INVALIDPARAMS;
 
@@ -1475,16 +1371,12 @@ namespace dxvk {
     m_ds = m_rt->GetAttachedDepthStencil();
 
     if (m_ds != nullptr) {
-      Logger::debug("D3D5Device::InitializeDS: Found an attached DS");
-
       HRESULT hrDS = m_ds->InitializeD3D9DepthStencil();
       if (unlikely(FAILED(hrDS))) {
         Logger::err("D3D5Device::InitializeDS: Failed to initialize D3D9 DS");
       } else {
-        Logger::info("D3D5Device::InitializeDS: Got depth stencil from RT");
-
         const RECT* dsRect = m_ds->GetCommonSurface()->GetFullSurfaceRect();
-        Logger::debug(str::format("D3D5Device::InitializeDS: DepthStencil: ", dsRect->right, "x", dsRect->bottom));
+        Logger::info(str::format("D3D5Device::InitializeDS: Depth stencil: ", dsRect->right, "x", dsRect->bottom));
 
         HRESULT hrDS9 = device9->SetDepthStencilSurface(m_ds->GetCommonSurface()->GetD3D9Surface());
         if (unlikely(FAILED(hrDS9))) {
@@ -1495,7 +1387,6 @@ namespace dxvk {
         }
       }
     } else {
-      Logger::info("D3D5Device::InitializeDS: RT has no depth stencil attached");
       device9->SetDepthStencilSurface(nullptr);
       // Should be superfluous, but play it safe
       device9->SetRenderState(d3d9::D3DRS_ZENABLE, d3d9::D3DZB_FALSE);
@@ -1558,31 +1449,23 @@ namespace dxvk {
   }
 
   inline HRESULT D3D5Device::SetTextureInternal(DDrawSurface* surface, DWORD textureHandle) {
-    Logger::debug(">>> D3D5Device::SetTextureInternal");
-
     HRESULT hr;
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
     // Unbinding texture stages
     if (surface == nullptr) {
-      Logger::debug("D3D5Device::SetTextureInternal: Unbiding D3D9 texture");
-
       hr = device9->SetTexture(0, nullptr);
       if (unlikely(FAILED(hr))) {
         Logger::err("D3D5Device::SetTextureInternal: Failed to unbind D3D9 texture");
         return hr;
       }
 
-      if (likely(m_commonD3DDevice->GetCurrentTextureHandle() != 0)) {
-        Logger::debug("D3D5Device::SetTextureInternal: Unbinding local texture");
+      if (likely(m_commonD3DDevice->GetCurrentTextureHandle() != 0))
         m_commonD3DDevice->SetCurrentTextureHandle(0);
-      }
 
       return D3D_OK;
     }
-
-    Logger::debug("D3D5Device::SetTextureInternal: Binding D3D9 texture");
 
     // If textures have been used on a different device, they
     // will get their D3D9 object reinitialized at this point
