@@ -1483,12 +1483,14 @@ namespace dxvk {
     { R"(\\SCP - Containment Breach\.exe$)", {{
       { "ddraw.forceLegacyPresent",         "True" },
       { "ddraw.forceMultiThreaded",         "True" },
+      { "ddraw.managedVertexBuffers",       "True" },
     }} },
     /* SCP - Nine-Tailed Fox                      *
      * Same engine as Containment Breach          */
     { R"(\\SCP Nine-Tailed Fox\.exe$)", {{
       { "ddraw.forceLegacyPresent",         "True" },
       { "ddraw.forceMultiThreaded",         "True" },
+      { "ddraw.managedVertexBuffers",       "True" },
     }} },
     /* Unreal                                     *
      * Fixes missing mip map uploads and physics  */
@@ -1603,9 +1605,11 @@ namespace dxvk {
       { "ddraw.legacyPresentGuard",       "Strict" },
     }} },
     /* Need for Speed: Porsche Unleashed          *
-     * Fixes missing mip maps on car models       */
+     * Fixes missing mip maps on car models       *
+     * and Z-fighting with projected lights       */
     { R"(\\(Porsche|nfs5)\.exe$)", {{
       { "ddraw.autoGenMipMaps",             "True" },
+      { "ddraw.useD16forD24X8",             "True" },
     }} },
     /* Star Trek: Deep Space Nine - The Fallen    *
      * Fixes missing mip map uploads              */
@@ -1774,12 +1778,8 @@ namespace dxvk {
       { "ddraw.legacyPresentGuard",       "Strict" },
     }} },
     /* Expendable                                 */
-    { R"(\\Expendable\\go_start\.exe$)", {{
+    { R"(\\Expendable\\go(_start)?\.exe$)", {{
       { "ddraw.support32BitDepth",         "False" },
-    }} },
-    /* Total Annihilation: Kingdoms               */
-    { R"(\\KINGDOMS\.icd$)", {{
-      { "ddraw.forcePOW2Textures",          "True" },
     }} },
     /* Gorky 17                                   */
     { R"(\\gorky17\.exe$)", {{
@@ -1790,7 +1790,6 @@ namespace dxvk {
      * too dark in-game gamma/brightness          */
     { R"(\\Revenant\.exe$)", {{
       { "ddraw.forceLegacyPresent",         "True" },
-      { "ddraw.forcePOW2Textures",          "True" },
       { "ddraw.ignoreGammaRamp",            "True" },
     }} },
     /* Slave Zero - will not start in 32-bit      *
@@ -1816,6 +1815,7 @@ namespace dxvk {
     { R"(\\tomb4\.exe$)", {{
       { "ddraw.forceLegacyPresent",         "True" },
       { "ddraw.emulateFrontBuffer",         "True" },
+      { "ddraw.managedVertexBuffers",       "True" },
     }} },
     /* Tomb Raider Chronicles                     *
      * Fixes missing pause screen background      */
@@ -1847,8 +1847,10 @@ namespace dxvk {
       { "ddraw.colorKeyMasking",            "True" },
     }} },
     /* Dungeon Keeper 2                           *
-     * Fixes missing HW acceleration option       */
-    { R"(\\DKII(-DX)?\.exe$)", {{
+     * Fixes fast animation speed at high FPS     *
+     * and missing HW acceleration option         */
+    { R"(\\DKII\.EXE$)", {{
+      { "d3d9.maxFrameRate",                 "-60" },
       { "ddraw.legacyDeviceNames",          "True" },
     }} },
     /* Might and Magic VII: For Blood and Honor   *
@@ -1875,7 +1877,7 @@ namespace dxvk {
     /* Half-Life (: Opposing Force/: Blue Shift)  */
     { R"(\\hl\.exe$)", {{
       { "ddraw.forceLegacyPresent",         "True" },
-      { "ddraw.forceSWVP",                  "True" },
+      { "ddraw.managedVertexBuffers",       "True" },
     }} },
     /* The Sims (& DLCs/Expansion Packs)          */
     { R"(\\Sims\.(exe|icd)$)", {{
@@ -1888,9 +1890,10 @@ namespace dxvk {
     { R"(\\midtown\.(exe|icd)$)", {{
       { "ddraw.legacyDeviceNames",          "True" },
     }} },
-    /* Matrox G400 TechDemo - prevents crashing   */
-    { R"(\\Matrox\.exe$)", {{
-      { "ddraw.forcePOW2Textures",          "True" },
+    /* Toy Story 2: Buzz Lightyear to the Rescue  */
+    { R"(\\toy2\.exe$)", {{
+      { "d3d9.maxFrameRate",                  "30" },
+      { "ddraw.managedVertexBuffers",       "True" },
     }} },
 
     /**********************************************/
@@ -1971,6 +1974,10 @@ namespace dxvk {
     }} },
     /* Tex Murtphy: Overseer                      */
     { R"(\\OVERSEER\.exe$)", {{
+      { "ddraw.forceLegacyPresent",         "True" },
+    }} },
+    /* Resident Evil 2                            */
+    { R"(\\(ClaireU|LeonU)\.exe$)", {{
       { "ddraw.forceLegacyPresent",         "True" },
     }} },
 

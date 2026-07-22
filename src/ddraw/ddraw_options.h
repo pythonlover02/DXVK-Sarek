@@ -30,6 +30,9 @@ namespace dxvk {
     /// Use SWVP mode for all D3D9 devices
     bool forceSWVP;
 
+    /// Use MANAGED vertex buffers instead of DEFAULT vertex buffers
+    bool managedVertexBuffers;
+
     /// Advertise support for R3G3B2
     bool supportR3G3B2;
 
@@ -42,14 +45,14 @@ namespace dxvk {
     /// Replaces any use of D32 with D24X8
     bool useD24X8forD32;
 
+    /// Replaces any use of D24X8 with D16
+    bool useD16forD24X8;
+
     /// Report any 8-bit display modes as being 16-bit
     bool mask8BitModes;
 
     /// Always use 0.0f and 1.0f as viewport Z values
     bool viewportZCorrection;
-
-    /// Report POW2 texture dimension restrictions
-    bool forcePOW2Textures;
 
     /// Respect DISCARD only on DYNAMIC + WRITEONLY buffers
     bool forceLegacyDiscard;
@@ -68,6 +71,9 @@ namespace dxvk {
 
     /// Explicitly flip the RT swapchain, even if the primary surface is not part of it
     bool forceRTFlip;
+
+    /// Forwards all DC operations to D3D9 surfaces
+    bool forceDCForwarding;
 
     /// Emulate an explicit D3D9 front buffer by uploading its content from DDraw
     bool emulateFrontBuffer;
