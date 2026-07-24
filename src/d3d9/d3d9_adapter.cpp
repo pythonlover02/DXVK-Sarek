@@ -16,14 +16,17 @@ namespace dxvk {
 
   const char* GetDriverDLL(DxvkGpuVendor vendor) {
     switch (vendor) {
-      default:
       case DxvkGpuVendor::Nvidia: return "nvd3dum.dll";
 
 #if defined(__x86_64__) || defined(_M_X64)
+      default:
       case DxvkGpuVendor::Amd:    return "aticfx64.dll";
+
       case DxvkGpuVendor::Intel:  return "igdumd64.dll";
 #else
+      default:
       case DxvkGpuVendor::Amd:    return "aticfx32.dll";
+
       case DxvkGpuVendor::Intel:  return "igdumd32.dll";
 #endif
     }
@@ -176,12 +179,6 @@ namespace dxvk {
     if (unlikely(RType == D3DRTYPE_VERTEXBUFFER || RType == D3DRTYPE_INDEXBUFFER))
       return D3DERR_INVALIDCALL;
 
-    if (unlikely(AdapterFormat == D3D9Format::Unknown))
-      return D3DERR_INVALIDCALL;
-
-    if (unlikely(RType == D3DRTYPE_VERTEXBUFFER || RType == D3DRTYPE_INDEXBUFFER))
-      return D3DERR_INVALIDCALL;
-
     if (!IsSupportedAdapterFormat(AdapterFormat))
       return D3DERR_NOTAVAILABLE;
 
@@ -306,11 +303,15 @@ namespace dxvk {
     if (!IsDepthFormat(DepthStencilFormat))
       return D3DERR_NOTAVAILABLE;
 
+    auto dsfMapping = GetFormatMapping(DepthStencilFormat);
+    if (dsfMapping.FormatColor == VK_FORMAT_UNDEFINED)
+      return D3DERR_NOTAVAILABLE;
+
     if (RenderTargetFormat == dxvk::D3D9Format::NULL_FORMAT)
       return D3D_OK;
 
-    auto mapping = ConvertFormatUnfixed(RenderTargetFormat);
-    if (mapping.FormatColor == VK_FORMAT_UNDEFINED)
+    auto rtfMapping = GetFormatMapping(RenderTargetFormat);
+    if (rtfMapping.FormatColor == VK_FORMAT_UNDEFINED)
       return D3DERR_NOTAVAILABLE;
 
     return D3D_OK;
@@ -348,8 +349,15 @@ namespace dxvk {
           D3DCAPS9*  pCaps) {
     using namespace dxvk::caps;
 
-    if (pCaps == nullptr)
+    if (unlikely(pCaps == nullptr))
       return D3DERR_INVALIDCALL;
+
+    if (unlikely(DeviceType == D3DDEVTYPE_SW)) {
+      if (m_parent->IsD3D8Compatible())
+        return D3DERR_INVALIDCALL;
+      else
+        return D3DERR_NOTAVAILABLE;
+    }
 
     auto& options = m_parent->GetOptions();
 
@@ -785,7 +793,10 @@ namespace dxvk {
   HRESULT D3D9Adapter::GetAdapterDisplayModeEx(
           D3DDISPLAYMODEEX*   pMode,
           D3DDISPLAYROTATION* pRotation) {
-    if (pMode == nullptr)
+    if (unlikely(pMode == nullptr))
+      return D3DERR_INVALIDCALL;
+
+    if (unlikely(pMode->Size != sizeof(D3DDISPLAYMODEEX)))
       return D3DERR_INVALIDCALL;
 
     if (pRotation != nullptr)
@@ -909,7 +920,16 @@ namespace dxvk {
       mode.Format           = static_cast<D3DFORMAT>(Format);
       mode.ScanLineOrdering = D3DSCANLINEORDERING_PROGRESSIVE;
 
-      m_modes.push_back(mode);
+      const bool isDuplicate = std::any_of(m_modes.begin(), m_modes.end(),
+        [&mode](const D3DDISPLAYMODEEX& other) {
+          return other.Width       == mode.Width
+              && other.Height      == mode.Height
+              && other.RefreshRate == mode.RefreshRate
+              && other.Format      == mode.Format;
+      });
+
+      if (!isDuplicate)
+        m_modes.push_back(mode);
     }
 
     // Sort display modes by width, height and refresh rate,
