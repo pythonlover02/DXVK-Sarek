@@ -920,7 +920,16 @@ namespace dxvk {
       mode.Format           = static_cast<D3DFORMAT>(Format);
       mode.ScanLineOrdering = D3DSCANLINEORDERING_PROGRESSIVE;
 
-      m_modes.push_back(mode);
+      const bool isDuplicate = std::any_of(m_modes.begin(), m_modes.end(),
+        [&mode](const D3DDISPLAYMODEEX& other) {
+          return other.Width       == mode.Width
+              && other.Height      == mode.Height
+              && other.RefreshRate == mode.RefreshRate
+              && other.Format      == mode.Format;
+      });
+
+      if (!isDuplicate)
+        m_modes.push_back(mode);
     }
 
     // Sort display modes by width, height and refresh rate,
