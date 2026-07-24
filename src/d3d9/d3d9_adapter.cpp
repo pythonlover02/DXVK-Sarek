@@ -306,11 +306,15 @@ namespace dxvk {
     if (!IsDepthFormat(DepthStencilFormat))
       return D3DERR_NOTAVAILABLE;
 
+    auto dsfMapping = GetFormatMapping(DepthStencilFormat);
+    if (dsfMapping.FormatColor == VK_FORMAT_UNDEFINED)
+      return D3DERR_NOTAVAILABLE;
+
     if (RenderTargetFormat == dxvk::D3D9Format::NULL_FORMAT)
       return D3D_OK;
 
-    auto mapping = ConvertFormatUnfixed(RenderTargetFormat);
-    if (mapping.FormatColor == VK_FORMAT_UNDEFINED)
+    auto rtfMapping = GetFormatMapping(RenderTargetFormat);
+    if (rtfMapping.FormatColor == VK_FORMAT_UNDEFINED)
       return D3DERR_NOTAVAILABLE;
 
     return D3D_OK;
