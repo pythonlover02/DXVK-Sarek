@@ -1,0 +1,22 @@
+[binaries]
+ar = 'i686-w64-mingw32-ar'
+c = 'i686-w64-mingw32-gcc'
+cpp = 'i686-w64-mingw32-g++'
+ld = 'i686-w64-mingw32-ld'
+windres = 'i686-w64-mingw32-windres'
+strip = 'strip'
+widl = 'i686-w64-mingw32-widl'
+pkgconfig = 'x86_64-linux-gnu-pkg-config'
+
+[properties]
+needs_exe_wrapper = true
+c_args = ['-mstackrealign','-O2','-march=nocona','-mtune=core-avx2','-pipe','-mfpmath=sse','-fwrapv','-fno-strict-aliasing','-ffunction-sections','-fdata-sections','-fno-omit-frame-pointer','-mpreferred-stack-boundary=2']
+cpp_args = ['-mstackrealign','-O2','-march=nocona','-mtune=core-avx2','-pipe','-mfpmath=sse','-fwrapv','-fno-strict-aliasing','-ffunction-sections','-fdata-sections','-fno-omit-frame-pointer','-mpreferred-stack-boundary=2']
+link_args = ['-static','-static-libgcc','-static-libstdc++']
+pkg_config_libdir = '/usr/lib/i386-w64-mingw32/pkgconfig:/usr/share/pkgconfig'
+
+[host_machine]
+system = 'windows'
+cpu_family = 'x86'
+cpu = 'x86'
+endian = 'little'
