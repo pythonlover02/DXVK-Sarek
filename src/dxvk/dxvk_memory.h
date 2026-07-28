@@ -297,6 +297,9 @@ namespace dxvk {
     friend class DxvkMemoryChunk;
 
     constexpr static VkDeviceSize SmallAllocationThreshold = 256 << 10;
+
+    constexpr static VkDeviceSize MinChunkSize =   4ull << 20;
+    constexpr static VkDeviceSize MaxChunkSize = 256ull << 20;
   public:
 
     DxvkMemoryAllocator(const DxvkDevice* device);
