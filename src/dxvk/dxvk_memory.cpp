@@ -1,9 +1,5 @@
 #include <algorithm>
 #include <cstring>
-#include <iomanip>
-#include <sstream>
-
-#include "../util/util_bit.h"
 
 #include "dxvk_device.h"
 #include "dxvk_memory.h"
@@ -335,8 +331,27 @@ namespace dxvk {
     }
 
     if (!result) {
-      this->logMemoryError(*req);
-      this->logMemoryStats();
+      DxvkAdapterMemoryInfo memHeapInfo = m_device->adapter()->getMemoryHeapInfo();
+
+      Logger::err(str::format(
+        "DxvkMemoryAllocator: Memory allocation failed",
+        "\n  Size:      ", req->size,
+        "\n  Alignment: ", req->alignment,
+        "\n  Mem flags: ", "0x", std::hex, flags,
+        "\n  Mem types: ", "0x", std::hex, req->memoryTypeBits));
+
+      for (uint32_t i = 0; i < m_memProps.memoryHeapCount; i++) {
+        Logger::err(str::format("Heap ", i, ": ",
+          (m_memHeaps[i].stats.memoryAllocated >> 20), " MB allocated, ",
+          (m_memHeaps[i].stats.memoryUsed      >> 20), " MB used, ",
+          m_device->extensions().extMemoryBudget
+            ? str::format(
+                (memHeapInfo.heaps[i].memoryAllocated >> 20), " MB allocated (driver), ",
+                (memHeapInfo.heaps[i].memoryBudget    >> 20), " MB budget (driver), ",
+                (m_memHeaps[i].properties.size        >> 20), " MB total")
+            : str::format(
+                (m_memHeaps[i].properties.size        >> 20), " MB total")));
+      }
 
       throw DxvkError("DxvkMemoryAllocator: Memory allocation failed");
     }
@@ -375,29 +390,41 @@ namespace dxvk {
     const VkMemoryDedicatedAllocateInfo*    dedAllocInfo) {
     constexpr VkDeviceSize DedicatedAllocationThreshold = 3;
 
+    // System memory allocations tend to be volatile and short-lived, so let a
+    // single resource fill an entire chunk there rather than forcing it onto a
+    // dedicated allocation. On 32-bit titles the host-visible chunk size is
+    // capped at 16 MiB, so a flat threshold would send every mappable buffer
+    // above ~5.3 MiB to its own vkAllocateMemory and vkMapMemory, which chews
+    // through the address space.
+    VkDeviceSize dedicatedThreshold = DedicatedAllocationThreshold;
+
+    if ((flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+     && !(flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT))
+      dedicatedThreshold = 1;
+
     VkDeviceSize chunkSize = pickChunkSize(type->memTypeId,
       DedicatedAllocationThreshold * size, hints);
 
     DxvkMemory memory;
 
     // Require dedicated allocations for resources that use the Vulkan dedicated
-    // allocation bits, or are too large to fit into a single full-sized chunk.
-    bool needsDedicatedAllocation = size >= chunkSize || dedAllocInfo;
+    // allocation bits, or are too large to fit into a single full-sized chunk
+    bool needsDedicatedAlocation = size >= chunkSize || dedAllocInfo;
 
     // Prefer a dedicated allocation for very large resources in order to
-    // reduce fragmentation if a large number of those resources are in use.
-    bool wantsDedicatedAllocation = DedicatedAllocationThreshold * size > chunkSize;
+    // reduce fragmentation if a large number of those resources are in use
+    bool wantsDedicatedAllocation = dedicatedThreshold * size > chunkSize;
 
-    // Try to reuse existing memory as much as possible when the heap is nearly full.
-    bool heapBudgetExceeded = 5 * type->heap->stats.memoryUsed + size > 4 * type->heap->properties.size;
+    // Try to reuse existing memory as much as possible in case the heap is nearly full
+    bool heapBudgedExceeded = 5 * type->heap->stats.memoryUsed + size > 4 * type->heap->properties.size;
 
-    if (!needsDedicatedAllocation && (!wantsDedicatedAllocation || heapBudgetExceeded)) {
+    if (!needsDedicatedAlocation && (!wantsDedicatedAllocation || heapBudgedExceeded)) {
       // Attempt to suballocate from existing chunks first
       for (uint32_t i = 0; i < type->chunks.size() && !memory; i++)
         memory = type->chunks[i]->alloc(flags, size, align, hints);
 
-      // If no existing chunk can accommodate the allocation, and if a dedicated
-      // allocation is not preferred, create a new chunk and suballocate from it.
+      // If no existing chunk can accomodate the allocation, and if a dedicated
+      // allocation is not preferred, create a new chunk and suballocate from it
       if (!memory && !wantsDedicatedAllocation) {
         DxvkDeviceMemory devMem;
 
@@ -419,8 +446,8 @@ namespace dxvk {
     }
 
     // If a dedicated allocation is required or preferred and we haven't managed
-    // to suballocate any memory before, try to create a dedicated allocation.
-    if (!memory && (needsDedicatedAllocation || wantsDedicatedAllocation)) {
+    // to suballocate any memory before, try to create a dedicated allocation
+    if (!memory && (needsDedicatedAlocation || wantsDedicatedAllocation)) {
       if (this->shouldFreeEmptyChunks(type->heap, size))
         this->freeEmptyChunks(type->heap);
 
@@ -645,53 +672,6 @@ namespace dxvk {
           [] (const Rc<DxvkMemoryChunk>& chunk) { return chunk->isEmpty(); }),
         type->chunks.end());
     }
-  }
-
-
-  void DxvkMemoryAllocator::logMemoryError(const VkMemoryRequirements& req) const {
-    std::stringstream sstr;
-    sstr << "DxvkMemoryAllocator: Memory allocation failed" << std::endl
-         << "  Size:      " << req.size << std::endl
-         << "  Alignment: " << req.alignment << std::endl
-         << "  Mem types: ";
-
-    uint32_t memTypes = req.memoryTypeBits;
-
-    while (memTypes) {
-      uint32_t index = bit::tzcnt(memTypes);
-      sstr << index;
-
-      if ((memTypes &= memTypes - 1))
-        sstr << ",";
-      else
-        sstr << std::endl;
-    }
-
-    Logger::err(sstr.str());
-  }
-
-
-  void DxvkMemoryAllocator::logMemoryStats() const {
-    DxvkAdapterMemoryInfo memHeapInfo = m_device->adapter()->getMemoryHeapInfo();
-
-    std::stringstream sstr;
-    sstr << "Heap  Size (MiB)  Allocated   Used        Reserved    Budget" << std::endl;
-
-    for (uint32_t i = 0; i < m_memProps.memoryHeapCount; i++) {
-      sstr << std::setw(2) << i << ":   "
-           << std::setw(6) << (m_memHeaps[i].properties.size >> 20) << "      "
-           << std::setw(6) << (m_memHeaps[i].stats.memoryAllocated >> 20) << "      "
-           << std::setw(6) << (m_memHeaps[i].stats.memoryUsed >> 20) << "      ";
-
-      if (m_device->extensions().extMemoryBudget) {
-        sstr << std::setw(6) << (memHeapInfo.heaps[i].memoryAllocated >> 20) << "      "
-             << std::setw(6) << (memHeapInfo.heaps[i].memoryBudget >> 20) << "      " << std::endl;
-      } else {
-        sstr << " n/a         n/a" << std::endl;
-      }
-    }
-
-    Logger::err(sstr.str());
   }
 
 }

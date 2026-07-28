@@ -418,11 +418,6 @@ namespace dxvk {
     void freeEmptyChunks(
       const DxvkMemoryHeap*       heap);
 
-    void logMemoryError(
-      const VkMemoryRequirements& req) const;
-
-    void logMemoryStats() const;
-
   };
 
 }
