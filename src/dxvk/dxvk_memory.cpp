@@ -539,20 +539,24 @@ namespace dxvk {
   }
 
 
-  VkDeviceSize DxvkMemoryAllocator::pickChunkSize(uint32_t memTypeId, DxvkMemoryFlags hints) const {
+  VkDeviceSize DxvkMemoryAllocator::pickChunkSize(uint32_t memTypeId, VkDeviceSize requiredSize, DxvkMemoryFlags hints) const {
     VkMemoryType type = m_memProps.memoryTypes[memTypeId];
     VkMemoryHeap heap = m_memProps.memoryHeaps[type.heapIndex];
 
-    // Default to a chunk size of 256 MiB
-    VkDeviceSize chunkSize = 256 << 20;
+    // Start from the current per-type chunk size and grow it
+    // up to the maximum until it can serve the request.
+    VkDeviceSize chunkSize = m_memTypes[memTypeId].chunkSize;
+
+    while (chunkSize < requiredSize && chunkSize < MaxChunkSize)
+      chunkSize <<= 1u;
 
     if (hints.test(DxvkMemoryFlag::Small))
-      chunkSize = 16 << 20;
+      chunkSize = std::min<VkDeviceSize>(chunkSize, 16 << 20);
 
     // Try to waste a bit less system memory especially in
     // 32-bit applications due to address space constraints
     if (type.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-      chunkSize = (env::is32BitHostPlatform() ? 16 : 64) << 20;
+      chunkSize = std::min<VkDeviceSize>((env::is32BitHostPlatform() ? 16 : 64) << 20, chunkSize);
 
     // Reduce the chunk size on small heaps so
     // we can at least fit in 15 allocations
@@ -560,6 +564,19 @@ namespace dxvk {
       chunkSize >>= 1;
 
     return chunkSize;
+  }
+
+
+  void DxvkMemoryAllocator::adjustChunkSize(
+          uint32_t              memTypeId,
+          VkDeviceSize          allocatedSize,
+          DxvkMemoryFlags       hints) {
+    VkDeviceSize chunkSize = m_memTypes[memTypeId].chunkSize;
+
+    // Don't bump chunk size if we reached the maximum or if
+    // we already were unable to allocate a full chunk.
+    if (chunkSize <= allocatedSize && chunkSize <= m_memTypes[memTypeId].heap->stats.memoryAllocated)
+      m_memTypes[memTypeId].chunkSize = pickChunkSize(memTypeId, chunkSize * 2, DxvkMemoryFlags());
   }
 
 
