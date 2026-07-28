@@ -221,6 +221,7 @@ namespace dxvk {
       m_memTypes[i].heapId     = m_memProps.memoryTypes[i].heapIndex;
       m_memTypes[i].memType    = m_memProps.memoryTypes[i];
       m_memTypes[i].memTypeId  = i;
+      m_memTypes[i].chunkSize  = MinChunkSize;
     }
 
     /* Check what kind of heap the HVV memory type is on, if any. If the
