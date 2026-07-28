@@ -87,6 +87,8 @@ namespace dxvk {
     VkMemoryType      memType;
     uint32_t          memTypeId;
 
+    VkDeviceSize      chunkSize;
+
     std::vector<Rc<DxvkMemoryChunk>> chunks;
   };
 
