@@ -399,7 +399,13 @@ namespace dxvk {
 
     VkDeviceSize pickChunkSize(
             uint32_t              memTypeId,
+            VkDeviceSize          requiredSize,
             DxvkMemoryFlags       hints) const;
+
+    void adjustChunkSize(
+            uint32_t              memTypeId,
+            VkDeviceSize          allocatedSize,
+            DxvkMemoryFlags       hints);
 
     bool shouldFreeChunk(
       const DxvkMemoryType*       type,
