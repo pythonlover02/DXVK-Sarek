@@ -50,6 +50,7 @@ namespace dxvk {
     VkPhysicalDeviceTransformFeedbackFeaturesEXT              extTransformFeedback;
     VkPhysicalDeviceVertexAttributeDivisorFeaturesEXT         extVertexAttributeDivisor;
     VkPhysicalDeviceBufferDeviceAddressFeaturesKHR            khrBufferDeviceAddress;
+    VkPhysicalDeviceSynchronization2FeaturesKHR               khrSynchronization2;
     VkPhysicalDeviceTimelineSemaphoreFeaturesKHR              khrTimelineSemaphore;
   };
 

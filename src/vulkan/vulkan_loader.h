@@ -285,6 +285,7 @@ namespace dxvk::vk {
     VULKAN_FN(vkCmdClearDepthStencilImage);
     VULKAN_FN(vkCmdClearAttachments);
     VULKAN_FN(vkCmdResolveImage);
+    VULKAN_FN(vkCmdPipelineBarrier2KHR);
     VULKAN_FN(vkCmdSetEvent);
     VULKAN_FN(vkCmdResetEvent);
     VULKAN_FN(vkCmdWaitEvents);

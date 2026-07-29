@@ -1,6 +1,7 @@
 #pragma once
 
 #include <limits>
+#include <vector>
 
 #include "dxvk_bind_mask.h"
 #include "dxvk_buffer.h"
@@ -663,6 +664,75 @@ namespace dxvk {
             uint32_t                imageMemoryBarrierCount,
       const VkImageMemoryBarrier*   pImageMemoryBarriers) {
       m_cmdBuffersUsed.set(cmdBuffer);
+
+      // Backport of the VK_KHR_synchronization2 fast path from upstream DXVK.
+      // Opportunistic only: falls back to the legacy vkCmdPipelineBarrier path
+      // untouched on any device that does not expose synchronization2 (e.g.
+      // Sarek's classic 1.1/1.2 target hardware). vkCmdPipelineBarrier2KHR is
+      // guaranteed null by vkGetDeviceProcAddr when the extension was not
+      // enabled at device creation, so this check alone is sufficient and
+      // matches the idiom already used for other optional entry points in
+      // this codebase (see e.g. vkCmdDrawIndirectByteCountEXT usage above).
+      if (m_vkd->vkCmdPipelineBarrier2KHR) {
+        // Legacy VkAccessFlags/VkPipelineStageFlags bit values are guaranteed
+        // by the Vulkan spec to be numerically identical to the low 32 bits
+        // of their VkAccessFlags2/VkPipelineStageFlags2 counterparts, so a
+        // plain widening cast is correct and lossless here.
+        std::vector<VkMemoryBarrier2> memBarriers2(memoryBarrierCount);
+        for (uint32_t i = 0; i < memoryBarrierCount; i++) {
+          memBarriers2[i].sType         = VK_STRUCTURE_TYPE_MEMORY_BARRIER_2;
+          memBarriers2[i].pNext         = nullptr;
+          memBarriers2[i].srcStageMask  = VkPipelineStageFlags2(srcStageMask);
+          memBarriers2[i].srcAccessMask = VkAccessFlags2(pMemoryBarriers[i].srcAccessMask);
+          memBarriers2[i].dstStageMask  = VkPipelineStageFlags2(dstStageMask);
+          memBarriers2[i].dstAccessMask = VkAccessFlags2(pMemoryBarriers[i].dstAccessMask);
+        }
+
+        std::vector<VkBufferMemoryBarrier2> bufBarriers2(bufferMemoryBarrierCount);
+        for (uint32_t i = 0; i < bufferMemoryBarrierCount; i++) {
+          bufBarriers2[i].sType               = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+          bufBarriers2[i].pNext               = nullptr;
+          bufBarriers2[i].srcStageMask        = VkPipelineStageFlags2(srcStageMask);
+          bufBarriers2[i].srcAccessMask       = VkAccessFlags2(pBufferMemoryBarriers[i].srcAccessMask);
+          bufBarriers2[i].dstStageMask        = VkPipelineStageFlags2(dstStageMask);
+          bufBarriers2[i].dstAccessMask       = VkAccessFlags2(pBufferMemoryBarriers[i].dstAccessMask);
+          bufBarriers2[i].srcQueueFamilyIndex = pBufferMemoryBarriers[i].srcQueueFamilyIndex;
+          bufBarriers2[i].dstQueueFamilyIndex = pBufferMemoryBarriers[i].dstQueueFamilyIndex;
+          bufBarriers2[i].buffer              = pBufferMemoryBarriers[i].buffer;
+          bufBarriers2[i].offset              = pBufferMemoryBarriers[i].offset;
+          bufBarriers2[i].size                = pBufferMemoryBarriers[i].size;
+        }
+
+        std::vector<VkImageMemoryBarrier2> imgBarriers2(imageMemoryBarrierCount);
+        for (uint32_t i = 0; i < imageMemoryBarrierCount; i++) {
+          imgBarriers2[i].sType               = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+          imgBarriers2[i].pNext               = nullptr;
+          imgBarriers2[i].srcStageMask        = VkPipelineStageFlags2(srcStageMask);
+          imgBarriers2[i].srcAccessMask       = VkAccessFlags2(pImageMemoryBarriers[i].srcAccessMask);
+          imgBarriers2[i].dstStageMask        = VkPipelineStageFlags2(dstStageMask);
+          imgBarriers2[i].dstAccessMask       = VkAccessFlags2(pImageMemoryBarriers[i].dstAccessMask);
+          imgBarriers2[i].oldLayout           = pImageMemoryBarriers[i].oldLayout;
+          imgBarriers2[i].newLayout           = pImageMemoryBarriers[i].newLayout;
+          imgBarriers2[i].srcQueueFamilyIndex = pImageMemoryBarriers[i].srcQueueFamilyIndex;
+          imgBarriers2[i].dstQueueFamilyIndex = pImageMemoryBarriers[i].dstQueueFamilyIndex;
+          imgBarriers2[i].image               = pImageMemoryBarriers[i].image;
+          imgBarriers2[i].subresourceRange     = pImageMemoryBarriers[i].subresourceRange;
+        }
+
+        VkDependencyInfo depInfo;
+        depInfo.sType                    = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        depInfo.pNext                    = nullptr;
+        depInfo.dependencyFlags          = dependencyFlags;
+        depInfo.memoryBarrierCount       = memoryBarrierCount;
+        depInfo.pMemoryBarriers          = memBarriers2.data();
+        depInfo.bufferMemoryBarrierCount = bufferMemoryBarrierCount;
+        depInfo.pBufferMemoryBarriers    = bufBarriers2.data();
+        depInfo.imageMemoryBarrierCount  = imageMemoryBarrierCount;
+        depInfo.pImageMemoryBarriers     = imgBarriers2.data();
+
+        m_vkd->vkCmdPipelineBarrier2KHR(getCmdBuffer(cmdBuffer), &depInfo);
+        return;
+      }
 
       m_vkd->vkCmdPipelineBarrier(getCmdBuffer(cmdBuffer),
         srcStageMask, dstStageMask, dependencyFlags,
