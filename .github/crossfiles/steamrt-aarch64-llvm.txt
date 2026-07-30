@@ -1,0 +1,22 @@
+[binaries]
+ar = 'arm64ec-w64-mingw32-ar'
+c = 'arm64ec-w64-mingw32-gcc'
+cpp = 'arm64ec-w64-mingw32-g++'
+ld = 'arm64ec-w64-mingw32-ld'
+windres = 'arm64ec-w64-mingw32-windres'
+strip = 'llvm-strip'
+widl = 'arm64ec-w64-mingw32-widl'
+pkgconfig = 'aarch64-linux-gnu-pkg-config'
+
+[properties]
+needs_exe_wrapper = true
+c_args = ['-O2','-march=armv8.2-a','-mtune=cortex-x3','-fwrapv','-fno-strict-aliasing','-ffunction-sections','-fdata-sections','-fno-omit-frame-pointer']
+cpp_args = ['-O2','-march=armv8.2-a','-mtune=cortex-x3','-fwrapv','-fno-strict-aliasing','-ffunction-sections','-fdata-sections','-fno-omit-frame-pointer']
+link_args = ['-static','-static-libgcc','-static-libstdc++']
+pkg_config_libdir = '/usr/lib/arm64ec-w64-mingw32/pkgconfig:/usr/share/pkgconfig'
+
+[host_machine]
+system = 'windows'
+cpu_family = 'aarch64'
+cpu = 'aarch64'
+endian = 'little'
