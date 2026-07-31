@@ -61,6 +61,7 @@ jobs:
         --libdir "x86_64-windows"
         -Db_ndebug=if-release
         -Dbuild_id=false
+        -Denable_ddraw=false
         "build/build.x86_64"
 
     - name: Build x86_64
@@ -134,6 +135,7 @@ jobs:
         --libdir "x86_64-windows"
         -Db_ndebug=if-release
         -Dbuild_id=false
+        -Denable_ddraw=false
         "build/build.x86_64"
 
     - name: Build x86_64
@@ -205,6 +207,7 @@ jobs:
         --libdir "x86_64-windows"
         -Db_ndebug=if-release
         -Dbuild_id=false
+        -Denable_ddraw=false
         "build/build.x86_64"
 
     - name: Build x86_64
@@ -224,6 +227,7 @@ jobs:
         --libdir "aarch64-windows"
         -Db_ndebug=if-release
         -Dbuild_id=false
+        -Denable_ddraw=false
         "build/build.aarch64"
 
     - name: Build aarch64
