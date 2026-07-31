@@ -124,6 +124,33 @@ namespace dxvk::hud {
   }
 
 
+  HudSync2Item::HudSync2Item(const Rc<DxvkDevice>& device) {
+    bool active = device->features().khrSynchronization2.synchronization2;
+    m_status = active
+      ? "sync2: active"
+      : "sync2: fallback (legacy barriers)";
+  }
+
+
+  HudSync2Item::~HudSync2Item() {
+
+  }
+
+
+  HudPos HudSync2Item::render(
+          HudRenderer&      renderer,
+          HudPos            position) {
+    position.y += 16.0f;
+    renderer.drawText(16.0f,
+      { position.x, position.y },
+      { 1.0f, 1.0f, 1.0f, 1.0f },
+      m_status);
+
+    position.y += 8.0f;
+    return position;
+  }
+
+
   HudDeviceInfoItem::HudDeviceInfoItem(const Rc<DxvkDevice>& device) {
     VkPhysicalDeviceProperties props = device->adapter()->deviceProperties();
 

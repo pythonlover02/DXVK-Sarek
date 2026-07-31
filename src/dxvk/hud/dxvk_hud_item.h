@@ -158,6 +158,28 @@ namespace dxvk::hud {
 
 
   /**
+   * \brief HUD item to display sync2 barrier backport status
+   */
+  class HudSync2Item : public HudItem {
+
+  public:
+
+    HudSync2Item(const Rc<DxvkDevice>& device);
+
+    ~HudSync2Item();
+
+    HudPos render(
+            HudRenderer&      renderer,
+            HudPos            position);
+
+  private:
+
+    std::string m_status;
+
+  };
+
+
+  /**
    * \brief HUD item to display device info
    */
   class HudDeviceInfoItem : public HudItem {
