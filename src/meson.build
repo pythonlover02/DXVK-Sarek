@@ -37,8 +37,8 @@ if get_option('enable_d3d8')
   subdir('d3d8')
 endif
 
-# Nothing selected
-if get_option('enable_ddraw')
+# DDRAW is 32-bit x86 only, ARM64, x86_64, etc, never had a ddraw runtime
+if get_option('enable_ddraw') and cpu_family == 'x86'
   if not get_option('enable_d3d9')
     error('D3D9 is required for DDRAW.')
   endif
