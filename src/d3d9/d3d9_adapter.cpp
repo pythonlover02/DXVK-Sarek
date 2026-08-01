@@ -16,14 +16,17 @@ namespace dxvk {
 
   const char* GetDriverDLL(DxvkGpuVendor vendor) {
     switch (vendor) {
-      default:
       case DxvkGpuVendor::Nvidia: return "nvd3dum.dll";
 
 #if defined(__x86_64__) || defined(_M_X64)
+      default:
       case DxvkGpuVendor::Amd:    return "aticfx64.dll";
+
       case DxvkGpuVendor::Intel:  return "igdumd64.dll";
 #else
+      default:
       case DxvkGpuVendor::Amd:    return "aticfx32.dll";
+
       case DxvkGpuVendor::Intel:  return "igdumd32.dll";
 #endif
     }
