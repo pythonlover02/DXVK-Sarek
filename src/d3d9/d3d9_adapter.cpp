@@ -179,12 +179,6 @@ namespace dxvk {
     if (unlikely(RType == D3DRTYPE_VERTEXBUFFER || RType == D3DRTYPE_INDEXBUFFER))
       return D3DERR_INVALIDCALL;
 
-    if (unlikely(AdapterFormat == D3D9Format::Unknown))
-      return D3DERR_INVALIDCALL;
-
-    if (unlikely(RType == D3DRTYPE_VERTEXBUFFER || RType == D3DRTYPE_INDEXBUFFER))
-      return D3DERR_INVALIDCALL;
-
     if (!IsSupportedAdapterFormat(AdapterFormat))
       return D3DERR_NOTAVAILABLE;
 
