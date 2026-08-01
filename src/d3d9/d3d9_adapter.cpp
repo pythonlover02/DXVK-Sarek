@@ -916,8 +916,9 @@ namespace dxvk {
       m_modes.push_back(mode);
     }
 
-    // Sort display modes by width, height and refresh rate,
-    // in that order. Some games rely on correct ordering.
+    // Sort display modes by width, height and refresh rate (descending), in that order.
+    // Some games rely on correct ordering, e.g. Prince of Persia (2008) expects the highest
+    // refresh rate to be listed first for a particular resolution.
     std::sort(m_modes.begin(), m_modes.end(),
       [](const D3DDISPLAYMODEEX& a, const D3DDISPLAYMODEEX& b) {
         if (a.Width < b.Width)   return true;
