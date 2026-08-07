@@ -10,9 +10,10 @@ pkgconfig = 'aarch64-linux-gnu-pkg-config'
 
 [properties]
 needs_exe_wrapper = true
-c_args = ['-O2','-march=armv8.2-a','-mtune=cortex-x3','-fwrapv','-fno-strict-aliasing','-ffunction-sections','-fdata-sections','-fno-omit-frame-pointer']
-cpp_args = ['-O2','-march=armv8.2-a','-mtune=cortex-x3','-fwrapv','-fno-strict-aliasing','-ffunction-sections','-fdata-sections','-fno-omit-frame-pointer']
-link_args = ['-static','-static-libgcc','-static-libstdc++']
+c_args = ['-marm64x','-O2','-march=armv8.2-a','-mtune=cortex-x3','-fwrapv','-fno-strict-aliasing','-ffunction-sections','-fdata-sections','-fno-omit-frame-pointer']
+cpp_args = ['-marm64x','-O2','-march=armv8.2-a','-mtune=cortex-x3','-fwrapv','-fno-strict-aliasing','-ffunction-sections','-fdata-sections','-fno-omit-frame-pointer']
+c_link_args = ['-marm64x','-static','-static-libgcc','-static-libstdc++']
+cpp_link_args = ['-marm64x','-static','-static-libgcc','-static-libstdc++']
 pkg_config_libdir = '/usr/lib/arm64ec-w64-mingw32/pkgconfig:/usr/share/pkgconfig'
 
 [host_machine]
