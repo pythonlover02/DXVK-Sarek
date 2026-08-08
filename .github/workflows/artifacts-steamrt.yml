@@ -47,7 +47,7 @@ jobs:
     - name: Build i386
       id: build-artifacts-i386
       shell: bash
-      run: ninja -C build/build.i386 install
+      run: ninja -v -C build/build.i386 install
 
     - name: Configure x86_64
       id: configure-artifacts-x86_64
@@ -67,7 +67,7 @@ jobs:
     - name: Build x86_64
       id: build-artifacts-x86_64
       shell: bash
-      run: ninja -C build/build.x86_64 install
+      run: ninja -v -C build/build.x86_64 install
 
     - name: Upload artifacts
       id: upload-artifacts
@@ -121,7 +121,7 @@ jobs:
     - name: Build i386
       id: build-artifacts-i386
       shell: bash
-      run: ninja -C build/build.i386 install
+      run: ninja -v -C build/build.i386 install
 
     - name: Configure x86_64
       id: configure-artifacts-x86_64
@@ -141,7 +141,7 @@ jobs:
     - name: Build x86_64
       id: build-artifacts-x86_64
       shell: bash
-      run: ninja -C build/build.x86_64 install
+      run: ninja -v -C build/build.x86_64 install
 
     - name: Upload artifacts
       id: upload-artifacts
@@ -193,7 +193,7 @@ jobs:
     - name: Build i386
       id: build-artifacts-i386
       shell: bash
-      run: ninja -C build/build.i386 install
+      run: ninja -v -C build/build.i386 install
 
     - name: Configure x86_64
       id: configure-artifacts-x86_64
@@ -213,7 +213,7 @@ jobs:
     - name: Build x86_64
       id: build-artifacts-x86_64
       shell: bash
-      run: ninja -C build/build.x86_64 install
+      run: ninja -v -C build/build.x86_64 install
 
     - name: Configure aarch64
       id: configure-artifacts-arm64ec
@@ -233,7 +233,7 @@ jobs:
     - name: Build aarch64
       id: build-artifacts-aarch64
       shell: bash
-      run: ninja -C build/build.aarch64 install
+      run: ninja -v -C build/build.aarch64 install
 
     - name: Upload artifacts
       id: upload-artifacts

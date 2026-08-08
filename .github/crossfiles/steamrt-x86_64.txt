@@ -12,7 +12,8 @@ pkgconfig = 'x86_64-linux-gnu-pkg-config'
 needs_exe_wrapper = true
 c_args = ['-mcmodel=small','-O2','-march=nocona','-mtune=core-avx2','-pipe','-mfpmath=sse','-fwrapv','-fno-strict-aliasing','-ffunction-sections','-fdata-sections','-fno-omit-frame-pointer']
 cpp_args = ['-mcmodel=small','-O2','-march=nocona','-mtune=core-avx2','-pipe','-mfpmath=sse','-fwrapv','-fno-strict-aliasing','-ffunction-sections','-fdata-sections','-fno-omit-frame-pointer']
-link_args = ['-static','-static-libgcc','-static-libstdc++']
+c_link_args = ['-static','-static-libgcc','-static-libstdc++']
+cpp_link_args = ['-static','-static-libgcc','-static-libstdc++']
 pkg_config_libdir = '/usr/lib/x86_64-w64-mingw32/pkgconfig:/usr/share/pkgconfig'
 
 [host_machine]
