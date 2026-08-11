@@ -905,30 +905,43 @@ namespace dxvk {
       return D3DERR_INVALIDCALL;
 
     const Rc<DxvkImage> dstImage  = dstTexInfo->GetImage();
-    uint32_t mipLevels = dstTexInfo->IsAutomaticMip() ? 1 : dstTexInfo->Desc()->MipLevels;
+    uint32_t srcMipLevels = srcTexInfo->IsAutomaticMip() ? 1 : srcTexInfo->Desc()->MipLevels;
+    uint32_t dstMipLevels = dstTexInfo->IsAutomaticMip() ? 1 : dstTexInfo->Desc()->MipLevels;
     uint32_t arraySlices = std::min(srcTexInfo->Desc()->ArraySize, dstTexInfo->Desc()->ArraySize);
 
     uint32_t srcMipOffset = 0;
     VkExtent3D srcFirstMipExtent = srcTexInfo->GetExtent();
     VkExtent3D dstFirstMipExtent = dstTexInfo->GetExtent();
 
-    if (srcFirstMipExtent != dstFirstMipExtent) {
-      // UpdateTexture can be used with textures that have different mip lengths.
-      // It will either match the the top mips or the bottom ones.
+    if (srcMipLevels > 1 || dstMipLevels > 1) {
+      // UpdateTexture does not validate dimensions for textures with only one mip
+      if (srcFirstMipExtent != dstFirstMipExtent) {
+        // UpdateTexture can be used with textures that have different mip lengths.
+        // It will either match the the top mips or the bottom ones.
+        // If the largest mip maps don't match in size, we try to take the smallest ones
+        // of the source.
 
-      srcMipOffset = srcTexInfo->Desc()->MipLevels - mipLevels;
-      srcFirstMipExtent = util::computeMipLevelExtent(srcTexInfo->GetExtent(), srcMipOffset);
-      dstFirstMipExtent = dstTexInfo->GetExtent();
+        srcMipOffset = srcTexInfo->Desc()->MipLevels - dstMipLevels;
+        srcFirstMipExtent = util::computeMipLevelExtent(srcTexInfo->GetExtent(), srcMipOffset);
+        dstFirstMipExtent = dstTexInfo->GetExtent();
+      }
+
+      if (srcFirstMipExtent != dstFirstMipExtent)
+        return D3DERR_INVALIDCALL;
+    } else {
+      if (unlikely(srcFirstMipExtent.width  > dstFirstMipExtent.width
+                || srcFirstMipExtent.height > dstFirstMipExtent.height
+                || srcFirstMipExtent.depth  > dstFirstMipExtent.depth))
+        Logger::warn("D3D9DeviceEx::UpdateTexture: Source dimensions exceed the destination");
     }
 
-    if (srcFirstMipExtent != dstFirstMipExtent)
-      return D3DERR_INVALIDCALL;
-
     for (uint32_t a = 0; a < arraySlices; a++) {
+      // The docs claim that the dirty box is just a performance optimization, however in practice games rely on it.
       const D3DBOX& box = srcTexInfo->GetDirtyBox(a);
       if (box.Left >= box.Right || box.Top >= box.Bottom || box.Front >= box.Back)
         continue;
 
+      // The dirty box is only tracked for mip level 0
       VkExtent3D mip0Extent = {
         uint32_t(box.Right - box.Left),
         uint32_t(box.Bottom - box.Top),
@@ -936,20 +949,24 @@ namespace dxvk {
       };
       VkOffset3D mip0Offset = { int32_t(box.Left), int32_t(box.Top), int32_t(box.Front) };
 
-      for (uint32_t dstMip = 0; dstMip < mipLevels; dstMip++) {
+      for (uint32_t dstMip = 0; dstMip < dstMipLevels; dstMip++) {
+        // Scale the dirty box for the respective mip level
         uint32_t srcMip = dstMip + srcMipOffset;
         uint32_t srcSubresource = srcTexInfo->CalcSubresource(a, srcMip);
         uint32_t dstSubresource = dstTexInfo->CalcSubresource(a, dstMip);
         VkExtent3D extent = util::computeMipLevelExtent(mip0Extent, srcMip);
         VkOffset3D offset = util::computeMipLevelOffset(mip0Offset, srcMip);
 
+        // The source surface must be in D3DPOOL_SYSTEMMEM so we just treat it as just another texture upload except with a different source.
         UpdateTextureFromBuffer(dstTexInfo, srcTexInfo, dstSubresource, srcSubresource, offset, extent, offset);
+
+        // The contents of the mapping no longer match the image.
         dstTexInfo->SetNeedsReadback(dstSubresource, true);
       }
     }
 
     srcTexInfo->ClearDirtyBoxes();
-    if (dstTexInfo->IsAutomaticMip() && mipLevels != dstTexInfo->Desc()->MipLevels)
+    if (dstTexInfo->IsAutomaticMip() && dstMipLevels != dstTexInfo->Desc()->MipLevels)
       MarkTextureMipsDirty(dstTexInfo);
 
     FlushImplicit(false);
