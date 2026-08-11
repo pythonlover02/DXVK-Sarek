@@ -216,11 +216,10 @@ namespace dxvk {
 
 
     /**
-     * \brief Queries sequence number for a given subresource
+     * \brief Queries sequence number
      *
      * Returns which CS chunk the resource was last used on.
-     * \param [in] Subresource Subresource index
-     * \returns Sequence number for the given subresource
+     * \returns Sequence number
      */
     uint64_t GetMappingBufferSequenceNumber() const {
       return HasSequenceNumber() ? m_seq
