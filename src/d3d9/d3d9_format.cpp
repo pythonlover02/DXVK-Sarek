@@ -457,6 +457,8 @@ namespace dxvk {
     const D3D9Options&     options) {
     m_dfSupport = options.supportDFFormats;
     m_x4r4g4b4Support = options.supportX4R4G4B4;
+    // W11V11U10 is only supported by D3D8
+    m_w11v11u10Support = false;
     m_d32supportFinal = options.supportD32;
 
     // AMD do not support 24-bit depth buffers on Vulkan,
@@ -495,6 +497,9 @@ namespace dxvk {
     D3D9_VK_FORMAT_MAPPING mapping = ConvertFormatUnfixed(Format);
 
     if (Format == D3D9Format::X4R4G4B4 && !m_x4r4g4b4Support)
+      return D3D9_VK_FORMAT_MAPPING();
+
+    if (Format == D3D9Format::W11V11U10 && !m_w11v11u10Support)
       return D3D9_VK_FORMAT_MAPPING();
 
     if (Format == D3D9Format::DF16 && !m_dfSupport)
