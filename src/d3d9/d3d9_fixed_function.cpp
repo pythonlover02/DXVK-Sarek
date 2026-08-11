@@ -927,19 +927,30 @@ namespace dxvk {
     m_module.opStore(m_vs.out.NORMAL, outNrm);
 
     for (uint32_t i = 0; i < caps::TextureStageCount; i++) {
-      uint32_t inputIndex = (m_vsKey.Data.Contents.TexcoordIndices >> (i * 3)) & 0b111;
-      uint32_t inputFlags = (m_vsKey.Data.Contents.TexcoordFlags   >> (i * 3)) & 0b111;
+      uint32_t inputIndex = (m_vsKey.Data.Contents.TexcoordIndices     >> (i * 3)) & 0b111;
+      uint32_t inputFlags = (m_vsKey.Data.Contents.TexcoordFlags       >> (i * 3)) & 0b111;
+      uint32_t texcoordCount = (m_vsKey.Data.Contents.TexcoordDeclMask >> (inputIndex * 3)) & 0b111;
 
       uint32_t transformed;
 
       const uint32_t wIndex = 3;
 
       uint32_t flags = (m_vsKey.Data.Contents.TransformFlags >> (i * 3)) & 0b111;
-      uint32_t count = flags;
+      uint32_t count;
       switch (inputFlags) {
         default:
         case (DXVK_TSS_TCI_PASSTHRU >> TCIOffset):
           transformed = m_vs.in.TEXCOORD[inputIndex & 0xFF];
+          // flags is actually the number of elements that get passed
+          // to the rasterizer.
+          count = flags;
+          if (texcoordCount) {
+            // Clamp by the number of elements in the texcoord input.
+            if (!count || count > texcoordCount)
+              count = texcoordCount;
+          }
+          else
+            flags = D3DTTFF_DISABLE;
           break;
 
         case (DXVK_TSS_TCI_CAMERASPACENORMAL >> TCIOffset):
