@@ -1071,6 +1071,9 @@ namespace dxvk {
     if (unlikely((srcSubresource.aspectMask & (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT)) && m_flags.test(D3D9DeviceFlag::InScene)))
       return D3DERR_INVALIDCALL;
 
+    if (unlikely(Filter != D3DTEXF_NONE && Filter != D3DTEXF_LINEAR && Filter != D3DTEXF_POINT))
+      return D3DERR_INVALIDCALL;
+
     VkExtent3D srcExtent = srcImage->mipLevelExtent(srcSubresource.mipLevel);
     VkExtent3D dstExtent = dstImage->mipLevelExtent(dstSubresource.mipLevel);
 
