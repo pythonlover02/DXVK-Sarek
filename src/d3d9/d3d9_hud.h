@@ -6,7 +6,7 @@
 namespace dxvk::hud {
 
   /**
-   * \brief HUD item to display DXVK version
+   * \brief HUD item to display sampler count
    */
   class HudSamplerCount : public HudItem {
 
