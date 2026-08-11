@@ -625,6 +625,12 @@ namespace dxvk {
 
     if (!std::exchange(s_errorShown, true))
       Logger::warn("D3D9SwapChainEx::GetPresentStats: Stub");
+
+    if (likely(pPresentationStatistics != nullptr)) {
+      D3DPRESENTSTATS presentationStatistics = { };
+      *pPresentationStatistics = presentationStatistics;
+    }
+
     return D3D_OK;
   }
 
