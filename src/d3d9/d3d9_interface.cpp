@@ -339,6 +339,9 @@ namespace dxvk {
     || pPresentationParameters    == nullptr)
       return D3DERR_INVALIDCALL;
 
+    if (unlikely(DeviceType == D3DDEVTYPE_SW))
+      return D3DERR_INVALIDCALL;
+
     // Creating a device with D3DCREATE_PUREDEVICE only works in conjunction
     // with D3DCREATE_HARDWARE_VERTEXPROCESSING on native drivers.
     if (unlikely(BehaviorFlags & D3DCREATE_PUREDEVICE &&
