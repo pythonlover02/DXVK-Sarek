@@ -190,6 +190,7 @@ namespace dxvk {
 
     void EnableD3D8CompatibilityMode() {
       m_isD3D8Compatible = true;
+      RefreshAdapterFormatTables();
       Logger::info("The D3D9 interface is now operating in D3D8 compatibility mode.");
     }
 
