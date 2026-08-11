@@ -348,6 +348,15 @@ namespace dxvk {
                !(BehaviorFlags & D3DCREATE_HARDWARE_VERTEXPROCESSING)))
       return D3DERR_INVALIDCALL;
 
+    // Neither D3DDEVTYPE_REF nor D3DDEVTYPE_NULLREF support HWVP, although they
+    // will accept these flags as any regular D3DDEVTYPE_HAL device would.
+    if (unlikely(DeviceType == D3DDEVTYPE_REF || DeviceType == D3DDEVTYPE_NULLREF)) {
+      BehaviorFlags &= ~D3DCREATE_MIXED_VERTEXPROCESSING
+                     & ~D3DCREATE_PUREDEVICE
+                     & ~D3DCREATE_HARDWARE_VERTEXPROCESSING;
+      BehaviorFlags |= D3DCREATE_SOFTWARE_VERTEXPROCESSING;
+    }
+
     auto* adapter = GetAdapter(Adapter);
 
     if (adapter == nullptr)
