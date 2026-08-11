@@ -2743,6 +2743,9 @@ namespace dxvk {
     if (unlikely(!VertexStreamZeroStride))
       return D3DERR_INVALIDCALL;
 
+    if (unlikely(m_state.vertexDecl == nullptr))
+      return D3DERR_INVALIDCALL;
+
     if (unlikely(!PrimitiveCount || !NumVertices))
       return D3D_OK;
 
