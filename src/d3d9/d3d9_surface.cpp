@@ -123,6 +123,8 @@ namespace dxvk {
       pRect != nullptr ? &box : nullptr,
       Flags);
 
+    if (FAILED(hr)) return hr;
+
     pLockedRect->pBits = lockedBox.pBits;
     pLockedRect->Pitch = lockedBox.RowPitch;
 
