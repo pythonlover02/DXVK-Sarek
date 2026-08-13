@@ -1034,7 +1034,9 @@ namespace dxvk {
       res.structAlign   = 0;
 
       if ((sampledType == DxbcScalarType::Float32)
-       && (resourceType == DxbcResourceDim::Texture2D
+       && (resourceType == DxbcResourceDim::Texture1D
+        || resourceType == DxbcResourceDim::Texture1DArr
+        || resourceType == DxbcResourceDim::Texture2D
         || resourceType == DxbcResourceDim::Texture2DArr
         || resourceType == DxbcResourceDim::TextureCube
         || resourceType == DxbcResourceDim::TextureCubeArr)) {
