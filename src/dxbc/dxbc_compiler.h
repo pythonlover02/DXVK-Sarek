@@ -134,6 +134,13 @@ namespace dxvk {
     uint32_t    location  = 0;
     uint32_t    component = 0;
   };
+
+
+  struct DxbcIndexRange {
+    DxbcOperandType type;
+    uint32_t start;
+    uint32_t length;
+  };
   
   
   /**
@@ -456,6 +463,10 @@ namespace dxvk {
     /////////////////////////////////////////////
     // xfb output registers for geometry shaders
     std::vector<DxbcXfbVar> m_xfbVars;
+
+    /////////////////////////////////////////////
+    // Dynamically indexed input and output regs
+    std::vector<DxbcIndexRange> m_indexRanges = { };
     
     //////////////////////////////////////////////////////
     // Shader resource variables. These provide access to
@@ -553,6 +564,9 @@ namespace dxvk {
       const DxbcShaderInstruction&  ins);
     
     void emitDclGlobalFlags(
+      const DxbcShaderInstruction&  ins);
+
+    void emitDclIndexRange(
       const DxbcShaderInstruction&  ins);
     
     void emitDclTemps(
