@@ -3422,9 +3422,13 @@ namespace dxvk {
       };
 
       imageOperands.flags |= spv::ImageOperandsConstOffsetMask;
-      imageOperands.sConstOffset = m_module.constComposite(
-        getVectorTypeId({ DxbcScalarType::Sint32, imageLayerDim }),
-        imageLayerDim, offsetIds.data());
+      imageOperands.sConstOffset = offsetIds[0];
+
+      if (imageLayerDim > 1) {
+        imageOperands.sConstOffset = m_module.constComposite(
+          getVectorTypeId({ DxbcScalarType::Sint32, imageLayerDim }),
+          imageLayerDim, offsetIds.data());
+      }
     }
 
     // The LOD is not present when reading from
@@ -3552,9 +3556,13 @@ namespace dxvk {
       };
 
       imageOperands.flags |= spv::ImageOperandsConstOffsetMask;
-      imageOperands.sConstOffset = m_module.constComposite(
-        getVectorTypeId({ DxbcScalarType::Sint32, imageLayerDim }),
-        imageLayerDim, offsetIds.data());
+      imageOperands.sConstOffset = offsetIds[0];
+
+      if (imageLayerDim > 1) {
+        imageOperands.sConstOffset = m_module.constComposite(
+          getVectorTypeId({ DxbcScalarType::Sint32, imageLayerDim }),
+          imageLayerDim, offsetIds.data());
+      }
     }
 
     // Gathering texels always returns a four-component
@@ -3667,9 +3675,13 @@ namespace dxvk {
       };
 
       imageOperands.flags |= spv::ImageOperandsConstOffsetMask;
-      imageOperands.sConstOffset = m_module.constComposite(
-        getVectorTypeId({ DxbcScalarType::Sint32, imageLayerDim }),
-        imageLayerDim, offsetIds.data());
+      imageOperands.sConstOffset = offsetIds[0];
+
+      if (imageLayerDim > 1) {
+        imageOperands.sConstOffset = m_module.constComposite(
+          getVectorTypeId({ DxbcScalarType::Sint32, imageLayerDim }),
+          imageLayerDim, offsetIds.data());
+      }
     }
 
     // Combine the texture and the sampler into a sampled image
