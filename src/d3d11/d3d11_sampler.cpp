@@ -31,7 +31,7 @@ namespace dxvk {
     info.addressModeV   = DecodeAddressMode(desc.AddressV);
     info.addressModeW   = DecodeAddressMode(desc.AddressW);
 
-    info.compareToDepth = (filterBits & 0x80) ? VK_TRUE : VK_FALSE;
+    info.compareToDepth = (filterBits & 0x180) == 0x80 ? VK_TRUE : VK_FALSE;
     info.compareOp      = DecodeCompareOp(desc.ComparisonFunc);
 
     for (uint32_t i = 0; i < 4; i++)
