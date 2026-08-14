@@ -29,7 +29,7 @@ namespace dxvk {
       if (cRelaxedBarriers)
         barrierControl.set(DxvkBarrierControl::IgnoreWriteAfterWrite);
 
-      if (cRelaxedBarriers || cIgnoreGraphicsBarriers)
+      if (cIgnoreGraphicsBarriers)
         barrierControl.set(DxvkBarrierControl::IgnoreGraphicsBarriers);
 
       ctx->setBarrierControl(barrierControl);
