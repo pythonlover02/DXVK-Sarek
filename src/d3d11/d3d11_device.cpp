@@ -708,32 +708,13 @@ namespace dxvk {
       uint32_t attrCount = CompactSparseList(attrList.data(), attrMask);
       uint32_t bindCount = CompactSparseList(bindList.data(), bindMask);
 
-      // Check if there are any semantics defined in the
-      // shader that are not included in the current input
-      // layout.
-      for (auto i = inputSignature->begin(); i != inputSignature->end(); i++) {
-        bool found = i->systemValue != DxbcSystemValue::None;
+      if (!ppInputLayout)
+        return S_FALSE;
 
-        for (uint32_t j = 0; j < attrCount && !found; j++)
-          found = attrList.at(j).location == i->registerId;
-
-        if (!found) {
-          Logger::warn(str::format(
-            "D3D11Device: Vertex input '",
-            i->semanticName, i->semanticIndex,
-            "' not defined by input layout"));
-        }
-      }
-
-      // Create the actual input layout object
-      // if the application requests it.
-      if (ppInputLayout != nullptr) {
-        *ppInputLayout = ref(
-          new D3D11InputLayout(this,
-            attrCount, attrList.data(),
-            bindCount, bindList.data()));
-      }
-
+      *ppInputLayout = ref(
+        new D3D11InputLayout(this,
+          attrCount, attrList.data(),
+          bindCount, bindList.data()));
       return S_OK;
     } catch (const DxvkError& e) {
       Logger::err(e.message());
