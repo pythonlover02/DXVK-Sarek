@@ -202,7 +202,7 @@ namespace dxvk {
         viewInfo.numLayers  = 1;
         break;
 
-      case D3D11_RTV_DIMENSION_UNKNOWN:
+      case D3D11_VPIV_DIMENSION_UNKNOWN:
         throw DxvkError("Invalid view dimension");
     }
 
@@ -305,7 +305,7 @@ namespace dxvk {
         viewInfo.numLayers  = m_desc.Texture2DArray.ArraySize;
         break;
 
-      case D3D11_RTV_DIMENSION_UNKNOWN:
+      case D3D11_VPOV_DIMENSION_UNKNOWN:
         throw DxvkError("Invalid view dimension");
     }
 
