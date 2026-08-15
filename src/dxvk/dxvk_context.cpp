@@ -1546,7 +1546,8 @@ namespace dxvk {
           VkImageLayout             initialLayout) {
     if (initialLayout == VK_IMAGE_LAYOUT_PREINITIALIZED) {
       m_initBarriers.accessImage(image, subresources,
-        initialLayout, 0, 0,
+        initialLayout,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
         image->info().layout,
         image->info().stages,
         image->info().access);
@@ -1555,11 +1556,12 @@ namespace dxvk {
     } else {
       VkImageLayout clearLayout = image->pickLayout(VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
 
-      m_execAcquires.accessImage(image, subresources,
-        initialLayout, 0, 0, clearLayout,
+      m_initBarriers.accessImage(image, subresources,
+        initialLayout,
+        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, 0,
+        clearLayout,
         VK_PIPELINE_STAGE_TRANSFER_BIT,
         VK_ACCESS_TRANSFER_WRITE_BIT);
-      m_execAcquires.recordCommands(m_cmd);
 
       auto formatInfo = image->formatInfo();
 
