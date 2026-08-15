@@ -1953,7 +1953,7 @@ namespace dxvk {
 
     if (clearAspects & VK_IMAGE_ASPECT_STENCIL_BIT)
       depthOp.loadOpS = VK_ATTACHMENT_LOAD_OP_CLEAR;
-    else if (discardAspects & VK_IMAGE_ASPECT_DEPTH_BIT)
+    else if (discardAspects & VK_IMAGE_ASPECT_STENCIL_BIT)
       depthOp.loadOpS = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
 
     if (attachmentIndex >= 0 && !m_state.om.framebufferInfo.isWritable(attachmentIndex, clearAspects | discardAspects)) {
