@@ -11,19 +11,19 @@ namespace dxvk {
     DxvkOptions(const Config& config);
 
     /// Enable debug utils (alternative to DXVK_PERF_EVENTS=1)
-    bool enableDebugUtils;
+    bool enableDebugUtils = false;
 
     /// Enable state cache
-    bool enableStateCache;
+    bool enableStateCache = true;
 
     /// Number of compiler threads
     /// when using the state cache
-    int32_t numCompilerThreads;
+    int32_t numCompilerThreads = 0;
 
     // Hides integrated GPUs if dedicated GPUs are
     // present. May be necessary for some games that
     // incorrectly assume monitor layouts.
-    bool hideIntegratedGraphics;
+    bool hideIntegratedGraphics = false;
 
     /// Device name
     std::string deviceFilter;
@@ -35,7 +35,7 @@ namespace dxvk {
 
     // Zero-initialize host-visible mapped memory on allocation.
     // Works around games that assume freshly mapped buffers are clean.
-    bool zeroMappedMemory;
+    bool zeroMappedMemory = false;
 
     /// Whether to use custom sin/cos approximation
     Tristate lowerSinCos = Tristate::Auto;
@@ -59,7 +59,7 @@ namespace dxvk {
     int32_t lowLatencyOffset = 0;
 
     /// Shader-related options
-    Tristate useRawSsbo;
+    Tristate useRawSsbo = Tristate::Auto;
 
     /// Workaround for NVIDIA driver bug 3114283
     Tristate shrinkNvidiaHvvHeap;
