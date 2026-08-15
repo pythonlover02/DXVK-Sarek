@@ -706,7 +706,8 @@ namespace dxvk {
     if (m_device->perfHints().preferFbDepthStencilCopy) {
       useFb |= (dstSubresource.aspectMask == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT))
             && (dstImage->info().usage & VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)
-            && (srcImage->info().usage & VK_IMAGE_USAGE_SAMPLED_BIT);
+            && (srcImage->info().usage & VK_IMAGE_USAGE_SAMPLED_BIT)
+            && (srcImage != dstImage);
     }
 
     if (!useFb) {
