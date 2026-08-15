@@ -117,6 +117,10 @@ namespace dxvk {
         if (ins.arg(1) == spv::CapabilityShaderViewportIndexLayerEXT)
           m_flags.set(DxvkShaderFlag::ExportsViewportIndexLayerFromVertexStage);
       }
+
+      // Ignore the actual shader code, there's nothing interesting for us in there.
+      if (ins.opCode() == spv::OpFunction)
+        break;
     }
   }
 
@@ -221,6 +225,9 @@ namespace dxvk {
           break;
         }
       }
+
+      if (ins.opCode() == spv::OpFunction)
+        break;
     }
 
     if (!inputVarId)
