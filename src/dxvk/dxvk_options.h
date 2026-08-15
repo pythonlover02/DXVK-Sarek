@@ -31,7 +31,7 @@ namespace dxvk {
     // Tiler GPU tweaks. Currently biases host-visible
     // allocations toward cached memory on tilers; the
     // render-pass-op side is detected but not yet acted on.
-    Tristate tilerMode;
+    Tristate tilerMode = Tristate::Auto;
 
     // Zero-initialize host-visible mapped memory on allocation.
     // Works around games that assume freshly mapped buffers are clean.
