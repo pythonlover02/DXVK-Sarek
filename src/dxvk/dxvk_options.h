@@ -41,7 +41,7 @@ namespace dxvk {
     Tristate lowerSinCos = Tristate::Auto;
 
     /// Memory budget in bytes
-    VkDeviceSize maxMemoryBudget;
+    VkDeviceSize maxMemoryBudget = 0u;
 
     // Enable or disable Dyasync
     bool enableDyasync;
