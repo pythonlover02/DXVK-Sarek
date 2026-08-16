@@ -35,7 +35,7 @@ namespace dxvk {
 
     HRESULT InitializeD3D9();
 
-    d3d9::IDirect3DDevice9* RefreshD3DDevice();
+    void RefreshD3DDevice();
 
     bool IsInitialized() const {
       return m_vb9 != nullptr;
@@ -71,13 +71,6 @@ namespace dxvk {
       return m_desc.dwCaps & D3DVBCAPS_OPTIMIZED;
     }
 
-    inline void ListBufferDetails() const {
-      Logger::debug(str::format("D3D6VertexBuffer: Created a new buffer nr. {{1-", m_buffCount, "}}:"));
-      Logger::debug(str::format("   Size:     ", m_size));
-      Logger::debug(str::format("   FVF:      ", m_desc.dwFVF));
-      Logger::debug(str::format("   Vertices: ", m_size / m_stride));
-    }
-
     bool                              m_locked        = false;
 
     DDrawCommonInterface*             m_commonIntf    = nullptr;
@@ -91,9 +84,6 @@ namespace dxvk {
     D3D6Device*                       m_d3d6Device    = nullptr;
 
     Com<d3d9::IDirect3DVertexBuffer9> m_vb9;
-
-    uint32_t                          m_buffCount     = 0;
-    static std::atomic<uint32_t>      s_buffCount;
 
   };
 

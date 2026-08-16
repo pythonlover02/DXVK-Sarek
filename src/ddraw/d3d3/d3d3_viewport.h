@@ -58,14 +58,6 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE NextLight(IDirect3DLight *lpDirect3DLight, IDirect3DLight **lplpDirect3DLight, DWORD flags);
 
-    HRESULT ApplyViewport();
-
-    HRESULT ApplyAndActivateLights();
-
-    HRESULT DeactivateLights();
-
-    HRESULT ApplyAndActivateLight(DWORD index, D3DLight* light);
-
     D3DCommonViewport* GetCommonViewport() const {
       return m_commonViewport.ptr();
     }
@@ -80,9 +72,6 @@ namespace dxvk {
 
     Com<D3D6Viewport, false> m_viewport6;
     Com<D3D5Viewport, false> m_viewport5;
-
-    uint32_t                 m_viewportCount        = 0;
-    static std::atomic<uint32_t> s_viewportCount;
 
   };
 

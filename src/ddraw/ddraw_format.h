@@ -38,166 +38,173 @@ namespace dxvk {
     DDSURFACEDESC2       desc2        = { };
   };
 
-  inline bool IsCubeMapFace(DDSURFACEDESC2* desc) {
-    return desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_POSITIVEX
-        || desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_NEGATIVEX
-        || desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_POSITIVEY
-        || desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_NEGATIVEY
-        || desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_POSITIVEZ
-        || desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_NEGATIVEZ;
-  }
-
   inline d3d9::D3DCUBEMAP_FACES GetCubemapFace(DDSURFACEDESC2* desc) {
-    if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_POSITIVEX) return d3d9::D3DCUBEMAP_FACE_POSITIVE_X;
-    if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_NEGATIVEX) return d3d9::D3DCUBEMAP_FACE_NEGATIVE_X;
-    if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_POSITIVEY) return d3d9::D3DCUBEMAP_FACE_POSITIVE_Y;
-    if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_NEGATIVEY) return d3d9::D3DCUBEMAP_FACE_NEGATIVE_Y;
-    if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_POSITIVEZ) return d3d9::D3DCUBEMAP_FACE_POSITIVE_Z;
-    if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_NEGATIVEZ) return d3d9::D3DCUBEMAP_FACE_NEGATIVE_Z;
-    return d3d9::D3DCUBEMAP_FACE_POSITIVE_X;
+    const DWORD cubeFaceMask = desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_ALLFACES;
+
+    switch (cubeFaceMask) {
+      default:
+      case DDSCAPS2_CUBEMAP_POSITIVEX: return d3d9::D3DCUBEMAP_FACE_POSITIVE_X;
+      case DDSCAPS2_CUBEMAP_NEGATIVEX: return d3d9::D3DCUBEMAP_FACE_NEGATIVE_X;
+      case DDSCAPS2_CUBEMAP_POSITIVEY: return d3d9::D3DCUBEMAP_FACE_POSITIVE_Y;
+      case DDSCAPS2_CUBEMAP_NEGATIVEY: return d3d9::D3DCUBEMAP_FACE_NEGATIVE_Y;
+      case DDSCAPS2_CUBEMAP_POSITIVEZ: return d3d9::D3DCUBEMAP_FACE_POSITIVE_Z;
+      case DDSCAPS2_CUBEMAP_NEGATIVEZ: return d3d9::D3DCUBEMAP_FACE_NEGATIVE_Z;
+    }
   }
 
   inline d3d9::D3DFORMAT ConvertFormat(DDPIXELFORMAT& fmt) {
+    d3d9::D3DFORMAT d3d9Format;
+
+    // Empire of the Ants erroneously marks all DDPF_RGB surfaces
+    // with the DDPF_ZBUFFER flag as well, so prioritize DDPF_RGB
     if (fmt.dwFlags & DDPF_RGB) {
-      Logger::debug(str::format("ConvertFormat: fmt.dwRGBBitCount:     ", fmt.dwRGBBitCount));
-      Logger::debug(str::format("ConvertFormat: fmt.dwRGBAlphaBitMask: ", fmt.dwRGBAlphaBitMask));
-      Logger::debug(str::format("ConvertFormat: fmt.dwRBitMask:        ", fmt.dwRBitMask));
-      Logger::debug(str::format("ConvertFormat: fmt.dwGBitMask:        ", fmt.dwGBitMask));
-      Logger::debug(str::format("ConvertFormat: fmt.dwBBitMask:        ", fmt.dwBBitMask));
+      //Logger::debug(str::format("ConvertFormat: fmt.dwRGBBitCount:     ", fmt.dwRGBBitCount,
+      //                        "\nConvertFormat: fmt.dwRGBAlphaBitMask: ", fmt.dwRGBAlphaBitMask,
+      //                        "\nConvertFormat: fmt.dwRBitMask:        ", fmt.dwRBitMask,
+      //                        "\nConvertFormat: fmt.dwGBitMask:        ", fmt.dwGBitMask,
+      //                        "\nConvertFormat: fmt.dwBBitMask:        ", fmt.dwBBitMask));
 
       switch (fmt.dwRGBBitCount) {
         case 8:
           // R: 1110 0000
-          return (fmt.dwFlags & DDPF_PALETTEINDEXED8) ? d3d9::D3DFMT_P8 : d3d9::D3DFMT_R3G3B2;
-        case 16: {
+          d3d9Format = (fmt.dwFlags & DDPF_PALETTEINDEXED8) ? d3d9::D3DFMT_P8 : d3d9::D3DFMT_R3G3B2;
+          break;
+
+        case 16:
           switch (fmt.dwRBitMask) {
             case (0xF << 8):
               // A: 1111 0000 0000 0000
               // R: 0000 1111 0000 0000
-              return d3d9::D3DFMT_A4R4G4B4;
+              d3d9Format = d3d9::D3DFMT_A4R4G4B4;
+              break;
+
             case (0x1F << 10):
               // A: 1000 0000 0000 0000
               // R: 0111 1100 0000 0000
-              return fmt.dwRGBAlphaBitMask ? d3d9::D3DFMT_A1R5G5B5 : d3d9::D3DFMT_X1R5G5B5;
+              d3d9Format = fmt.dwRGBAlphaBitMask ? d3d9::D3DFMT_A1R5G5B5 : d3d9::D3DFMT_X1R5G5B5;
+              break;
+
             case (0x1F << 11):
               // R: 1111 1000 0000 0000
-              return d3d9::D3DFMT_R5G6B5;
+              d3d9Format = d3d9::D3DFMT_R5G6B5;
+              break;
+
+            default:
+              Logger::warn("ConvertFormat: Unhandled dwRGBBitCount 16 format");
+              d3d9Format = d3d9::D3DFMT_UNKNOWN;
+              break;
           }
-          Logger::warn("ConvertFormat: Unhandled dwRGBBitCount 16 format");
-          return d3d9::D3DFMT_UNKNOWN;
-        }
+          break;
+
         // Drakan: Order of the Flame uses a dwRGBBitCount of 24
         // to request for D3DFMT_X8R8G8B8, based on provided bitmasks
         case 24:
-          return d3d9::D3DFMT_X8R8G8B8;
-        case 32: {
+          d3d9Format = d3d9::D3DFMT_X8R8G8B8;
+          break;
+
+        case 32:
           // A: 1111 1111 0000 0000 0000 0000 0000 0000
           // R: 0000 0000 1111 1111 0000 0000 0000 0000
-          return fmt.dwRGBAlphaBitMask ? d3d9::D3DFMT_A8R8G8B8 : d3d9::D3DFMT_X8R8G8B8;
-        }
-      }
-      Logger::warn("ConvertFormat: Unhandled dwRGBBitCount format");
-      return d3d9::D3DFMT_UNKNOWN;
+          d3d9Format = fmt.dwRGBAlphaBitMask ? d3d9::D3DFMT_A8R8G8B8 : d3d9::D3DFMT_X8R8G8B8;
+          break;
 
+        default:
+          Logger::warn("ConvertFormat: Unhandled dwRGBBitCount format");
+          d3d9Format = d3d9::D3DFMT_UNKNOWN;
+          break;
+      }
     // Depth formats will traditionally store stencil info in the MSB, however
     // some games will apparently try to use the LSB, so handle both cases
     } else if (fmt.dwFlags & DDPF_ZBUFFER) {
-      Logger::debug(str::format("ConvertFormat: fmt.dwZBufferBitDepth: ", fmt.dwZBufferBitDepth));
-      Logger::debug(str::format("ConvertFormat: fmt.dwZBitMask:        ",        fmt.dwZBitMask));
-      Logger::debug(str::format("ConvertFormat: fmt.dwStencilBitMask:  ",  fmt.dwStencilBitMask));
+      //Logger::debug(str::format("ConvertFormat: fmt.dwZBufferBitDepth: ", fmt.dwZBufferBitDepth,
+      //                        "\nConvertFormat: fmt.dwZBitMask:        ",        fmt.dwZBitMask,
+      //                        "\nConvertFormat: fmt.dwStencilBitMask:  ",  fmt.dwStencilBitMask));
 
       switch (fmt.dwZBufferBitDepth) {
-        case 16: {
+        case 16:
           switch (fmt.dwStencilBitMask) {
             case 0:
               // D: 1111 1111 1111 1111
               // S: 0000 0000 0000 0000
-              return d3d9::D3DFMT_D16;
+              d3d9Format = d3d9::D3DFMT_D16;
+              break;
+
             case 0x1:
             case (0x1 << 15):
               // D: 0111 1111 1111 1111
               // S: 1000 0000 0000 0000
-              Logger::warn("ConvertFormat: Unsupported format D3DFMT_D15S1");
-              return d3d9::D3DFMT_D16;
+              d3d9Format = d3d9::D3DFMT_D15S1;
+              break;
+
+            default:
+              Logger::warn("ConvertFormat: Unhandled dwStencilBitMask 16 format");
+              d3d9Format = d3d9::D3DFMT_UNKNOWN;
+              break;
           }
-          Logger::warn("ConvertFormat: Unhandled dwStencilBitMask 16 format");
-          return d3d9::D3DFMT_UNKNOWN;
-        }
+          break;
+
         // We don't support or expose a 24-bit depth stencil per se,
         // but some applications request one anyway. Use 32-bit depth.
         case 24:
-        case 32: {
+        case 32:
           switch (fmt.dwStencilBitMask) {
-            case 0: {
+            case 0:
               switch (fmt.dwZBitMask) {
                 case 0xFFFFFFFF:
                   // D: 1111 1111 1111 1111 1111 1111 1111 1111
                   // S: 0000 0000 0000 0000 0000 0000 0000 0000
-                  Logger::warn("ConvertFormat: Unsupported format D3DFMT_D32");
-                  return d3d9::D3DFMT_D24X8;
+                  d3d9Format = d3d9::D3DFMT_D32;
+                  break;
+
                 case 0xFFFFFF:
-                case (DWORD(0xFFFFFF << 8)):
+                case DWORD(0xFFFFFF << 8):
                   // D: 0000 0000 1111 1111 1111 1111 1111 1111
                   // S: 0000 0000 0000 0000 0000 0000 0000 0000
-                  return d3d9::D3DFMT_D24X8;
+                  d3d9Format = d3d9::D3DFMT_D24X8;
+                  break;
+
+                default:
+                  Logger::warn("ConvertFormat: Unhandled dwZBitMask 24/32 format");
+                  d3d9Format = d3d9::D3DFMT_UNKNOWN;
+                  break;
               }
-              Logger::warn("ConvertFormat: Unhandled dwZBitMask 24/32 format");
-              return d3d9::D3DFMT_UNKNOWN;
-            }
+              break;
+
             case 0xFF:
-            case (DWORD(0xFF << 24)):
+            case DWORD(0xFF << 24):
               // D: 0000 0000 1111 1111 1111 1111 1111 1111
               // S: 1111 1111 0000 0000 0000 0000 0000 0000
-              return d3d9::D3DFMT_D24S8;
+              d3d9Format = d3d9::D3DFMT_D24S8;
+              break;
+
             case 0xF:
-            case (DWORD(0xF << 24)):
+            case DWORD(0xF << 24):
               // D: 0000 0000 1111 1111 1111 1111 1111 1111
               // S: 1111 0000 0000 0000 0000 0000 0000 0000
               Logger::warn("ConvertFormat: Unsupported format D3DFMT_D24X4S4");
-              return d3d9::D3DFMT_D24S8;
+              d3d9Format = d3d9::D3DFMT_D24S8;
+              break;
+
+            default:
+              Logger::warn("ConvertFormat: Unhandled dwStencilBitMask 24/32 format");
+              d3d9Format = d3d9::D3DFMT_UNKNOWN;
+              break;
           }
-          Logger::warn("ConvertFormat: Unhandled dwStencilBitMask 24/32 format");
-          return d3d9::D3DFMT_UNKNOWN;
-        }
+          break;
+
+        default:
+          Logger::warn("ConvertFormat: Unhandled dwZBufferBitDepth format");
+          d3d9Format = d3d9::D3DFMT_UNKNOWN;
+          break;
       }
-      Logger::warn("ConvertFormat: Unhandled dwZBufferBitDepth format");
-      return d3d9::D3DFMT_UNKNOWN;
-
-    } else if (fmt.dwFlags & DDPF_LUMINANCE) {
-      Logger::debug(str::format("ConvertFormat: fmt.dwLuminanceBitCount:     ", fmt.dwLuminanceBitCount));
-      Logger::debug(str::format("ConvertFormat: fmt.dwLuminanceAlphaBitMask: ", fmt.dwLuminanceAlphaBitMask));
-      Logger::debug(str::format("ConvertFormat: fmt.dwLuminanceBitMask:      ", fmt.dwLuminanceBitMask));
-
-      switch (fmt.dwLuminanceBitCount) {
-        case 8: {
-          switch (fmt.dwLuminanceBitMask) {
-            case 0xFF:
-              // L: 1111 1111
-              return d3d9::D3DFMT_L8;
-            case 0xF:
-              // A: 1111 0000
-              // L: 0000 1111
-              return d3d9::D3DFMT_A4L4;
-          }
-          Logger::warn("ConvertFormat: Unhandled dwLuminanceBitCount 8 format");
-          return d3d9::D3DFMT_UNKNOWN;
-        }
-        case 16:
-          // A: 1111 1111 0000 0000
-          // L: 0000 0000 1111 1111
-          return d3d9::D3DFMT_A8L8;
-      }
-      Logger::warn("ConvertFormat: Unhandled dwLuminanceBitCount format");
-      return d3d9::D3DFMT_UNKNOWN;
-
     } else if (fmt.dwFlags & DDPF_BUMPDUDV) {
-      Logger::debug(str::format("ConvertFormat: fmt.dwBumpBitCount:         ", fmt.dwBumpBitCount));
-      Logger::debug(str::format("ConvertFormat: fmt.dwBumpLuminanceBitMask: ", fmt.dwBumpLuminanceBitMask));
-      Logger::debug(str::format("ConvertFormat: fmt.dwBumpDvBitMask:        ", fmt.dwBumpDvBitMask));
-      Logger::debug(str::format("ConvertFormat: fmt.dwBumpDuBitMask:        ", fmt.dwBumpDuBitMask));
+      //Logger::debug(str::format("ConvertFormat: fmt.dwBumpBitCount:         ", fmt.dwBumpBitCount,
+      //                        "\nConvertFormat: fmt.dwBumpLuminanceBitMask: ", fmt.dwBumpLuminanceBitMask,
+      //                        "\nConvertFormat: fmt.dwBumpDvBitMask:        ", fmt.dwBumpDvBitMask,
+      //                        "\nConvertFormat: fmt.dwBumpDuBitMask:        ", fmt.dwBumpDuBitMask));
 
       switch (fmt.dwBumpBitCount) {
-        case 16: {
+        case 16:
           // L: 1111 1100 0000 0000
           // V: 0000 0011 1110 0000
           // U: 0000 0000 0001 1111
@@ -205,43 +212,100 @@ namespace dxvk {
           // L: 0000 0000 0000 0000
           // V: 1111 1111 0000 0000
           // U: 0000 0000 1111 1111
-          return fmt.dwBumpLuminanceBitMask ? d3d9::D3DFMT_L6V5U5 : d3d9::D3DFMT_V8U8;
-        }
-        case 32: {
+          d3d9Format = fmt.dwBumpLuminanceBitMask ? d3d9::D3DFMT_L6V5U5 : d3d9::D3DFMT_V8U8;
+          break;
+
+        case 32:
           // A: 0000 0000 0000 0000 0000 0000 0000 0000
           // L: 0000 0000 1111 1111 0000 0000 0000 0000
           // V: 0000 0000 0000 0000 1111 1111 0000 0000
           // U: 0000 0000 0000 0000 0000 0000 1111 1111
-          return d3d9::D3DFMT_X8L8V8U8;
-        }
-      }
-      Logger::warn("ConvertFormat: Unhandled dwBumpBitCount format");
-      return d3d9::D3DFMT_UNKNOWN;
+          d3d9Format = d3d9::D3DFMT_X8L8V8U8;
+          break;
 
+        default:
+          Logger::warn("ConvertFormat: Unhandled dwBumpBitCount format");
+          d3d9Format = d3d9::D3DFMT_UNKNOWN;
+          break;
+      }
     } else if (fmt.dwFlags & DDPF_FOURCC) {
       switch (fmt.dwFourCC) {
         case MAKEFOURCC('D', 'X', 'T', '1'):
-          return d3d9::D3DFMT_DXT1;
+          d3d9Format = d3d9::D3DFMT_DXT1;
+          break;
+
         case MAKEFOURCC('D', 'X', 'T', '2'):
-          return d3d9::D3DFMT_DXT2;
+          d3d9Format = d3d9::D3DFMT_DXT2;
+          break;
+
         case MAKEFOURCC('D', 'X', 'T', '3'):
-          return d3d9::D3DFMT_DXT3;
+          d3d9Format = d3d9::D3DFMT_DXT3;
+          break;
+
         case MAKEFOURCC('D', 'X', 'T', '4'):
-          return d3d9::D3DFMT_DXT4;
+          d3d9Format = d3d9::D3DFMT_DXT4;
+          break;
+
         case MAKEFOURCC('D', 'X', 'T', '5'):
-          return d3d9::D3DFMT_DXT5;
+          d3d9Format = d3d9::D3DFMT_DXT5;
+          break;
+
         case MAKEFOURCC('Y', 'U', 'Y', '2'):
-          return d3d9::D3DFMT_YUY2;
+          d3d9Format = d3d9::D3DFMT_YUY2;
+          break;
+
+        default:
+          Logger::warn("ConvertFormat: Unhandled FOURCC payload");
+          d3d9Format = d3d9::D3DFMT_UNKNOWN;
+          break;
       }
-      Logger::warn("ConvertFormat: Unhandled FOURCC payload");
-      return d3d9::D3DFMT_UNKNOWN;
+    // Luminance/alpha-luminance formats appear to be unused in practice in early D3D
+    } else if (unlikely(fmt.dwFlags & DDPF_LUMINANCE)) {
+      //Logger::debug(str::format("ConvertFormat: fmt.dwLuminanceBitCount:     ", fmt.dwLuminanceBitCount,
+      //                        "\nConvertFormat: fmt.dwLuminanceAlphaBitMask: ", fmt.dwLuminanceAlphaBitMask,
+      //                        "\nConvertFormat: fmt.dwLuminanceBitMask:      ", fmt.dwLuminanceBitMask));
+
+      switch (fmt.dwLuminanceBitCount) {
+        case 8:
+          switch (fmt.dwLuminanceBitMask) {
+            case 0xFF:
+              // L: 1111 1111
+              d3d9Format = d3d9::D3DFMT_L8;
+              break;
+
+            case 0xF:
+              // A: 1111 0000
+              // L: 0000 1111
+              d3d9Format = d3d9::D3DFMT_A4L4;
+              break;
+
+            default:
+              Logger::warn("ConvertFormat: Unhandled dwLuminanceBitCount 8 format");
+              d3d9Format = d3d9::D3DFMT_UNKNOWN;
+              break;
+          }
+          break;
+
+        case 16:
+          // A: 1111 1111 0000 0000
+          // L: 0000 0000 1111 1111
+          d3d9Format = d3d9::D3DFMT_A8L8;
+          break;
+
+        default:
+          Logger::warn("ConvertFormat: Unhandled dwLuminanceBitCount format");
+          d3d9Format = d3d9::D3DFMT_UNKNOWN;
+          break;
+      }
+    } else {
+      Logger::warn("ConvertFormat: Unhandled bit payload");
+      d3d9Format = d3d9::D3DFMT_UNKNOWN;
     }
 
-    Logger::warn("ConvertFormat: Unhandled bit payload");
-    return d3d9::D3DFMT_UNKNOWN;
+    return d3d9Format;
   }
 
-  inline DDPIXELFORMAT GetTextureFormat (d3d9::D3DFORMAT format) {
+  inline DDPIXELFORMAT GetTextureFormat(d3d9::D3DFORMAT format) {
     DDPIXELFORMAT tformat = { };
     tformat.dwSize = sizeof(DDPIXELFORMAT);
 
@@ -383,6 +447,11 @@ namespace dxvk {
         tformat.dwFourCC = MAKEFOURCC('D', 'X', 'T', '5');
         break;
 
+      case d3d9::D3DFMT_YUY2:
+        tformat.dwFlags = DDPF_FOURCC;
+        tformat.dwFourCC = MAKEFOURCC('Y', 'U', 'Y', '2');
+        break;
+
       default:
       case d3d9::D3DFMT_UNKNOWN:
         Logger::err("GetTextureFormat: Unhandled format");
@@ -392,7 +461,7 @@ namespace dxvk {
     return tformat;
   }
 
-  inline DDPIXELFORMAT GetZBufferFormat (d3d9::D3DFORMAT format) {
+  inline DDPIXELFORMAT GetZBufferFormat(d3d9::D3DFORMAT format) {
     DDPIXELFORMAT zformat = { };
     zformat.dwSize = sizeof(DDPIXELFORMAT);
 
@@ -456,24 +525,6 @@ namespace dxvk {
     return zformat;
   }
 
-  inline d3d9::D3DMULTISAMPLE_TYPE GetSupportedMultiSampleType(d3d9::IDirect3D9* d3d9Intf, d3d9::D3DFORMAT backBufferFormat) {
-    HRESULT hr4S = d3d9Intf->CheckDeviceMultiSampleType(0, d3d9::D3DDEVTYPE_HAL, backBufferFormat,
-                                                        TRUE, d3d9::D3DMULTISAMPLE_4_SAMPLES, NULL);
-    if (likely(SUCCEEDED(hr4S))) {
-      Logger::info("GetSupportedMultiSampleType: Using 4x MSAA for FSAA emulation");
-      return d3d9::D3DMULTISAMPLE_4_SAMPLES;
-    } else {
-      HRESULT hr2S = d3d9Intf->CheckDeviceMultiSampleType(0, d3d9::D3DDEVTYPE_HAL, backBufferFormat,
-                                                          TRUE, d3d9::D3DMULTISAMPLE_2_SAMPLES, NULL);
-      if (likely(SUCCEEDED(hr2S))) {
-        Logger::info("GetSupportedMultiSampleType: Using 2x MSAA for FSAA emulation");
-        return d3d9::D3DMULTISAMPLE_2_SAMPLES;
-      }
-    }
-
-    return d3d9::D3DMULTISAMPLE_NONE;
-  }
-
   template <typename DescType>
   inline HRESULT ValidateSurfaceFlags(DescType* desc) {
     const bool isOffScreenPlainSurface = desc->ddsCaps.dwCaps & DDSCAPS_OFFSCREENPLAIN;
@@ -491,6 +542,22 @@ namespace dxvk {
     }
 
     return DD_OK;
+  }
+
+  inline HRESULT STDMETHODCALLTYPE EnumDisplayModesCallback(DDSURFACEDESC* desc, void* ctx) {
+    auto& displayModes = *static_cast<std::vector<DDSURFACEDESC>*>(ctx);
+
+    displayModes.push_back(*desc);
+
+    return DDENUMRET_OK;
+  }
+
+  inline HRESULT STDMETHODCALLTYPE EnumDisplayModesCallback2(DDSURFACEDESC2* desc, void* ctx) {
+    auto& displayModes = *static_cast<std::vector<DDSURFACEDESC2>*>(ctx);
+
+    displayModes.push_back(*desc);
+
+    return DDENUMRET_OK;
   }
 
   inline HRESULT STDMETHODCALLTYPE ListBackBufferSurfacesCallback(IDirectDrawSurface* subsurf, DDSURFACEDESC* desc, void* ctx) {
@@ -591,31 +658,117 @@ namespace dxvk {
   inline HRESULT STDMETHODCALLTYPE EnumAndAttachCubeMapFacesCallback(IDirectDrawSurface7* subsurf, DDSURFACEDESC2* desc, void* ctx) {
     CubeMapAttachedSurfaces* cubeMapAttachedSurfaces = static_cast<CubeMapAttachedSurfaces*>(ctx);
 
-    // Skip any surface which isn't a cube map face
-    if (unlikely(!IsCubeMapFace(desc)))
-      return DDENUMRET_OK;
+    const DWORD cubeFaceMask = desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_ALLFACES;
 
-    if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_POSITIVEX) {
-      cubeMapAttachedSurfaces->positiveX = subsurf;
-      return DDENUMRET_OK;
-    } else if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_NEGATIVEX) {
-      cubeMapAttachedSurfaces->negativeX = subsurf;
-      return DDENUMRET_OK;
-    } else if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_POSITIVEY) {
-      cubeMapAttachedSurfaces->positiveY = subsurf;
-      return DDENUMRET_OK;
-    } else if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_NEGATIVEY) {
-      cubeMapAttachedSurfaces->negativeY = subsurf;
-      return DDENUMRET_OK;
-    } else if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_POSITIVEZ) {
-      cubeMapAttachedSurfaces->positiveZ = subsurf;
-      return DDENUMRET_OK;
-    } else if (desc->ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP_NEGATIVEZ) {
-      cubeMapAttachedSurfaces->negativeZ = subsurf;
-      return DDENUMRET_OK;
+    switch (cubeFaceMask) {
+      case DDSCAPS2_CUBEMAP_POSITIVEX:
+        cubeMapAttachedSurfaces->positiveX = subsurf;
+        break;
+      case DDSCAPS2_CUBEMAP_NEGATIVEX:
+        cubeMapAttachedSurfaces->negativeX = subsurf;
+        break;
+      case DDSCAPS2_CUBEMAP_POSITIVEY:
+        cubeMapAttachedSurfaces->positiveY = subsurf;
+        break;
+      case DDSCAPS2_CUBEMAP_NEGATIVEY:
+        cubeMapAttachedSurfaces->negativeY = subsurf;
+        break;
+      case DDSCAPS2_CUBEMAP_POSITIVEZ:
+        cubeMapAttachedSurfaces->positiveZ = subsurf;
+        break;
+      case DDSCAPS2_CUBEMAP_NEGATIVEZ:
+        cubeMapAttachedSurfaces->negativeZ = subsurf;
+        break;
+      default:
+        break;
     }
 
     return DDENUMRET_OK;
+  }
+
+  // We need to count the number of actual mips on surface initialization by going through
+  // the mip chain, since the dwMipMapCount number may or may not be accurate. I am
+  // guessing it was intended more as a hint, not necessarily a set number.
+  template <typename SurfaceType, typename DescType>
+  inline uint16_t DetermineMipMapCount(SurfaceType* surface) {
+    SurfaceType* mipMap = surface;
+    DescType mipDesc;
+    uint16_t mipCount = 1;
+
+    while (mipMap != nullptr) {
+      SurfaceType* parentSurface = mipMap;
+      mipMap = nullptr;
+
+      if constexpr (std::is_same<SurfaceType, IDirectDrawSurface7>::value) {
+        parentSurface->EnumAttachedSurfaces(&mipMap, ListMipChainSurfaces7Callback);
+      } else if constexpr (std::is_same<SurfaceType, IDirectDrawSurface4>::value) {
+        parentSurface->EnumAttachedSurfaces(&mipMap, ListMipChainSurfaces4Callback);
+      } else if constexpr (std::is_same<SurfaceType, IDirectDrawSurface>::value) {
+        parentSurface->EnumAttachedSurfaces(&mipMap, ListMipChainSurfacesCallback);
+      } else {
+        Logger::err("DetermineMipMapCount: Unsupported surface type");
+        break;
+      }
+
+      if (mipMap != nullptr) {
+        mipCount++;
+
+        mipDesc = { };
+        mipDesc.dwSize = sizeof(DescType);
+        mipMap->GetSurfaceDesc(&mipDesc);
+        // Ignore multiple 1x1 mips, which apparently can get generated if the
+        // application gets the dwMipMapCount wrong vs surface dimensions.
+        if (unlikely(mipDesc.dwWidth == 1 && mipDesc.dwHeight == 1))
+          break;
+      }
+    }
+
+    // Don't worry about maximum supported mip map levels validation,
+    // because D3D9 will handle this for us and cap them appropriately
+    if (mipCount > 1) {
+      //Logger::debug(str::format("DetermineMipMapCount: Found ", mipCount, " mip levels"));
+
+      DescType desc;
+      desc.dwSize = sizeof(DescType);
+      surface->GetSurfaceDesc(&desc);
+
+      if (unlikely(mipCount != desc.dwMipMapCount))
+        Logger::debug(str::format("DetermineMipMapCount: Mismatch with declared ", desc.dwMipMapCount, " mip levels"));
+    }
+
+    return mipCount;
+  }
+
+  template <typename SurfaceType>
+  inline DWORD DetermineBackBufferCount(SurfaceType* renderTarget) {
+    DWORD backBufferCount = 0;
+
+    SurfaceType* backBuffer = renderTarget;
+
+    while (backBuffer != nullptr) {
+      SurfaceType* parentSurface = backBuffer;
+      backBuffer = nullptr;
+
+      if constexpr (std::is_same<SurfaceType, IDirectDrawSurface7>::value) {
+        parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfaces7Callback);
+      } else if constexpr (std::is_same<SurfaceType, IDirectDrawSurface4>::value) {
+        parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfaces4Callback);
+      } else if constexpr (std::is_same<SurfaceType, IDirectDrawSurface>::value) {
+        parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfacesCallback);
+      } else {
+        Logger::err("DetermineBackBufferCount: Unsupported surface type");
+        break;
+      }
+
+      // The swapchain will eventually return to its origin
+      if (backBuffer == renderTarget)
+        break;
+
+      if (likely(backBuffer != nullptr))
+        backBufferCount++;
+    }
+
+    return std::max<DWORD>(1u, backBufferCount);
   }
 
   inline void BlitToD3D9CubeMap(
@@ -628,14 +781,9 @@ namespace dxvk {
     surface->GetSurfaceDesc(&desc);
     const d3d9::D3DCUBEMAP_FACES face = GetCubemapFace(&desc);
     IDirectDrawSurface7* mipMap = surface;
+    IDirectDrawSurface7* parentSurface;
 
     for (uint16_t i = 0; i < mipLevels; i++) {
-      // Should never occur normally, but acts as a last ditch safety check
-      if (unlikely(mipMap == nullptr)) {
-        Logger::warn(str::format("BlitToD3D9CubeMap: Last found source mip ", i - 1));
-        break;
-      }
-
       d3d9::D3DLOCKED_RECT rect9mip;
       // D3DLOCK_DISCARD will get ignored for MANAGED/SYSTEMMEM, but will work on DEFAULT
       HRESULT hr9 = cubeTex9->LockRect(face, i, &rect9mip, NULL, D3DLOCK_DISCARD);
@@ -656,9 +804,11 @@ namespace dxvk {
             uint8_t* data7 = reinterpret_cast<uint8_t*>(descMip.lpSurface);
 
             const size_t copyPitch = std::min<size_t>(descMip.lPitch, rect9mip.Pitch);
-            for (uint32_t h = 0; h < descMip.dwHeight; h++)
-              memcpy(&data9[h * rect9mip.Pitch], &data7[h * descMip.lPitch], copyPitch);
-
+            for (uint32_t h = 0; h < descMip.dwHeight; h++) {
+              memcpy(data9, data7, copyPitch);
+              data9 += rect9mip.Pitch;
+              data7 += descMip.lPitch;
+            }
             //Logger::debug(str::format("BlitToD3D9CubeMap: Done blitting mip ", i, " row by row"));
           } else {
             const size_t size = static_cast<size_t>(descMip.dwHeight * descMip.lPitch);
@@ -670,13 +820,14 @@ namespace dxvk {
           Logger::warn(str::format("BlitToD3D9CubeMap: Failed to lock mip ", i));
         }
         cubeTex9->UnlockRect(face, i);
-
-        IDirectDrawSurface7* parentSurface = mipMap;
-        mipMap = nullptr;
-
-        parentSurface->EnumAttachedSurfaces(&mipMap, ListMipChainSurfaces7Callback);
       } else {
         Logger::warn(str::format("BlitToD3D9CubeMap: Failed to lock D3D9 mip ", i));
+      }
+
+      // Skip the enumeration if we've reached the final mip
+      if (likely(i < mipLevels - 1)) {
+        parentSurface = mipMap;
+        parentSurface->EnumAttachedSurfaces(&mipMap, ListMipChainSurfaces7Callback);
       }
     }
   }
@@ -688,14 +839,9 @@ namespace dxvk {
         const uint16_t mipLevels,
         const bool isDXTFormat) {
     SurfaceType* mipMap = surface;
+    SurfaceType* parentSurface;
 
     for (uint16_t i = 0; i < mipLevels; i++) {
-      // Should never occur normally, but acts as a last ditch safety check
-      if (unlikely(mipMap == nullptr)) {
-        Logger::warn(str::format("BlitToD3D9Texture: Last found source mip ", i - 1));
-        break;
-      }
-
       d3d9::D3DLOCKED_RECT rect9mip;
       // D3DLOCK_DISCARD will get ignored for MANAGED/SYSTEMMEM, but will work on DEFAULT
       HRESULT hr9 = texture9->LockRect(i, &rect9mip, NULL, D3DLOCK_DISCARD);
@@ -716,9 +862,11 @@ namespace dxvk {
             uint8_t* data7 = reinterpret_cast<uint8_t*>(descMip.lpSurface);
 
             const size_t copyPitch = std::min<size_t>(descMip.lPitch, rect9mip.Pitch);
-            for (uint32_t h = 0; h < descMip.dwHeight; h++)
-              memcpy(&data9[h * rect9mip.Pitch], &data7[h * descMip.lPitch], copyPitch);
-
+            for (uint32_t h = 0; h < descMip.dwHeight; h++) {
+              memcpy(data9, data7, copyPitch);
+              data9 += rect9mip.Pitch;
+              data7 += descMip.lPitch;
+            }
             //Logger::debug(str::format("BlitToD3D9Texture: Done blitting mip ", i, " row by row"));
           } else {
             const size_t size = static_cast<size_t>(descMip.dwHeight * descMip.lPitch);
@@ -730,10 +878,13 @@ namespace dxvk {
           Logger::warn(str::format("BlitToD3D9Texture: Failed to lock mip ", i));
         }
         texture9->UnlockRect(i);
+      } else {
+        Logger::warn(str::format("BlitToD3D9Texture: Failed to lock D3D9 mip ", i));
+      }
 
-        SurfaceType* parentSurface = mipMap;
-        mipMap = nullptr;
-
+      // Skip the enumeration if we've reached the final mip
+      if (likely(i < mipLevels - 1)) {
+        parentSurface = mipMap;
         if constexpr (std::is_same<SurfaceType, IDirectDrawSurface7>::value) {
           parentSurface->EnumAttachedSurfaces(&mipMap, ListMipChainSurfaces7Callback);
         } else if constexpr (std::is_same<SurfaceType, IDirectDrawSurface4>::value) {
@@ -742,9 +893,8 @@ namespace dxvk {
           parentSurface->EnumAttachedSurfaces(&mipMap, ListMipChainSurfacesCallback);
         } else {
           Logger::err("BlitToD3D9Texture: Unsupported surface type");
+          break;
         }
-      } else {
-        Logger::warn(str::format("BlitToD3D9Texture: Failed to lock D3D9 mip ", i));
       }
     }
   }
@@ -774,9 +924,11 @@ namespace dxvk {
           uint8_t* data7 = reinterpret_cast<uint8_t*>(desc.lpSurface);
 
           const size_t copyPitch = std::min<size_t>(desc.lPitch, rect9.Pitch);
-          for (uint32_t h = 0; h < desc.dwHeight; h++)
-            memcpy(&data9[h * rect9.Pitch], &data7[h * desc.lPitch], copyPitch);
-
+          for (uint32_t h = 0; h < desc.dwHeight; h++) {
+            memcpy(data9, data7, copyPitch);
+            data9 += rect9.Pitch;
+            data7 += desc.lPitch;
+          }
           //Logger::debug("BlitToD3D9Surface: Done blitting surface row by row");
         } else {
           const size_t size = static_cast<size_t>(desc.dwHeight * desc.lPitch);
@@ -817,9 +969,11 @@ namespace dxvk {
           uint8_t* data9 = reinterpret_cast<uint8_t*>(rect9.pBits);
 
           const size_t copyPitch = std::min<size_t>(desc.lPitch, rect9.Pitch);
-          for (uint32_t h = 0; h < desc.dwHeight; h++)
-            memcpy(&data7[h * desc.lPitch], &data9[h * rect9.Pitch], copyPitch);
-
+          for (uint32_t h = 0; h < desc.dwHeight; h++) {
+            memcpy(data7, data9, copyPitch);
+            data7 += desc.lPitch;
+            data9 += rect9.Pitch;
+          }
           //Logger::debug("BlitToDDrawSurface: Done blitting surface row by row");
         } else {
           const size_t size = static_cast<size_t>(desc.dwHeight * desc.lPitch);
@@ -866,7 +1020,7 @@ namespace dxvk {
   inline DDCOLORKEY ColorKeyToARGB(const DDPIXELFORMAT* fmt, DWORD colorKey) {
     DDCOLORKEY rgbColorKey = { };
 
-    if (unlikely(!(fmt->dwFlags & DDPF_RGB)))
+    if (unlikely(fmt == nullptr || !(fmt->dwFlags & DDPF_RGB)))
       return rgbColorKey;
 
     DDCOLORKEY b = GetColorChannel(colorKey, fmt->dwBBitMask);

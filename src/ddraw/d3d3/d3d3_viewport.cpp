@@ -20,8 +20,6 @@
 
 namespace dxvk {
 
-  std::atomic<uint32_t> D3D3Viewport::s_viewportCount = 0;
-
   D3D3Viewport::D3D3Viewport(
         D3DCommonViewport* commonViewport,
         D3D3Interface* pParent)
@@ -35,10 +33,6 @@ namespace dxvk {
 
     if (m_commonViewport->GetOrigin() == nullptr)
       m_commonViewport->SetOrigin(this);
-
-    m_viewportCount = ++s_viewportCount;
-
-    Logger::debug(str::format("D3D3Viewport: Created a new viewport nr. [[1-", m_viewportCount, "]]"));
   }
 
   D3D3Viewport::~D3D3Viewport() {
@@ -53,8 +47,6 @@ namespace dxvk {
       m_commonViewport->SetOrigin(nullptr);
 
     m_commonViewport->SetD3D3Viewport(nullptr);
-
-    Logger::debug(str::format("D3D3Viewport: Viewport nr. [[1-", m_viewportCount, "]] bites the dust"));
   }
 
   // Interlocked refcount with the origin viewport
@@ -159,10 +151,12 @@ namespace dxvk {
       return D3DERR_VIEWPORTHASNODEVICE;
 
     // These validations aren't performed at all on viewports bound to a D3D3 device
-    if (unlikely(m_commonViewport->GetD3D3Device() == nullptr)) {
+    if (unlikely(!m_commonViewport->IsBoundToD3D3Device())) {
+      D3DCommonDevice* commonD3DDevice = m_commonViewport->GetCommonD3DDevice();
+
       // Use the full surface rect, since it is surface version agnostic
-      const RECT* surfRect = m_commonViewport->GetCommonRenderTarget()->GetFullSurfaceRect();
-      // D3D3 will fail when setting a viewport that's outside of the
+      const RECT* surfRect = commonD3DDevice->GetCommonRenderTarget()->GetFullSurfaceRect();
+      // D3D6/5 will fail when setting a viewport that's outside of the
       // current render target, though that works in D3D9
       HRESULT hr = ValidateViewportRT(data->dwX, data->dwY, data->dwWidth, data->dwHeight,
                                       surfRect->right, surfRect->bottom);
@@ -191,9 +185,8 @@ namespace dxvk {
     legacyClip->z = 0.0f;
 
     m_commonViewport->MarkViewportAsSet();
-
     if (m_commonViewport->IsCurrentViewport())
-      ApplyViewport();
+      m_commonViewport->ApplyViewport();
 
     return D3D_OK;
   }
@@ -206,20 +199,17 @@ namespace dxvk {
 
     // Temporarily activate this viewport, if not already active
     d3d9::D3DVIEWPORT9 currentViewport9;
-    if (!m_commonViewport->IsCurrentViewport()) {
-      D3D3Viewport* currentViewport = m_commonViewport->GetCurrentD3D3Viewport();
-      if (currentViewport != nullptr) {
-        currentViewport9 = *currentViewport->GetCommonViewport()->GetD3D9Viewport();
-      } else {
-        d3d9Device->GetViewport(&currentViewport9);
-      }
+    const bool isCurrentViewport = m_commonViewport->IsCurrentViewport();
+
+    if (!isCurrentViewport) {
+      d3d9Device->GetViewport(&currentViewport9);
       d3d9Device->SetViewport(m_commonViewport->GetD3D9Viewport());
     }
 
     HRESULT hr = m_commonViewport->TransformVertices(vertex_count, data, flags, offscreen);
 
     // Restore the previously active viewport
-    if (!m_commonViewport->IsCurrentViewport()) {
+    if (!isCurrentViewport) {
       d3d9Device->SetViewport(&currentViewport9);
     }
 
@@ -300,8 +290,10 @@ namespace dxvk {
     DDrawCommonSurface* rt = nullptr;
     DDrawCommonSurface* ds = nullptr;
 
+    D3DCommonDevice* commonD3DDevice = m_commonViewport->GetCommonD3DDevice();
+
     if (clearRenderTarget) {
-      rt = m_commonViewport->GetCommonRenderTarget();
+      rt = commonD3DDevice->GetCommonRenderTarget();
       if (likely(rt != nullptr)) {
         // If this isn't a full surface clear, we need to first upload the DDraw surface
         if (unlikely(count > 1 || !rt->IsFullSurfaceLock(reinterpret_cast<RECT*>(rects), nullptr))) {
@@ -313,7 +305,7 @@ namespace dxvk {
       }
     }
     if (clearDepthStencil) {
-      ds = m_commonViewport->GetCommonDepthStencil();
+      ds = commonD3DDevice->GetCommonDepthStencil();
       if (likely(ds != nullptr)) {
         // If this isn't a full surface clear, we need to first upload the DDraw surface
         if (unlikely(count > 1 || !ds->IsFullSurfaceLock(reinterpret_cast<RECT*>(rects), nullptr))) {
@@ -325,18 +317,14 @@ namespace dxvk {
       }
     }
 
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonViewport->GetCommonD3DDevice()->GetD3D9Device();
+    d3d9::IDirect3DDevice9* d3d9Device = commonD3DDevice->GetD3D9Device();
 
     // Temporarily activate this viewport in order to clear it
     d3d9::D3DVIEWPORT9 currentViewport9;
     const bool isCurrentViewport = m_commonViewport->IsCurrentViewport();
+
     if (!isCurrentViewport) {
-      D3D3Viewport* currentViewport = m_commonViewport->GetCurrentD3D3Viewport();
-      if (currentViewport != nullptr) {
-        currentViewport9 = *currentViewport->GetCommonViewport()->GetD3D9Viewport();
-      } else {
-        d3d9Device->GetViewport(&currentViewport9);
-      }
+      d3d9Device->GetViewport(&currentViewport9);
       d3d9Device->SetViewport(m_commonViewport->GetD3D9Viewport());
     }
 
@@ -365,7 +353,7 @@ namespace dxvk {
     if (clearDepthStencil && ds != nullptr)
       ds->UnDirtyDDrawSurface();
 
-    m_commonViewport->UpdateSurfaceDirtyTracking(clearRenderTarget, clearDepthStencil, false);
+    commonD3DDevice->UpdateSurfaceDirtyTracking(clearRenderTarget, clearDepthStencil, false);
 
     return D3D_OK;
   }
@@ -386,7 +374,7 @@ namespace dxvk {
     d3dLight->SetViewport3(this);
 
     if (m_commonViewport->HasDevice() && m_commonViewport->IsCurrentViewport())
-      ApplyAndActivateLight(d3dLight->GetIndex(), d3dLight);
+      m_commonViewport->ApplyAndActivateLight(d3dLight);
 
     return D3D_OK;
   }
@@ -404,14 +392,11 @@ namespace dxvk {
 
     auto it = std::find(lights.begin(), lights.end(), d3dLight);
     if (likely(it != lights.end())) {
-      const DWORD lightIndex = d3dLight->GetIndex();
-      if (m_commonViewport->HasDevice() && m_commonViewport->IsCurrentViewport() && d3dLight->IsActive()) {
-        //Logger::debug(str::format("D3D3Viewport: Disabling light nr. ", lightIndex));
-        d3d9::IDirect3DDevice9* d3d9Device = m_commonViewport->GetCommonD3DDevice()->GetD3D9Device();
-        d3d9Device->LightEnable(lightIndex, FALSE);
-      }
-      lights.erase(it);
+      // Ensure the light is deactivated before deleting it
+      if (m_commonViewport->HasDevice() && m_commonViewport->IsCurrentViewport() && d3dLight->IsActive())
+        m_commonViewport->DeactivateLight(d3dLight);
       d3dLight->SetViewport3(nullptr);
+      lights.erase(it);
     } else {
       Logger::warn("D3D3Viewport::DeleteLight: Light not found");
       return DDERR_INVALIDPARAMS;
@@ -440,76 +425,6 @@ namespace dxvk {
     } else if (flags & D3DNEXT_TAIL) {
       if (likely(lights.size() > 0))
         *lplpDirect3DLight = lights.back().ref();
-    }
-
-    return D3D_OK;
-  }
-
-  HRESULT D3D3Viewport::ApplyViewport() {
-    if (!m_commonViewport->IsViewportSet())
-      return D3D_OK;
-
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonViewport->GetCommonD3DDevice()->GetD3D9Device();
-
-    HRESULT hr = d3d9Device->SetViewport(m_commonViewport->GetD3D9Viewport());
-    if (unlikely(FAILED(hr))) {
-      Logger::err("D3D3Viewport: Failed to set the D3D9 viewport");
-      return hr;
-    }
-
-    return D3D_OK;
-  }
-
-  HRESULT D3D3Viewport::ApplyAndActivateLights() {
-    std::vector<Com<D3DLight>>& lights = m_commonViewport->GetLights();
-
-    if (!lights.size())
-      return D3D_OK;
-
-    for (auto light: lights)
-      ApplyAndActivateLight(light->GetIndex(), light.ptr());
-
-    return D3D_OK;
-  }
-
-  HRESULT D3D3Viewport::DeactivateLights() {
-    std::vector<Com<D3DLight>>& lights = m_commonViewport->GetLights();
-
-    if (!lights.size())
-      return D3D_OK;
-
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonViewport->GetCommonD3DDevice()->GetD3D9Device();
-
-    for (auto light: lights) {
-      const DWORD lightIndex = light->GetIndex();
-      if (m_commonViewport->HasDevice() && m_commonViewport->IsCurrentViewport() && light->IsActive()) {
-        //Logger::debug(str::format("D3D3Viewport: Disabling light nr. ", lightIndex));
-        d3d9Device->LightEnable(lightIndex, FALSE);
-      }
-    }
-
-    return D3D_OK;
-  }
-
-  HRESULT D3D3Viewport::ApplyAndActivateLight(DWORD index, D3DLight* light) {
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonViewport->GetCommonD3DDevice()->GetD3D9Device();
-
-    HRESULT hr = d3d9Device->SetLight(index, light->GetD3D9Light());
-    if (unlikely(FAILED(hr))) {
-      Logger::err("D3D3Viewport: Failed D3D9 SetLight call");
-      return hr;
-    }
-
-    if (light->IsActive()) {
-      //Logger::debug(str::format("D3D3Viewport: Enabling D3D9 light nr. ", index));
-      hr = d3d9Device->LightEnable(index, TRUE);
-      if (unlikely(FAILED(hr)))
-        Logger::err("D3D3Viewport: Failed D3D9 LightEnable call (TRUE)");
-    } else {
-      //Logger::debug(str::format("D3D3Viewport: Disabling D3D9 light nr. ", index));
-      hr = d3d9Device->LightEnable(index, FALSE);
-      if (unlikely(FAILED(hr)))
-        Logger::err("D3D3Viewport: Failed D3D9 LightEnable call (FALSE)");
     }
 
     return D3D_OK;

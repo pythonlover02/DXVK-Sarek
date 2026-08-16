@@ -140,12 +140,14 @@ namespace dxvk {
     copyToStringArray(pIdentifier->DeviceName,  device.DeviceName); // The GDI device name. Not the actual device name.
     copyToStringArray(pIdentifier->Driver,      driver);            // This is the driver's dll.
 
+    const bool isExtended = m_parent->IsD3DCompatibile(D3DCompatibility::D3D9Ex);
+
     pIdentifier->DeviceIdentifier       = guid;
     pIdentifier->DeviceId               = deviceId;
     pIdentifier->VendorId               = vendorId;
     pIdentifier->Revision               = 0;
     pIdentifier->SubSysId               = 0;
-    pIdentifier->WHQLLevel              = m_parent->IsExtended() ? 1 : 0; // This doesn't check with the driver on Direct3D9Ex and is always 1.
+    pIdentifier->WHQLLevel              = isExtended ? 1 : 0; // This doesn't check with the driver on Direct3D9Ex and is always 1.
     pIdentifier->DriverVersion.QuadPart = INT64_MAX;
 
     return D3D_OK;
@@ -352,8 +354,10 @@ namespace dxvk {
     if (unlikely(pCaps == nullptr))
       return D3DERR_INVALIDCALL;
 
+    const bool isD3D8Compatible = m_parent->IsD3DCompatibile(D3DCompatibility::D3D8);
+
     if (unlikely(DeviceType == D3DDEVTYPE_SW)) {
-      if (m_parent->IsD3D8Compatible())
+      if (isD3D8Compatible)
         return D3DERR_INVALIDCALL;
       else
         return D3DERR_NOTAVAILABLE;
@@ -361,7 +365,7 @@ namespace dxvk {
 
     auto& options = m_parent->GetOptions();
 
-    const uint32_t maxShaderModel = m_parent->IsD3D8Compatible() ? std::min(1u, options.shaderModel) : options.shaderModel;
+    const uint32_t maxShaderModel = isD3D8Compatible ? std::min(1u, options.shaderModel) : options.shaderModel;
 
     // TODO: Actually care about what the adapter supports here.
     // ^ For Intel and older cards most likely here.
@@ -479,7 +483,7 @@ namespace dxvk {
                                     | D3DPBLENDCAPS_BLENDFACTOR;
 
     // Only 9Ex devices advertise D3DPBLENDCAPS_SRCCOLOR2 and D3DPBLENDCAPS_INVSRCCOLOR2
-    if (m_parent->IsExtended())
+    if (m_parent->IsD3DCompatibile(D3DCompatibility::D3D9Ex))
       pCaps->SrcBlendCaps          |= D3DPBLENDCAPS_SRCCOLOR2
                                     | D3DPBLENDCAPS_INVSRCCOLOR2;
 
@@ -829,6 +833,16 @@ namespace dxvk {
       *pLUID = dxvk::GetAdapterLUID(m_ordinal);
 
     return D3D_OK;
+  }
+
+
+  void D3D9Adapter::RefreshFormatsTable() const {
+    m_d3d9Formats.RefreshFormatSupport(this);
+  }
+
+
+  bool D3D9Adapter::IsD3DCompatibile(D3DCompatibility d3dCompatibility) const {
+    return m_parent->IsD3DCompatibile(d3dCompatibility);
   }
 
 

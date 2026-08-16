@@ -10,8 +10,6 @@
 
 namespace dxvk {
 
-  std::atomic<uint32_t> D3D7Interface::s_intfCount = 0;
-
   D3D7Interface::D3D7Interface(
         D3DCommonInterface* commonD3DIntf,
         DDrawCommonInterface* commonIntf,
@@ -20,34 +18,28 @@ namespace dxvk {
     : DDrawWrappedObject<IUnknown, IDirect3D7>(pParent, std::move(d3d7IntfProxy))
     , m_commonD3DIntf ( commonD3DIntf )
     , m_commonIntf ( commonIntf ) {
-    if (m_commonD3DIntf == nullptr) {
+    if (m_commonD3DIntf == nullptr)
       m_commonD3DIntf = new D3DCommonInterface();
 
-      Com<d3d9::IDirect3D9> d3d9Intf = d3d9::Direct3DCreate9(D3D_SDK_VERSION);
-      m_commonD3DIntf->SetD3D9Interface(std::move(d3d9Intf));
-    }
+    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+    // Retrieve and cache the base capabilities
+    m_desc = GetD3D7BaseCaps(d3dOptions);
 
     d3d9::IDirect3D9* d3d9Intf = m_commonD3DIntf->GetD3D9Interface();
 
     // Get the bridge interface to D3D9
-    if (unlikely(FAILED(d3d9Intf->QueryInterface(__uuidof(IDxvkD3D8InterfaceBridge), reinterpret_cast<void**>(&m_bridge))))) {
+    if (unlikely(FAILED(d3d9Intf->QueryInterface(__uuidof(IDxvkLegacyD3DInterfaceBridge), reinterpret_cast<void**>(&m_bridge))))) {
       throw DxvkError("D3D7Interface: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
     }
 
     m_commonD3DIntf->SetD3D7Interface(this);
 
-    m_bridge->EnableD3D7CompatibilityMode();
-
-    m_intfCount = ++s_intfCount;
-
-    Logger::debug(str::format("D3D7Interface: Created a new interface nr. ((7-", m_intfCount, "))"));
+    m_bridge->SetD3DCompatibility(D3DCompatibility::D3D7);
   }
 
   D3D7Interface::~D3D7Interface() {
     if (m_commonD3DIntf->GetD3D7Interface() == this)
       m_commonD3DIntf->SetD3D7Interface(nullptr);
-
-    Logger::debug(str::format("D3D7Interface: Interface nr. ((7-", m_intfCount, ")) bites the dust"));
   }
 
   // Interlocked refcount with the parent IDirectDraw7
@@ -119,7 +111,8 @@ namespace dxvk {
     HRESULT hr;
 
     // Software emulation, this is expected to be exposed
-    D3DDEVICEDESC7 desc7RGB = GetD3D7Caps(IID_IDirect3DRGBDevice, d3dOptions);
+    D3DDEVICEDESC7 desc7RGB = m_desc;
+    ApplyD3D7DeviceCaps(&desc7RGB, IID_IDirect3DRGBDevice);
     if (likely(!d3dOptions->legacyDeviceNames)) {
       static char deviceDescRGB[100] = "D7VK RGB";
       static char deviceNameRGB[100] = "D7VK RGB";
@@ -133,7 +126,8 @@ namespace dxvk {
       return D3D_OK;
 
     // Hardware acceleration (no T&L)
-    D3DDEVICEDESC7 desc7HAL = GetD3D7Caps(IID_IDirect3DHALDevice, d3dOptions);
+    D3DDEVICEDESC7 desc7HAL = m_desc;
+    ApplyD3D7DeviceCaps(&desc7HAL, IID_IDirect3DHALDevice);
     if (likely(!d3dOptions->legacyDeviceNames)) {
       static char deviceDescHAL[100] = "D7VK HAL";
       static char deviceNameHAL[100] = "D7VK HAL";
@@ -147,7 +141,8 @@ namespace dxvk {
       return D3D_OK;
 
     // Hardware acceleration with T&L
-    D3DDEVICEDESC7 desc7TNL = GetD3D7Caps(IID_IDirect3DTnLHalDevice, d3dOptions);
+    D3DDEVICEDESC7 desc7TNL = m_desc;
+    ApplyD3D7DeviceCaps(&desc7TNL, IID_IDirect3DTnLHalDevice);
     if (likely(!d3dOptions->legacyDeviceNames)) {
       static char deviceDescTNL[100] = "D7VK T&L HAL";
       static char deviceNameTNL[100] = "D7VK T&L HAL";
@@ -277,14 +272,12 @@ namespace dxvk {
 
     Logger::info(str::format("D3D7Interface::CreateDevice: Back buffer size: ", desc.dwWidth, "x", desc.dwHeight));
 
-    const DWORD backBufferCount = DetermineBackBufferCount(rt7->GetProxied());
+    const DWORD backBufferCount = DetermineBackBufferCount<IDirectDrawSurface7>(rt7->GetProxied());
     Logger::info(str::format("D3D7Interface::CreateDevice: Back buffer count: ", backBufferCount));
-
-    Com<d3d9::IDirect3D9> d3d9Intf = m_commonD3DIntf->GetD3D9Interface();
 
     // Determine the supported AA sample count by querying the D3D9 interface
     const d3d9::D3DMULTISAMPLE_TYPE multiSampleType = d3dOptions->emulateFSAA != FSAAEmulation::Disabled ?
-                                                      GetSupportedMultiSampleType(d3d9Intf.ptr(), backBufferFormat) :
+                                                      m_commonD3DIntf->GetMultiSampleType(backBufferFormat) :
                                                       d3d9::D3DMULTISAMPLE_NONE;
 
     // Always appears to be enabled when running in non-exclusive mode
@@ -307,7 +300,7 @@ namespace dxvk {
     params.PresentationInterval       = vBlankStatus ? D3DPRESENT_INTERVAL_DEFAULT : D3DPRESENT_INTERVAL_IMMEDIATE;
 
     Com<d3d9::IDirect3DDevice9> device9;
-    hr = d3d9Intf->CreateDevice(
+    hr = m_commonD3DIntf->GetD3D9Interface()->CreateDevice(
       D3DADAPTER_DEFAULT,
       d3d9::D3DDEVTYPE_HAL,
       hWnd,
@@ -328,8 +321,11 @@ namespace dxvk {
 
       // Set the common device on the common interface
       m_commonIntf->SetCommonD3DDevice(device7->GetCommonD3DDevice());
-      // Now that we have a valid D3D9 device pointer, we can initialize the depth stencil (if any)
-      device7->InitializeDS();
+      // Now that we have a valid common D3D device on the DDraw interface,
+      // we can initialize the render target and depth stencil (if any)
+      hr = device7->InitializeRTAndDS();
+      if (unlikely(FAILED(hr)))
+        return hr;
 
       *ppd3dDevice = device7.ref();
     } catch (const DxvkError& e) {
@@ -413,33 +409,6 @@ namespace dxvk {
     }
 
     return D3D_OK;
-  }
-
-  inline DWORD D3D7Interface::DetermineBackBufferCount(IDirectDrawSurface7* renderTarget) {
-    DWORD backBufferCount = 0;
-
-    IDirectDrawSurface7* backBuffer = renderTarget;
-    HRESULT hr;
-
-    while (backBuffer != nullptr) {
-      IDirectDrawSurface7* parentSurface = backBuffer;
-      backBuffer = nullptr;
-
-      hr = parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfaces7Callback);
-      if (unlikely(FAILED(hr))) {
-        Logger::warn("D3D7Interface::DetermineBackBufferCount: Unable to enumerate attached surfaces");
-        break;
-      }
-
-      // The swapchain will eventually return to its origin
-      if (backBuffer == renderTarget)
-        break;
-
-      if (likely(backBuffer != nullptr))
-        backBufferCount++;
-    }
-
-    return std::max<DWORD>(1u, backBufferCount);
   }
 
 }

@@ -70,14 +70,6 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE Clear2(DWORD count, D3DRECT *rects, DWORD flags, DWORD color, D3DVALUE z, DWORD stencil);
 
-    HRESULT ApplyViewport();
-
-    HRESULT ApplyAndActivateLights();
-
-    HRESULT DeactivateLights();
-
-    HRESULT ApplyAndActivateLight(DWORD index, D3DLight* light);
-
     D3DCommonViewport* GetCommonViewport() const {
       return m_commonViewport.ptr();
     }
@@ -94,9 +86,6 @@ namespace dxvk {
 
     Com<D3D5Viewport, false> m_viewport5;
     Com<D3D3Viewport, false> m_viewport3;
-
-    uint32_t                 m_viewportCount         = 0;
-    static std::atomic<uint32_t> s_viewportCount;
 
   };
 

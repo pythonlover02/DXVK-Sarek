@@ -10,10 +10,9 @@
 namespace dxvk {
 
   D3D9InterfaceEx::D3D9InterfaceEx(bool bExtended)
-    : m_instance    ( new DxvkInstance() )
-    , m_d3d8Bridge  ( this )
-    , m_extended    ( bExtended ) 
-    , m_d3d9Options ( nullptr, m_instance->config() ) {
+    : m_instance        ( new DxvkInstance() )
+    , m_legacyD3DBridge ( this )
+    , m_d3d9Options     ( nullptr, m_instance->config() ) {
     // D3D9 doesn't enumerate adapters like physical adapters...
     // only as connected displays.
 
@@ -63,8 +62,13 @@ namespace dxvk {
     }
 #endif
 
+    if (bExtended) {
+      m_d3dCompatibility.set(D3DCompatibility::D3D9Ex);
+      Logger::info("The D3D9 interface is operating in D3D9Ex mode.");
+    }
+
     if (unlikely(m_d3d9Options.shaderModel == 0))
-      Logger::warn("D3D9InterfaceEx: WARNING! Fixed-function exclusive mode is enabled.");
+      Logger::warn("WARNING! Fixed-function exclusive mode is enabled.");
   }
 
 
@@ -76,13 +80,14 @@ namespace dxvk {
 
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(IDirect3D9)
-     || (m_extended && riid == __uuidof(IDirect3D9Ex))) {
+     || (m_d3dCompatibility.test(D3DCompatibility::D3D9Ex) &&
+         riid == __uuidof(IDirect3D9Ex))) {
       *ppvObject = ref(this);
       return S_OK;
     }
 
-    if (riid == __uuidof(IDxvkD3D8InterfaceBridge)) {
-      *ppvObject = ref(&m_d3d8Bridge);
+    if (riid == __uuidof(IDxvkLegacyD3DInterfaceBridge)) {
+      *ppvObject = ref(&m_legacyD3DBridge);
       return S_OK;
     }
 
@@ -119,7 +124,7 @@ namespace dxvk {
     filter.Size             = sizeof(D3DDISPLAYMODEFILTER);
     filter.Format           = Format;
     filter.ScanLineOrdering = D3DSCANLINEORDERING_PROGRESSIVE;
-    
+
     return this->GetAdapterModeCountEx(Adapter, &filter);
   }
 
@@ -183,7 +188,7 @@ namespace dxvk {
           D3DFORMAT           SurfaceFormat,
           BOOL                Windowed,
           D3DMULTISAMPLE_TYPE MultiSampleType,
-          DWORD*              pQualityLevels) { 
+          DWORD*              pQualityLevels) {
     if (auto* adapter = GetAdapter(Adapter))
       return adapter->CheckDeviceMultiSampleType(
         DeviceType, EnumerateFormat(SurfaceFormat),

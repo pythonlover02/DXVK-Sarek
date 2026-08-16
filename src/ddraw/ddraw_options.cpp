@@ -16,7 +16,6 @@ namespace dxvk {
     this->viewportZCorrection    = config.getOption<bool>   ("ddraw.viewportZCorrection",    false);
     this->forceLegacyDiscard     = config.getOption<bool>   ("ddraw.forceLegacyDiscard",     false);
     this->cpuProcessVertices     = config.getOption<bool>   ("ddraw.cpuProcessVertices",      true);
-    this->vertexOffset           = config.getOption<float>  ("ddraw.vertexOffset",            0.0f);
     this->backBufferResize       = config.getOption<bool>   ("ddraw.backBufferResize",        true);
     this->forceLegacyPresent     = config.getOption<bool>   ("ddraw.forceLegacyPresent",     false);
     this->forceRTFlip            = config.getOption<bool>   ("ddraw.forceRTFlip",            false);
@@ -31,8 +30,14 @@ namespace dxvk {
     this->robustTextureLifeCycle = config.getOption<bool>   ("ddraw.robustTextureLifeCycle", false);
     this->apitraceMode           = config.getOption<bool>   ("ddraw.apitraceMode",           false);
 
-    // Clamp the vertex offset in the (sensible) -1.0f/1.0f range
-    this->vertexOffset = dxvk::fclamp(this->vertexOffset, -1.0f, 1.0f);
+    std::string alternatePixelCenterStr = Config::toLower(config.getOption<std::string>("ddraw.alternatePixelCenter", "false"));
+    if (alternatePixelCenterStr == "true") {
+      this->alternatePixelCenter = AlternatePixelCenter::Disabled; // Unsupported in DXVK-Sarek
+    } else if (alternatePixelCenterStr == "legacy") {
+      this->alternatePixelCenter = AlternatePixelCenter::Legacy;
+    } else {
+      this->alternatePixelCenter = AlternatePixelCenter::Disabled;
+    }
 
     std::string legacyPresentGuardStr = Config::toLower(config.getOption<std::string>("ddraw.legacyPresentGuard", "auto"));
     if (legacyPresentGuardStr == "strict") {
@@ -44,7 +49,9 @@ namespace dxvk {
     }
 
     std::string emulateFSAAStr = Config::toLower(config.getOption<std::string>("ddraw.emulateFSAA", "false"));
-    if (emulateFSAAStr == "forced") {
+    if (emulateFSAAStr == "true") {
+      this->emulateFSAA = FSAAEmulation::Disabled; // Unsupported in DXVK-Sarek
+    } else if (emulateFSAAStr == "forced") {
       this->emulateFSAA = FSAAEmulation::Forced;
     } else {
       this->emulateFSAA = FSAAEmulation::Disabled;

@@ -16,8 +16,6 @@
 
 namespace dxvk {
 
-  std::atomic<uint32_t> D3D5Interface::s_intfCount = 0;
-
   D3D5Interface::D3D5Interface(
         D3DCommonInterface* commonD3DIntf,
         DDrawCommonInterface* m_commonIntf,
@@ -25,34 +23,28 @@ namespace dxvk {
     : DDrawChildObject<IUnknown, IDirect3D2>(pParent)
     , m_commonD3DIntf ( commonD3DIntf )
     , m_commonIntf ( m_commonIntf ) {
-    if (m_commonD3DIntf == nullptr) {
+    if (m_commonD3DIntf == nullptr)
       m_commonD3DIntf = new D3DCommonInterface();
 
-      Com<d3d9::IDirect3D9> d3d9Intf = d3d9::Direct3DCreate9(D3D_SDK_VERSION);
-      m_commonD3DIntf->SetD3D9Interface(std::move(d3d9Intf));
-    }
+    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+    // Retrieve and cache the base capabilities
+    m_desc = GetD3D5BaseCaps(d3dOptions);
 
     d3d9::IDirect3D9* d3d9Intf = m_commonD3DIntf->GetD3D9Interface();
 
     // Get the bridge interface to D3D9
-    if (unlikely(FAILED(d3d9Intf->QueryInterface(__uuidof(IDxvkD3D8InterfaceBridge), reinterpret_cast<void**>(&m_bridge))))) {
+    if (unlikely(FAILED(d3d9Intf->QueryInterface(__uuidof(IDxvkLegacyD3DInterfaceBridge), reinterpret_cast<void**>(&m_bridge))))) {
       throw DxvkError("D3D5Interface: ERROR! Failed to get D3D9 Bridge. d3d9.dll might not be DXVK!");
     }
 
     m_commonD3DIntf->SetD3D5Interface(this);
 
-    m_bridge->EnableD3D5CompatibilityMode();
-
-    m_intfCount = ++s_intfCount;
-
-    Logger::debug(str::format("D3D5Interface: Created a new interface nr. ((2-", m_intfCount, "))"));
+    m_bridge->SetD3DCompatibility(D3DCompatibility::D3D5);
   }
 
   D3D5Interface::~D3D5Interface() {
     if (m_commonD3DIntf->GetD3D5Interface() == this)
       m_commonD3DIntf->SetD3D5Interface(nullptr);
-
-    Logger::debug(str::format("D3D5Interface: Interface nr. ((2-", m_intfCount, ")) bites the dust"));
   }
 
   // Interlocked refcount with the parent IDirectDraw
@@ -149,8 +141,10 @@ namespace dxvk {
     // RAMP device (monochrome), this is expected to be exposed
     GUID guidRAMP = IID_IDirect3DRampDevice;
     // The caps of a RAMP device are mostly identical to an RGB device
-    D3DDEVICEDESC2 desc2RAMP_HAL = GetD3D5Caps(IID_IDirect3DRGBDevice, d3dOptions);
-    D3DDEVICEDESC2 desc2RAMP_HEL = desc2RAMP_HAL;
+    D3DDEVICEDESC2 desc2RAMP_HAL = m_desc;
+    ApplyD3D5DeviceCaps(&desc2RAMP_HAL, guidRAMP);
+    D3DDEVICEDESC2 desc2RAMP_HEL = m_desc;
+    ApplyD3D5DeviceCaps(&desc2RAMP_HEL, guidRAMP);
     D3DDEVICEDESC descRAMP_HAL = { };
     D3DDEVICEDESC descRAMP_HEL = { };
     desc2RAMP_HAL.dwFlags = 0;
@@ -182,8 +176,10 @@ namespace dxvk {
 
     // Software emulation, this is expected to be exposed
     GUID guidRGB = IID_IDirect3DRGBDevice;
-    D3DDEVICEDESC2 desc2RGB_HAL = GetD3D5Caps(IID_IDirect3DRGBDevice, d3dOptions);
-    D3DDEVICEDESC2 desc2RGB_HEL = desc2RGB_HAL;
+    D3DDEVICEDESC2 desc2RGB_HAL = m_desc;
+    ApplyD3D5DeviceCaps(&desc2RGB_HAL, guidRGB);
+    D3DDEVICEDESC2 desc2RGB_HEL = m_desc;
+    ApplyD3D5DeviceCaps(&desc2RGB_HEL, guidRGB);
     D3DDEVICEDESC descRGB_HAL = { };
     D3DDEVICEDESC descRGB_HEL = { };
     desc2RGB_HAL.dwFlags = 0;
@@ -214,8 +210,10 @@ namespace dxvk {
 
     // Hardware acceleration
     GUID guidHAL = IID_IDirect3DHALDevice;
-    D3DDEVICEDESC2 desc2HAL_HAL = GetD3D5Caps(IID_IDirect3DHALDevice, d3dOptions);
-    D3DDEVICEDESC2 desc2HAL_HEL = desc2HAL_HAL;
+    D3DDEVICEDESC2 desc2HAL_HAL = m_desc;
+    ApplyD3D5DeviceCaps(&desc2HAL_HAL, guidHAL);
+    D3DDEVICEDESC2 desc2HAL_HEL = m_desc;
+    ApplyD3D5DeviceCaps(&desc2HAL_HEL, guidHAL);
     D3DDEVICEDESC descHAL_HAL = { };
     D3DDEVICEDESC descHAL_HEL = { };
     desc2HAL_HEL.dcmColorModel = 0;
@@ -290,11 +288,11 @@ namespace dxvk {
     if (unlikely(!IsValidFindDeviceResultSize(lpD3DFDR->dwSize)))
       return DDERR_INVALIDPARAMS;
 
-    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
-
     // Software emulation, this is expected to be exposed
-    D3DDEVICEDESC2 descRGB_HAL = GetD3D5Caps(IID_IDirect3DRGBDevice, d3dOptions);
-    D3DDEVICEDESC2 descRGB_HEL = descRGB_HAL;
+    D3DDEVICEDESC2 descRGB_HAL = m_desc;
+    ApplyD3D5DeviceCaps(&descRGB_HAL, IID_IDirect3DRGBDevice);
+    D3DDEVICEDESC2 descRGB_HEL = m_desc;
+    ApplyD3D5DeviceCaps(&descRGB_HEL, IID_IDirect3DRGBDevice);
     descRGB_HAL.dwFlags = 0;
     descRGB_HAL.dcmColorModel = 0;
     // Some applications apparently care about HAL texture caps
@@ -306,8 +304,10 @@ namespace dxvk {
                                            & ~D3DPTEXTURECAPS_NONPOW2CONDITIONAL;
 
     // Hardware acceleration
-    D3DDEVICEDESC2 descHAL_HAL = GetD3D5Caps(IID_IDirect3DHALDevice, d3dOptions);
-    D3DDEVICEDESC2 descHAL_HEL = descHAL_HAL;
+    D3DDEVICEDESC2 descHAL_HAL = m_desc;
+    ApplyD3D5DeviceCaps(&descHAL_HAL, IID_IDirect3DHALDevice);
+    D3DDEVICEDESC2 descHAL_HEL = m_desc;
+    ApplyD3D5DeviceCaps(&descHAL_HEL, IID_IDirect3DHALDevice);
     descHAL_HEL.dcmColorModel = 0;
     // Some applications apparently care about HEL texture caps
     descHAL_HEL.dpcLineCaps.dwTextureCaps &= ~D3DPTEXTURECAPS_PERSPECTIVE
@@ -496,14 +496,12 @@ namespace dxvk {
 
     Logger::info(str::format("D3D5Interface::CreateDevice: Back buffer size: ", desc.dwWidth, "x", desc.dwHeight));
 
-    const DWORD backBufferCount = DetermineBackBufferCount(rt->GetProxied());
+    const DWORD backBufferCount = DetermineBackBufferCount<IDirectDrawSurface>(rt->GetProxied());
     Logger::info(str::format("D3D5Interface::CreateDevice: Back buffer count: ", backBufferCount));
-
-    Com<d3d9::IDirect3D9> d3d9Intf = m_commonD3DIntf->GetD3D9Interface();
 
     // Determine the supported AA sample count by querying the D3D9 interface
     const d3d9::D3DMULTISAMPLE_TYPE multiSampleType = d3dOptions->emulateFSAA != FSAAEmulation::Disabled ?
-                                                      GetSupportedMultiSampleType(d3d9Intf.ptr(), backBufferFormat) :
+                                                      m_commonD3DIntf->GetMultiSampleType(backBufferFormat) :
                                                       d3d9::D3DMULTISAMPLE_NONE;
 
     d3d9::D3DPRESENT_PARAMETERS params;
@@ -523,7 +521,7 @@ namespace dxvk {
     params.PresentationInterval       = D3DPRESENT_INTERVAL_DEFAULT; // A D3D5 device always uses VSync
 
     Com<d3d9::IDirect3DDevice9> device9;
-    HRESULT hr = d3d9Intf->CreateDevice(
+    HRESULT hr = m_commonD3DIntf->GetD3D9Interface()->CreateDevice(
       D3DADAPTER_DEFAULT,
       d3d9::D3DDEVTYPE_HAL,
       hWnd,
@@ -543,8 +541,11 @@ namespace dxvk {
 
       // Set the common device on the common interface
       m_commonIntf->SetCommonD3DDevice(device5->GetCommonD3DDevice());
-      // Now that we have a valid D3D9 device pointer, we can initialize the depth stencil (if any)
-      device5->InitializeDS();
+      // Now that we have a valid common D3D device on the DDraw interface,
+      // we can initialize the render target and depth stencil (if any)
+      hr = device5->InitializeRTAndDS();
+      if (unlikely(FAILED(hr)))
+        return hr;
 
       *lplpD3DDevice = device5.ref();
     } catch (const DxvkError& e) {
@@ -553,33 +554,6 @@ namespace dxvk {
     }
 
     return D3D_OK;
-  }
-
-  inline DWORD D3D5Interface::DetermineBackBufferCount(IDirectDrawSurface* renderTarget) {
-    DWORD backBufferCount = 0;
-
-    IDirectDrawSurface* backBuffer = renderTarget;
-    HRESULT hr;
-
-    while (backBuffer != nullptr) {
-      IDirectDrawSurface* parentSurface = backBuffer;
-      backBuffer = nullptr;
-
-      hr = parentSurface->EnumAttachedSurfaces(&backBuffer, ListBackBufferSurfacesCallback);
-      if (unlikely(FAILED(hr))) {
-        Logger::warn("D3D5Interface::DetermineBackBufferCount: Unable to enumerate attached surfaces");
-        break;
-      }
-
-      // The swapchain will eventually return to its origin
-      if (backBuffer == renderTarget)
-        break;
-
-      if (likely(backBuffer != nullptr))
-        backBufferCount++;
-    }
-
-    return std::max<DWORD>(1u, backBufferCount);
   }
 
 }

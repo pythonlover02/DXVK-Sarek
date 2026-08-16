@@ -1,8 +1,17 @@
 #pragma once
 
 #include <windows.h>
-#include <d3d9.h>
 #include "../util/config/config.h"
+#include "../util/util_flags.h"
+
+enum class DxvkD3DCompatibility : uint8_t {
+  D3D9Ex,
+  D3D8,
+  D3D7,
+  D3D6,
+  D3D5,
+  D3D3
+};
 
 /**
  * The D3D9 bridge allows D3D8 to access DXVK internals.
@@ -14,8 +23,8 @@
 /**
  * \brief D3D9 device interface for D3D8 interop
  */
-MIDL_INTERFACE("D3D9D3D8-42A9-4C1E-AA97-BEEFCAFE2000")
-IDxvkD3D8Bridge : public IUnknown {
+MIDL_INTERFACE("D3D0D3D9-42A9-4C1E-AA97-BEEFCAFE2000")
+IDxvkLegacyD3DDeviceBridge : public IUnknown {
 
   // D3D8 keeps D3D9 objects contained in a namespace.
   #ifdef DXVK_D3D9_NAMESPACE
@@ -31,6 +40,22 @@ IDxvkD3D8Bridge : public IUnknown {
    * \param [in] pSrcSurface  Source surface (typically in system memory)
    * \param [in] pSrcRect     Source rectangle
    * \param [in] pDestPoint   Destination (top-left) point
+   */
+  virtual HRESULT UpdateTextureFromBuffer(
+      IDirect3DSurface9*        pDestSurface,
+      IDirect3DSurface9*        pSrcSurface,
+      const RECT*               pSrcRect,
+      const POINT*              pDestPoint) = 0;
+
+  /**
+   * \brief Checks if a particular surface format is supported by D3D9
+   *
+   * \param [in] Format D3DFORMAT value to be checked
+   */
+  virtual bool IsSupportedSurfaceFormat(D3DFORMAT Format) = 0;
+
+  /**
+   * \brief Determines the initial amount of texture memory for a device
    */
   virtual uint32_t DetermineInitialTextureMemory() = 0;
 
@@ -62,49 +87,25 @@ IDxvkD3D8Bridge : public IUnknown {
    */
   virtual HRESULT SetLegacyLightsState(bool legacyLightsState) = 0;
 
-  virtual HRESULT UpdateTextureFromBuffer(
-      IDirect3DSurface9*        pDestSurface,
-      IDirect3DSurface9*        pSrcSurface,
-      const RECT*               pSrcRect,
-      const POINT*              pDestPoint) = 0;
-
   /**
-   * \brief Checks if a particular surface format is supported by D3D9
+   * \brief Updates the alternate pixel center state in D3D9
    *
-   * \param [in] Format D3DFORMAT value to be checked
+   * \param [in] Params bool value to be used
    */
-  virtual bool IsSupportedSurfaceFormat(D3DFORMAT Format) = 0;
+  virtual HRESULT SetAlternatePixelCenter(bool alternatePixelCenter) = 0;
 };
 
 /**
  * \brief D3D9 instance interface for D3D8 interop
  */
-MIDL_INTERFACE("D3D9D3D8-A407-773E-18E9-CAFEBEEF3000")
-IDxvkD3D8InterfaceBridge : public IUnknown {
+MIDL_INTERFACE("D3D0D3D9-A407-773E-18E9-CAFEBEEF3000")
+IDxvkLegacyD3DInterfaceBridge : public IUnknown {
   /**
-   * \brief Enforces D3D3-specific features and validations
+   * \brief Enforces legacy D3D features and validations
+   *
+   * \param [in] d3dCompatibility D3D compatibility level to be set
    */
-  virtual void EnableD3D3CompatibilityMode() = 0;
-
-  /**
-   * \brief Enforces D3D5-specific features and validations
-   */
-  virtual void EnableD3D5CompatibilityMode() = 0;
-
-  /**
-   * \brief Enforces D3D6-specific features and validations
-   */
-  virtual void EnableD3D6CompatibilityMode() = 0;
-
-  /**
-   * \brief Enforces D3D7-specific features and validations
-   */
-  virtual void EnableD3D7CompatibilityMode() = 0;
-
-  /**
-   * \brief Enforces D3D8-specific features and validations
-   */
-  virtual void EnableD3D8CompatibilityMode() = 0;
+  virtual void SetD3DCompatibility(DxvkD3DCompatibility d3dCompatibility) const = 0;
 
   /**
    * \brief Retrieves the DXVK configuration
@@ -115,28 +116,39 @@ IDxvkD3D8InterfaceBridge : public IUnknown {
 };
 
 #ifndef _MSC_VER
-__CRT_UUID_DECL(IDxvkD3D8Bridge, 0xD3D9D3D8, 0x42A9, 0x4C1E, 0xAA, 0x97, 0xBE, 0xEF, 0xCA, 0xFE, 0x20, 0x00);
-__CRT_UUID_DECL(IDxvkD3D8InterfaceBridge, 0xD3D9D3D8, 0xA407, 0x773E, 0x18, 0xE9, 0xCA, 0xFE, 0xBE, 0xEF, 0x30, 0x00);
+__CRT_UUID_DECL(IDxvkLegacyD3DDeviceBridge,    0xD3D0D3D9, 0x42A9, 0x4C1E, 0xAA, 0x97, 0xBE, 0xEF, 0xCA, 0xFE, 0x20, 0x00);
+__CRT_UUID_DECL(IDxvkLegacyD3DInterfaceBridge, 0xD3D0D3D9, 0xA407, 0x773E, 0x18, 0xE9, 0xCA, 0xFE, 0xBE, 0xEF, 0x30, 0x00);
 #endif
 
 namespace dxvk {
 
+  using D3DCompatibility = DxvkD3DCompatibility;
+  using D3DCompatibilityFlags = Flags<D3DCompatibility>;
+
   class D3D9DeviceEx;
   class D3D9InterfaceEx;
 
-  class DxvkD3D8Bridge : public IDxvkD3D8Bridge {
+  class DxvkLegacyD3DDeviceBridge : public IDxvkLegacyD3DDeviceBridge {
 
   public:
 
-    DxvkD3D8Bridge(D3D9DeviceEx* pDevice);
+    DxvkLegacyD3DDeviceBridge(D3D9DeviceEx* pDevice);
 
-    ~DxvkD3D8Bridge();
+    ~DxvkLegacyD3DDeviceBridge();
 
     ULONG STDMETHODCALLTYPE AddRef();
     ULONG STDMETHODCALLTYPE Release();
     HRESULT STDMETHODCALLTYPE QueryInterface(
             REFIID  riid,
             void** ppvObject);
+
+    HRESULT UpdateTextureFromBuffer(
+        IDirect3DSurface9*        pDestSurface,
+        IDirect3DSurface9*        pSrcSurface,
+        const RECT*               pSrcRect,
+        const POINT*              pDestPoint);
+
+    bool IsSupportedSurfaceFormat(D3DFORMAT Format);
 
     uint32_t DetermineInitialTextureMemory();
 
@@ -148,13 +160,7 @@ namespace dxvk {
 
     HRESULT SetLegacyLightsState(bool legacyLightsState);
 
-    HRESULT UpdateTextureFromBuffer(
-        IDirect3DSurface9*        pDestSurface,
-        IDirect3DSurface9*        pSrcSurface,
-        const RECT*               pSrcRect,
-        const POINT*              pDestPoint);
-
-    bool IsSupportedSurfaceFormat(D3DFORMAT Format);
+    HRESULT SetAlternatePixelCenter(bool alternatePixelCenter);
 
   private:
 
@@ -162,13 +168,13 @@ namespace dxvk {
 
   };
 
-  class DxvkD3D8InterfaceBridge : public IDxvkD3D8InterfaceBridge {
+  class DxvkLegacyD3DInterfaceBridge : public IDxvkLegacyD3DInterfaceBridge {
 
   public:
 
-    DxvkD3D8InterfaceBridge(D3D9InterfaceEx* pObject);
+    DxvkLegacyD3DInterfaceBridge(D3D9InterfaceEx* pObject);
 
-    ~DxvkD3D8InterfaceBridge();
+    ~DxvkLegacyD3DInterfaceBridge();
 
     ULONG STDMETHODCALLTYPE AddRef();
     ULONG STDMETHODCALLTYPE Release();
@@ -176,15 +182,7 @@ namespace dxvk {
             REFIID  riid,
             void** ppvObject);
 
-    void EnableD3D3CompatibilityMode();
-
-    void EnableD3D5CompatibilityMode();
-
-    void EnableD3D6CompatibilityMode();
-
-    void EnableD3D7CompatibilityMode();
-
-    void EnableD3D8CompatibilityMode();
+    void SetD3DCompatibility(D3DCompatibility d3dCompatibility) const;
 
     const Config* GetConfig() const;
 

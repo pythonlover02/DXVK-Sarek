@@ -54,17 +54,16 @@ namespace dxvk {
 
   private:
 
-    Com<IDxvkD3D8InterfaceBridge> m_bridge;
+    Com<IDxvkLegacyD3DInterfaceBridge> m_bridge;
 
-    Com<D3DCommonInterface>       m_commonD3DIntf;
+    Com<D3DCommonInterface>            m_commonD3DIntf;
 
-    DDrawCommonInterface*         m_commonIntf = nullptr;
+    DDrawCommonInterface*              m_commonIntf = nullptr;
 
-    Com<D3D6Interface, false>     m_d3d6Intf;
-    Com<D3D5Interface, false>     m_d3d5Intf;
+    D3DDEVICEDESC3                     m_desc;
 
-    uint32_t                      m_intfCount  = 0;
-    static std::atomic<uint32_t>  s_intfCount;
+    Com<D3D6Interface, false>          m_d3d6Intf;
+    Com<D3D5Interface, false>          m_d3d5Intf;
 
   };
 

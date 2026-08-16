@@ -8,49 +8,28 @@
 
 namespace dxvk {
 
-  DxvkD3D8Bridge::DxvkD3D8Bridge(D3D9DeviceEx* pDevice)
+  DxvkLegacyD3DDeviceBridge::DxvkLegacyD3DDeviceBridge(D3D9DeviceEx* pDevice)
     : m_device(pDevice) {
   }
 
-  DxvkD3D8Bridge::~DxvkD3D8Bridge() {
+  DxvkLegacyD3DDeviceBridge::~DxvkLegacyD3DDeviceBridge() {
   }
 
-  ULONG STDMETHODCALLTYPE DxvkD3D8Bridge::AddRef() {
+  ULONG STDMETHODCALLTYPE DxvkLegacyD3DDeviceBridge::AddRef() {
     return m_device->AddRef();
   }
 
-  ULONG STDMETHODCALLTYPE DxvkD3D8Bridge::Release() {
+  ULONG STDMETHODCALLTYPE DxvkLegacyD3DDeviceBridge::Release() {
     return m_device->Release();
   }
 
-  HRESULT STDMETHODCALLTYPE DxvkD3D8Bridge::QueryInterface(
+  HRESULT STDMETHODCALLTYPE DxvkLegacyD3DDeviceBridge::QueryInterface(
           REFIID  riid,
           void** ppvObject) {
     return m_device->QueryInterface(riid, ppvObject);
   }
 
-  uint32_t DxvkD3D8Bridge::DetermineInitialTextureMemory() {
-    const int64_t initialTextureMemory = m_device->DetermineInitialTextureMemory();
-    return initialTextureMemory > 0 ? static_cast<uint32_t>(initialTextureMemory) : 0;
-  }
-
-  HRESULT DxvkD3D8Bridge::ResetSwapChain(D3DPRESENT_PARAMETERS* Params) {
-    return m_device->ResetSwapChain(Params, nullptr);
-  }
-
-  HRESULT DxvkD3D8Bridge::SetColorKeyState(bool colorKeyState) {
-    return D3D_OK; //m_device->SetColorKeyState(colorKeyState);
-  }
-
-  HRESULT DxvkD3D8Bridge::SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh) {
-    return D3D_OK; //m_device->SetColorKey(colorKeyLow, colorKeyHigh);
-  }
-
-  HRESULT DxvkD3D8Bridge::SetLegacyLightsState(bool legacyLightsState) {
-    return m_device->SetLegacyLightsState(legacyLightsState);
-  }
-
-  HRESULT DxvkD3D8Bridge::UpdateTextureFromBuffer(
+  HRESULT DxvkLegacyD3DDeviceBridge::UpdateTextureFromBuffer(
         IDirect3DSurface9*  pDestSurface,
         IDirect3DSurface9*  pSrcSurface,
         const RECT*         pSrcRect,
@@ -110,53 +89,71 @@ namespace dxvk {
     return D3D_OK;
   }
 
-  bool DxvkD3D8Bridge::IsSupportedSurfaceFormat(D3DFORMAT Format) {
+  bool DxvkLegacyD3DDeviceBridge::IsSupportedSurfaceFormat(D3DFORMAT Format) {
     auto mapping = m_device->LookupFormat(EnumerateFormat(Format));
     return mapping.IsValid();
   }
 
-  DxvkD3D8InterfaceBridge::DxvkD3D8InterfaceBridge(D3D9InterfaceEx* pObject)
+  uint32_t DxvkLegacyD3DDeviceBridge::DetermineInitialTextureMemory() {
+    const int64_t initialTextureMemory = m_device->DetermineInitialTextureMemory();
+
+    return initialTextureMemory > 0 ? static_cast<uint32_t>(initialTextureMemory) : 0;
+  }
+
+  HRESULT DxvkLegacyD3DDeviceBridge::ResetSwapChain(D3DPRESENT_PARAMETERS* Params) {
+    return m_device->ResetSwapChain(Params, nullptr);
+  }
+
+  HRESULT DxvkLegacyD3DDeviceBridge::SetColorKeyState(bool colorKeyState) {
+    //return m_device->SetColorKeyState(colorKeyState);
+    return D3D_OK;
+  }
+
+  HRESULT DxvkLegacyD3DDeviceBridge::SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh) {
+    //return m_device->SetColorKey(colorKeyLow, colorKeyHigh);
+    return D3D_OK;
+  }
+
+  HRESULT DxvkLegacyD3DDeviceBridge::SetLegacyLightsState(bool legacyLightsState) {
+    return m_device->SetLegacyLightsState(legacyLightsState);
+  }
+
+  HRESULT DxvkLegacyD3DDeviceBridge::SetAlternatePixelCenter(bool alternatePixelCenter) {
+    //return m_device->SetAlternatePixelCenter(alternatePixelCenter);
+    return D3D_OK;
+  }
+
+  DxvkLegacyD3DInterfaceBridge::DxvkLegacyD3DInterfaceBridge(D3D9InterfaceEx* pObject)
     : m_interface(pObject) {
   }
 
-  DxvkD3D8InterfaceBridge::~DxvkD3D8InterfaceBridge() {
+  DxvkLegacyD3DInterfaceBridge::~DxvkLegacyD3DInterfaceBridge() {
   }
 
-  ULONG STDMETHODCALLTYPE DxvkD3D8InterfaceBridge::AddRef() {
+  ULONG STDMETHODCALLTYPE DxvkLegacyD3DInterfaceBridge::AddRef() {
     return m_interface->AddRef();
   }
 
-  ULONG STDMETHODCALLTYPE DxvkD3D8InterfaceBridge::Release() {
+  ULONG STDMETHODCALLTYPE DxvkLegacyD3DInterfaceBridge::Release() {
     return m_interface->Release();
   }
 
-  HRESULT STDMETHODCALLTYPE DxvkD3D8InterfaceBridge::QueryInterface(
+  HRESULT STDMETHODCALLTYPE DxvkLegacyD3DInterfaceBridge::QueryInterface(
           REFIID  riid,
           void** ppvObject) {
     return m_interface->QueryInterface(riid, ppvObject);
   }
 
-  void DxvkD3D8InterfaceBridge::EnableD3D3CompatibilityMode() {
-    m_interface->EnableD3D3CompatibilityMode();
+  void DxvkLegacyD3DInterfaceBridge::SetD3DCompatibility(D3DCompatibility d3dCompatibility) const {
+    // The D3D9Ex compatibility flag is internal only, and can't be set by the bridge
+    if (likely(d3dCompatibility != D3DCompatibility::D3D9Ex)) {
+      m_interface->SetD3DCompatibility(d3dCompatibility);
+    } else {
+      Logger::err("DxvkLegacyD3DInterfaceBridge::SetD3DCompatibility: Invalid compatibility level: D3D9Ex");
+    }
   }
 
-  void DxvkD3D8InterfaceBridge::EnableD3D5CompatibilityMode() {
-    m_interface->EnableD3D5CompatibilityMode();
-  }
-
-  void DxvkD3D8InterfaceBridge::EnableD3D6CompatibilityMode() {
-    m_interface->EnableD3D6CompatibilityMode();
-  }
-
-  void DxvkD3D8InterfaceBridge::EnableD3D7CompatibilityMode() {
-    m_interface->EnableD3D7CompatibilityMode();
-  }
-
-  void DxvkD3D8InterfaceBridge::EnableD3D8CompatibilityMode() {
-    m_interface->EnableD3D8CompatibilityMode();
-  }
-
-  const Config* DxvkD3D8InterfaceBridge::GetConfig() const {
+  const Config* DxvkLegacyD3DInterfaceBridge::GetConfig() const {
     return &m_interface->GetInstance()->config();
   }
 

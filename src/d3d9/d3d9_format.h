@@ -178,6 +178,8 @@ namespace dxvk {
 
   D3D9_VK_FORMAT_MAPPING ConvertFormatUnfixed(D3D9Format Format);
 
+  class D3D9Adapter;
+
   /**
    * \brief Format table
    *
@@ -212,7 +214,8 @@ namespace dxvk {
     const DxvkFormatInfo* GetUnsupportedFormatInfo(
       D3D9Format            Format) const;
 
-    void RefreshFormatSupport(bool isD3D8Compatible);
+    void RefreshFormatSupport(
+      const D3D9Adapter*          pParent);
 
   private:
 

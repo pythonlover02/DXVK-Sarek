@@ -242,7 +242,8 @@ namespace dxvk {
 
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(IDirect3DSwapChain9)
-     || (GetParent()->IsExtended() && riid == __uuidof(IDirect3DSwapChain9Ex))) {
+     || (m_parent->IsD3DCompatibile(D3DCompatibility::D3D9Ex) &&
+         riid == __uuidof(IDirect3DSwapChain9Ex))) {
       *ppvObject = ref(this);
       return S_OK;
     }
@@ -776,7 +777,7 @@ namespace dxvk {
     }
 
     // For D3D7 and earlier we always fake windowed mode because of DDraw interop
-    if (!isIdentity && (!m_presentParams.Windowed || m_parent->IsD3D7Compatible()))
+    if (!isIdentity && (!m_presentParams.Windowed || m_parent->IsD3DCompatibile(D3DCompatibility::D3D7)))
       m_blitter->setGammaRamp(NumControlPoints, cp.data());
     else
       m_blitter->setGammaRamp(0, nullptr);
@@ -1441,12 +1442,12 @@ namespace dxvk {
 
 
   std::string D3D9SwapChainEx::GetApiName() {
-    return this->GetParent()->IsD3D3Compatible() ? "D3D3" :
-           this->GetParent()->IsD3D5Compatible() ? "D3D5" :
-           this->GetParent()->IsD3D6Compatible() ? "D3D6" :
-           this->GetParent()->IsD3D7Compatible() ? "D3D7" :
-           this->GetParent()->IsD3D8Compatible() ? "D3D8" :
-           this->GetParent()->IsExtended() ? "D3D9Ex" : "D3D9";
+    return m_parent->IsD3DCompatibile(D3DCompatibility::D3D3) ? "D3D3" :
+           m_parent->IsD3DCompatibile(D3DCompatibility::D3D5) ? "D3D5" :
+           m_parent->IsD3DCompatibile(D3DCompatibility::D3D6) ? "D3D6" :
+           m_parent->IsD3DCompatibile(D3DCompatibility::D3D7) ? "D3D7" :
+           m_parent->IsD3DCompatibile(D3DCompatibility::D3D8) ? "D3D8" :
+           m_parent->IsD3DCompatibile(D3DCompatibility::D3D9Ex) ? "D3D9Ex" : "D3D9";
   }
 
 }

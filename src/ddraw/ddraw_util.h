@@ -12,8 +12,8 @@
 namespace dxvk {
 
   struct PackedVertexBuffer {
-    std::vector<uint8_t> vertexData;
     UINT stride;
+    std::vector<uint8_t> vertexData;
   };
 
   struct VertexStreamInfo {
@@ -340,7 +340,7 @@ namespace dxvk {
 
   inline DWORD DecodeD3D7TexFilterValues(const D3DTEXTURESTAGESTATETYPE StageType, const DWORD FilterType7) {
     switch (StageType) {
-      case D3DTSS_MAGFILTER: {
+      case D3DTSS_MAGFILTER:
         switch (FilterType7) {
           default:
           case D3DTFG_POINT:          return d3d9::D3DTEXF_POINT;
@@ -349,8 +349,7 @@ namespace dxvk {
           case D3DTFG_ANISOTROPIC:    return d3d9::D3DTEXF_ANISOTROPIC;
         }
         break;
-      }
-      case D3DTSS_MINFILTER: {
+      case D3DTSS_MINFILTER:
         switch (FilterType7) {
           default:
           case D3DTFN_POINT:          return d3d9::D3DTEXF_POINT;
@@ -358,8 +357,7 @@ namespace dxvk {
           case D3DTFN_ANISOTROPIC:    return d3d9::D3DTEXF_ANISOTROPIC;
         }
         break;
-      }
-      case D3DTSS_MIPFILTER: {
+      case D3DTSS_MIPFILTER:
         switch (FilterType7) {
           // All values in D3DTEXTUREMIPFILTER are offset by +1
           // vs D3DTEXTUREFILTERTYPE...
@@ -369,14 +367,13 @@ namespace dxvk {
           case D3DTFP_LINEAR:         return d3d9::D3DTEXF_LINEAR;
         }
         break;
-      }
       default: return 0;
     }
   }
 
   inline DWORD DecodeD3D9TexFilterValues(const D3DTEXTURESTAGESTATETYPE StageType, const DWORD FilterType9) {
     switch (StageType) {
-      case D3DTSS_MAGFILTER: {
+      case D3DTSS_MAGFILTER:
         switch (FilterType9) {
           default:
           case d3d9::D3DTEXF_POINT:       return D3DTFG_POINT;
@@ -385,8 +382,7 @@ namespace dxvk {
           case d3d9::D3DTEXF_ANISOTROPIC: return D3DTFG_ANISOTROPIC;
         }
         break;
-      }
-      case D3DTSS_MINFILTER: {
+      case D3DTSS_MINFILTER:
         switch (FilterType9) {
           default:
           case d3d9::D3DTEXF_POINT:       return D3DTFN_POINT;
@@ -394,8 +390,7 @@ namespace dxvk {
           case d3d9::D3DTEXF_ANISOTROPIC: return D3DTFN_ANISOTROPIC;
         }
         break;
-      }
-      case D3DTSS_MIPFILTER: {
+      case D3DTSS_MIPFILTER:
         switch (FilterType9) {
           // All values in D3DTEXTUREMIPFILTER are offset by +1
           // vs D3DTEXTUREFILTERTYPE...
@@ -405,28 +400,30 @@ namespace dxvk {
           case d3d9::D3DTEXF_LINEAR:      return D3DTFP_LINEAR;
         }
         break;
-      }
       default: return 0;
     }
   }
 
   inline DWORD DecodeTextureMinValues(DWORD minFilter, DWORD mipFilter) {
-    if (minFilter == d3d9::D3DTEXF_POINT) {
-      switch(mipFilter) {
-        default:
-        case d3d9::D3DTEXF_NONE:   return D3DFILTER_NEAREST;
-        case d3d9::D3DTEXF_POINT:  return D3DFILTER_MIPNEAREST;
-        case d3d9::D3DTEXF_LINEAR: return D3DFILTER_LINEARMIPNEAREST;
-      }
-    } else if (minFilter == d3d9::D3DTEXF_LINEAR) {
-      switch(mipFilter) {
-        default:
-        case d3d9::D3DTEXF_NONE:   return D3DFILTER_LINEAR;
-        case d3d9::D3DTEXF_POINT:  return D3DFILTER_MIPLINEAR;
-        case d3d9::D3DTEXF_LINEAR: return D3DFILTER_LINEARMIPLINEAR;
-      }
+    switch (minFilter) {
+      case d3d9::D3DTEXF_POINT:
+        switch (mipFilter) {
+          default:
+          case d3d9::D3DTEXF_NONE:   return D3DFILTER_NEAREST;
+          case d3d9::D3DTEXF_POINT:  return D3DFILTER_MIPNEAREST;
+          case d3d9::D3DTEXF_LINEAR: return D3DFILTER_LINEARMIPNEAREST;
+        }
+        break;
+      case d3d9::D3DTEXF_LINEAR:
+        switch (mipFilter) {
+          default:
+          case d3d9::D3DTEXF_NONE:   return D3DFILTER_LINEAR;
+          case d3d9::D3DTEXF_POINT:  return D3DFILTER_MIPLINEAR;
+          case d3d9::D3DTEXF_LINEAR: return D3DFILTER_LINEARMIPLINEAR;
+        }
+        break;
+      default: return 0;
     }
-    return 0;
   }
 
   inline HRESULT ValidateViewportRT(
@@ -450,7 +447,7 @@ namespace dxvk {
     return D3D_OK;
   }
 
-  inline D3DDEVICEDESC3 GetD3D3Caps(const IID rclsid, const D3DOptions* options) {
+  inline D3DDEVICEDESC3 GetD3D3BaseCaps(const D3DOptions* options) {
     D3DDEVICEDESC3 desc;
 
     desc.dwSize    = sizeof(D3DDEVICEDESC3);
@@ -479,14 +476,6 @@ namespace dxvk {
                    | D3DDEVCAPS_TEXTUREVIDEOMEMORY
                    | D3DDEVCAPS_TLVERTEXSYSTEMMEMORY
                    | D3DDEVCAPS_TLVERTEXVIDEOMEMORY;
-
-    // Also advertised in D3D3
-    if (rclsid == IID_IDirect3DHALDevice) {
-      desc.dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
-                      | D3DDEVCAPS_HWTRANSFORMANDLIGHT
-                      | D3DDEVCAPS_DRAWPRIMITIVES2
-                      | D3DDEVCAPS_DRAWPRIMITIVES2EX;
-    }
 
     D3DTRANSFORMCAPS transformCaps;
     transformCaps.dwSize = sizeof(D3DTRANSFORMCAPS);
@@ -620,7 +609,21 @@ namespace dxvk {
     return desc;
   }
 
-  inline D3DDEVICEDESC2 GetD3D5Caps(const IID rclsid, const D3DOptions* options) {
+  inline void ApplyD3D3DeviceCaps(D3DDEVICEDESC3* desc, const IID rclsid) {
+    if (rclsid == IID_IDirect3DHALDevice) {
+      desc->dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
+                       | D3DDEVCAPS_HWTRANSFORMANDLIGHT
+                       | D3DDEVCAPS_DRAWPRIMITIVES2
+                       | D3DDEVCAPS_DRAWPRIMITIVES2EX;
+    } else {
+      desc->dwDevCaps &= ~D3DDEVCAPS_HWRASTERIZATION
+                       & ~D3DDEVCAPS_HWTRANSFORMANDLIGHT
+                       & ~D3DDEVCAPS_DRAWPRIMITIVES2
+                       & ~D3DDEVCAPS_DRAWPRIMITIVES2EX;
+    }
+  }
+
+  inline D3DDEVICEDESC2 GetD3D5BaseCaps(const D3DOptions* options) {
     D3DDEVICEDESC2 desc;
 
     desc.dwSize    = sizeof(D3DDEVICEDESC2);
@@ -657,14 +660,6 @@ namespace dxvk {
     // Powerslide uses a broken rendering path if non-local video memory is advertized
     if (likely(options->nonLocalVideoMemory)) {
       desc.dwDevCaps |= D3DDEVCAPS_TEXTURENONLOCALVIDMEM;
-    }
-
-    // Also advertised in D3D5
-    if (rclsid == IID_IDirect3DHALDevice) {
-      desc.dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
-                      | D3DDEVCAPS_HWTRANSFORMANDLIGHT
-                      | D3DDEVCAPS_DRAWPRIMITIVES2
-                      | D3DDEVCAPS_DRAWPRIMITIVES2EX;
     }
 
     D3DTRANSFORMCAPS transformCaps;
@@ -825,7 +820,21 @@ namespace dxvk {
     return desc;
   }
 
-  inline D3DDEVICEDESC GetD3D6Caps(const IID rclsid, const D3DOptions* options) {
+  inline void ApplyD3D5DeviceCaps(D3DDEVICEDESC2* desc, const IID rclsid) {
+    if (rclsid == IID_IDirect3DHALDevice) {
+      desc->dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
+                       | D3DDEVCAPS_HWTRANSFORMANDLIGHT
+                       | D3DDEVCAPS_DRAWPRIMITIVES2
+                       | D3DDEVCAPS_DRAWPRIMITIVES2EX;
+    } else {
+      desc->dwDevCaps &= ~D3DDEVCAPS_HWRASTERIZATION
+                       & ~D3DDEVCAPS_HWTRANSFORMANDLIGHT
+                       & ~D3DDEVCAPS_DRAWPRIMITIVES2
+                       & ~D3DDEVCAPS_DRAWPRIMITIVES2EX;
+    }
+  }
+
+  inline D3DDEVICEDESC GetD3D6BaseCaps(const D3DOptions* options) {
     D3DDEVICEDESC desc;
 
     desc.dwSize    = sizeof(D3DDEVICEDESC);
@@ -862,14 +871,6 @@ namespace dxvk {
     // Powerslide uses a broken rendering path if non-local video memory is advertized
     if (likely(options->nonLocalVideoMemory)) {
       desc.dwDevCaps |= D3DDEVCAPS_TEXTURENONLOCALVIDMEM;
-    }
-
-    // Also advertised in D3D6
-    if (rclsid == IID_IDirect3DHALDevice) {
-      desc.dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
-                      | D3DDEVCAPS_HWTRANSFORMANDLIGHT
-                      | D3DDEVCAPS_DRAWPRIMITIVES2
-                      | D3DDEVCAPS_DRAWPRIMITIVES2EX;
     }
 
     D3DTRANSFORMCAPS transformCaps;
@@ -1090,7 +1091,21 @@ namespace dxvk {
     return desc;
   }
 
-  inline D3DDEVICEDESC7 GetD3D7Caps(const IID rclsid, const D3DOptions* options) {
+  inline void ApplyD3D6DeviceCaps(D3DDEVICEDESC* desc, const IID rclsid) {
+    if (rclsid == IID_IDirect3DHALDevice) {
+      desc->dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
+                       | D3DDEVCAPS_HWTRANSFORMANDLIGHT
+                       | D3DDEVCAPS_DRAWPRIMITIVES2
+                       | D3DDEVCAPS_DRAWPRIMITIVES2EX;
+    } else {
+      desc->dwDevCaps &= ~D3DDEVCAPS_HWRASTERIZATION
+                       & ~D3DDEVCAPS_HWTRANSFORMANDLIGHT
+                       & ~D3DDEVCAPS_DRAWPRIMITIVES2
+                       & ~D3DDEVCAPS_DRAWPRIMITIVES2EX;
+    }
+  }
+
+  inline D3DDEVICEDESC7 GetD3D7BaseCaps(const D3DOptions* options) {
     D3DDEVICEDESC7 desc7;
 
     desc7.dwDevCaps = D3DDEVCAPS_CANBLTSYSTONONLOCAL
@@ -1107,7 +1122,6 @@ namespace dxvk {
                  // | D3DDEVCAPS_SORTDECREASINGZ
                  // | D3DDEVCAPS_SORTEXACT
                  // | D3DDEVCAPS_SORTINCREASINGZ
-                 // | D3DDEVCAPS_STRIDEDVERTICES // Mentioned in the docs, but apparently is a ghost
                  // | D3DDEVCAPS_TEXTURENONLOCALVIDMEM // Exposed through a config option
                  // | D3DDEVCAPS_TEXTURESYSTEMMEMORY
                     | D3DDEVCAPS_TEXTUREVIDEOMEMORY
@@ -1117,18 +1131,6 @@ namespace dxvk {
     // Powerslide uses a broken rendering path if non-local video memory is advertized
     if (likely(options->nonLocalVideoMemory)) {
       desc7.dwDevCaps |= D3DDEVCAPS_TEXTURENONLOCALVIDMEM;
-    }
-
-    if (rclsid == IID_IDirect3DTnLHalDevice) {
-      desc7.dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
-                       | D3DDEVCAPS_HWTRANSFORMANDLIGHT
-                       | D3DDEVCAPS_DRAWPRIMITIVES2
-                       | D3DDEVCAPS_DRAWPRIMITIVES2EX;
-    }
-    else if (rclsid == IID_IDirect3DHALDevice) {
-      desc7.dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
-                       | D3DDEVCAPS_DRAWPRIMITIVES2
-                       | D3DDEVCAPS_DRAWPRIMITIVES2EX;
     }
 
     D3DPRIMCAPS prim;
@@ -1328,7 +1330,7 @@ namespace dxvk {
     desc7.dwMaxActiveLights        = ddrawCaps::MaxEnabledLights;
     desc7.dvMaxVertexW             = 1e10f;
 
-    desc7.deviceGUID               = rclsid;
+    desc7.deviceGUID               = GUID_NULL;
 
     desc7.wMaxUserClipPlanes       = ddrawCaps::MaxClipPlanes;
     desc7.wMaxVertexBlendMatrices  = 4;
@@ -1348,333 +1350,24 @@ namespace dxvk {
     return desc7;
   }
 
-  inline bool IsValidD3D3RenderStateType(D3DRENDERSTATETYPE rs) {
-    return rs == D3DRENDERSTATE_TEXTUREHANDLE
-        || rs == D3DRENDERSTATE_ANTIALIAS
-        || rs == D3DRENDERSTATE_TEXTUREADDRESS
-        || rs == D3DRENDERSTATE_TEXTUREPERSPECTIVE
-        || rs == D3DRENDERSTATE_WRAPU
-        || rs == D3DRENDERSTATE_WRAPV
-        || rs == D3DRENDERSTATE_ZENABLE
-        || rs == D3DRENDERSTATE_FILLMODE
-        || rs == D3DRENDERSTATE_SHADEMODE
-        || rs == D3DRENDERSTATE_LINEPATTERN
-        || rs == D3DRENDERSTATE_MONOENABLE
-        || rs == D3DRENDERSTATE_ROP2
-        || rs == D3DRENDERSTATE_PLANEMASK
-        || rs == D3DRENDERSTATE_ZWRITEENABLE
-        || rs == D3DRENDERSTATE_ALPHATESTENABLE
-        || rs == D3DRENDERSTATE_LASTPIXEL
-        || rs == D3DRENDERSTATE_TEXTUREMAG
-        || rs == D3DRENDERSTATE_TEXTUREMIN
-        || rs == D3DRENDERSTATE_SRCBLEND
-        || rs == D3DRENDERSTATE_DESTBLEND
-        || rs == D3DRENDERSTATE_TEXTUREMAPBLEND
-        || rs == D3DRENDERSTATE_CULLMODE
-        || rs == D3DRENDERSTATE_ZFUNC
-        || rs == D3DRENDERSTATE_ALPHAREF
-        || rs == D3DRENDERSTATE_ALPHAFUNC
-        || rs == D3DRENDERSTATE_DITHERENABLE
-        || rs == D3DRENDERSTATE_BLENDENABLE // The actual D3DRENDERSTATE_ALPHABLENDENABLE
-        || rs == D3DRENDERSTATE_FOGENABLE
-        || rs == D3DRENDERSTATE_SPECULARENABLE
-        || rs == D3DRENDERSTATE_ZVISIBLE
-        || rs == D3DRENDERSTATE_SUBPIXEL
-        || rs == D3DRENDERSTATE_SUBPIXELX
-        || rs == D3DRENDERSTATE_STIPPLEDALPHA
-        || rs == D3DRENDERSTATE_FOGCOLOR
-        || rs == D3DRENDERSTATE_FOGTABLEMODE
-        || rs == D3DRENDERSTATE_FOGTABLESTART
-        || rs == D3DRENDERSTATE_FOGTABLEEND
-        || rs == D3DRENDERSTATE_FOGTABLEDENSITY
-        || rs == D3DRENDERSTATE_STIPPLEENABLE
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN00
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN01
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN02
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN03
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN04
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN05
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN06
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN07
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN08
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN09
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN10
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN11
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN12
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN13
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN14
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN15
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN16
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN17
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN18
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN19
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN20
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN21
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN22
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN23
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN24
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN25
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN26
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN27
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN28
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN29
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN30
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN31;
-  }
+  inline void ApplyD3D7DeviceCaps(D3DDEVICEDESC7* desc7, const IID rclsid) {
+    desc7->deviceGUID = rclsid;
 
-  inline bool IsValidD3D5RenderStateType(D3DRENDERSTATETYPE rs) {
-    return rs == D3DRENDERSTATE_TEXTUREHANDLE
-        || rs == D3DRENDERSTATE_ANTIALIAS
-        || rs == D3DRENDERSTATE_TEXTUREADDRESS
-        || rs == D3DRENDERSTATE_TEXTUREPERSPECTIVE
-        || rs == D3DRENDERSTATE_WRAPU
-        || rs == D3DRENDERSTATE_WRAPV
-        || rs == D3DRENDERSTATE_ZENABLE
-        || rs == D3DRENDERSTATE_FILLMODE
-        || rs == D3DRENDERSTATE_SHADEMODE
-        || rs == D3DRENDERSTATE_LINEPATTERN
-        || rs == D3DRENDERSTATE_MONOENABLE
-        || rs == D3DRENDERSTATE_ROP2
-        || rs == D3DRENDERSTATE_PLANEMASK
-        || rs == D3DRENDERSTATE_ZWRITEENABLE
-        || rs == D3DRENDERSTATE_ALPHATESTENABLE
-        || rs == D3DRENDERSTATE_LASTPIXEL
-        || rs == D3DRENDERSTATE_TEXTUREMAG
-        || rs == D3DRENDERSTATE_TEXTUREMIN
-        || rs == D3DRENDERSTATE_SRCBLEND
-        || rs == D3DRENDERSTATE_DESTBLEND
-        || rs == D3DRENDERSTATE_TEXTUREMAPBLEND
-        || rs == D3DRENDERSTATE_CULLMODE
-        || rs == D3DRENDERSTATE_ZFUNC
-        || rs == D3DRENDERSTATE_ALPHAREF
-        || rs == D3DRENDERSTATE_ALPHAFUNC
-        || rs == D3DRENDERSTATE_DITHERENABLE
-        || rs == D3DRENDERSTATE_BLENDENABLE // The actual D3DRENDERSTATE_ALPHABLENDENABLE
-        || rs == D3DRENDERSTATE_FOGENABLE
-        || rs == D3DRENDERSTATE_SPECULARENABLE
-        || rs == D3DRENDERSTATE_ZVISIBLE
-        || rs == D3DRENDERSTATE_SUBPIXEL
-        || rs == D3DRENDERSTATE_SUBPIXELX
-        || rs == D3DRENDERSTATE_STIPPLEDALPHA
-        || rs == D3DRENDERSTATE_FOGCOLOR
-        || rs == D3DRENDERSTATE_FOGTABLEMODE
-        || rs == D3DRENDERSTATE_FOGTABLESTART
-        || rs == D3DRENDERSTATE_FOGTABLEEND
-        || rs == D3DRENDERSTATE_FOGTABLEDENSITY
-        || rs == D3DRENDERSTATE_STIPPLEENABLE
-        || rs == D3DRENDERSTATE_EDGEANTIALIAS
-        || rs == D3DRENDERSTATE_COLORKEYENABLE
-        || rs == D3DRENDERSTATE_ALPHABLENDENABLE_OLD // Deprecated in D3D6
-        || rs == D3DRENDERSTATE_BORDERCOLOR
-        || rs == D3DRENDERSTATE_TEXTUREADDRESSU
-        || rs == D3DRENDERSTATE_TEXTUREADDRESSV
-        || rs == D3DRENDERSTATE_MIPMAPLODBIAS
-        || rs == D3DRENDERSTATE_ZBIAS
-        || rs == D3DRENDERSTATE_RANGEFOGENABLE
-        || rs == D3DRENDERSTATE_ANISOTROPY
-        || rs == D3DRENDERSTATE_FLUSHBATCH // Not in the docs, but valid in D3D5
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN00
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN01
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN02
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN03
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN04
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN05
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN06
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN07
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN08
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN09
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN10
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN11
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN12
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN13
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN14
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN15
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN16
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN17
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN18
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN19
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN20
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN21
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN22
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN23
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN24
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN25
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN26
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN27
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN28
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN29
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN30
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN31;
-  }
-
-  inline bool IsValidD3D6RenderStateType(D3DRENDERSTATETYPE rs) {
-    return rs == D3DRENDERSTATE_TEXTUREHANDLE
-        || rs == D3DRENDERSTATE_ANTIALIAS
-        || rs == D3DRENDERSTATE_TEXTUREADDRESS
-        || rs == D3DRENDERSTATE_TEXTUREPERSPECTIVE
-        || rs == D3DRENDERSTATE_WRAPU
-        || rs == D3DRENDERSTATE_WRAPV
-        || rs == D3DRENDERSTATE_ZENABLE
-        || rs == D3DRENDERSTATE_FILLMODE
-        || rs == D3DRENDERSTATE_SHADEMODE
-        || rs == D3DRENDERSTATE_LINEPATTERN
-        || rs == D3DRENDERSTATE_MONOENABLE
-        || rs == D3DRENDERSTATE_ROP2
-        || rs == D3DRENDERSTATE_PLANEMASK
-        || rs == D3DRENDERSTATE_ZWRITEENABLE
-        || rs == D3DRENDERSTATE_ALPHATESTENABLE
-        || rs == D3DRENDERSTATE_LASTPIXEL
-        || rs == D3DRENDERSTATE_TEXTUREMAG
-        || rs == D3DRENDERSTATE_TEXTUREMIN
-        || rs == D3DRENDERSTATE_SRCBLEND
-        || rs == D3DRENDERSTATE_DESTBLEND
-        || rs == D3DRENDERSTATE_TEXTUREMAPBLEND
-        || rs == D3DRENDERSTATE_CULLMODE
-        || rs == D3DRENDERSTATE_ZFUNC
-        || rs == D3DRENDERSTATE_ALPHAREF
-        || rs == D3DRENDERSTATE_ALPHAFUNC
-        || rs == D3DRENDERSTATE_DITHERENABLE
-        || rs == D3DRENDERSTATE_ALPHABLENDENABLE
-        || rs == D3DRENDERSTATE_FOGENABLE
-        || rs == D3DRENDERSTATE_SPECULARENABLE
-        || rs == D3DRENDERSTATE_ZVISIBLE
-        || rs == D3DRENDERSTATE_SUBPIXEL
-        || rs == D3DRENDERSTATE_SUBPIXELX
-        || rs == D3DRENDERSTATE_STIPPLEDALPHA
-        || rs == D3DRENDERSTATE_FOGCOLOR
-        || rs == D3DRENDERSTATE_FOGTABLEMODE
-        || rs == D3DRENDERSTATE_FOGTABLESTART
-        || rs == D3DRENDERSTATE_FOGTABLEEND
-        || rs == D3DRENDERSTATE_FOGTABLEDENSITY
-        || rs == D3DRENDERSTATE_STIPPLEENABLE
-        || rs == D3DRENDERSTATE_EDGEANTIALIAS
-        || rs == D3DRENDERSTATE_COLORKEYENABLE
-        || rs == D3DRENDERSTATE_BORDERCOLOR
-        || rs == D3DRENDERSTATE_TEXTUREADDRESSU
-        || rs == D3DRENDERSTATE_TEXTUREADDRESSV
-        || rs == D3DRENDERSTATE_MIPMAPLODBIAS
-        || rs == D3DRENDERSTATE_ZBIAS
-        || rs == D3DRENDERSTATE_RANGEFOGENABLE
-        || rs == D3DRENDERSTATE_ANISOTROPY
-        || rs == D3DRENDERSTATE_FLUSHBATCH
-        || rs == D3DRENDERSTATE_TRANSLUCENTSORTINDEPENDENT
-        || rs == D3DRENDERSTATE_STENCILENABLE
-        || rs == D3DRENDERSTATE_STENCILFAIL
-        || rs == D3DRENDERSTATE_STENCILZFAIL
-        || rs == D3DRENDERSTATE_STENCILPASS
-        || rs == D3DRENDERSTATE_STENCILFUNC
-        || rs == D3DRENDERSTATE_STENCILREF
-        || rs == D3DRENDERSTATE_STENCILMASK
-        || rs == D3DRENDERSTATE_STENCILWRITEMASK
-        || rs == D3DRENDERSTATE_TEXTUREFACTOR
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN00
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN01
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN02
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN03
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN04
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN05
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN06
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN07
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN08
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN09
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN10
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN11
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN12
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN13
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN14
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN15
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN16
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN17
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN18
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN19
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN20
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN21
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN22
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN23
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN24
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN25
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN26
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN27
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN28
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN29
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN30
-        || rs == D3DRENDERSTATE_STIPPLEPATTERN31
-        || rs == D3DRENDERSTATE_WRAP0
-        || rs == D3DRENDERSTATE_WRAP1
-        || rs == D3DRENDERSTATE_WRAP2
-        || rs == D3DRENDERSTATE_WRAP3
-        || rs == D3DRENDERSTATE_WRAP4
-        || rs == D3DRENDERSTATE_WRAP5
-        || rs == D3DRENDERSTATE_WRAP6
-        || rs == D3DRENDERSTATE_WRAP7;
-  }
-
-  inline bool IsValidD3D7RenderStateType(D3DRENDERSTATETYPE rs) {
-    return rs == D3DRENDERSTATE_ANTIALIAS
-        || rs == D3DRENDERSTATE_TEXTUREPERSPECTIVE
-        || rs == D3DRENDERSTATE_ZENABLE
-        || rs == D3DRENDERSTATE_FILLMODE
-        || rs == D3DRENDERSTATE_SHADEMODE
-        || rs == D3DRENDERSTATE_LINEPATTERN
-        || rs == D3DRENDERSTATE_ZWRITEENABLE
-        || rs == D3DRENDERSTATE_ALPHATESTENABLE
-        || rs == D3DRENDERSTATE_LASTPIXEL
-        || rs == D3DRENDERSTATE_SRCBLEND
-        || rs == D3DRENDERSTATE_DESTBLEND
-        || rs == D3DRENDERSTATE_CULLMODE
-        || rs == D3DRENDERSTATE_ZFUNC
-        || rs == D3DRENDERSTATE_ALPHAREF
-        || rs == D3DRENDERSTATE_ALPHAFUNC
-        || rs == D3DRENDERSTATE_DITHERENABLE
-        || rs == D3DRENDERSTATE_ALPHABLENDENABLE
-        || rs == D3DRENDERSTATE_FOGENABLE
-        || rs == D3DRENDERSTATE_SPECULARENABLE
-        || rs == D3DRENDERSTATE_ZVISIBLE
-        || rs == D3DRENDERSTATE_STIPPLEDALPHA
-        || rs == D3DRENDERSTATE_FOGCOLOR
-        || rs == D3DRENDERSTATE_FOGTABLEMODE
-        || rs == D3DRENDERSTATE_FOGTABLESTART
-        || rs == D3DRENDERSTATE_FOGTABLEEND
-        || rs == D3DRENDERSTATE_FOGTABLEDENSITY
-        || rs == D3DRENDERSTATE_FOGSTART
-        || rs == D3DRENDERSTATE_FOGEND
-        || rs == D3DRENDERSTATE_FOGDENSITY
-        || rs == D3DRENDERSTATE_EDGEANTIALIAS
-        || rs == D3DRENDERSTATE_COLORKEYENABLE
-        || rs == D3DRENDERSTATE_ZBIAS
-        || rs == D3DRENDERSTATE_RANGEFOGENABLE
-        || rs == D3DRENDERSTATE_STENCILENABLE
-        || rs == D3DRENDERSTATE_STENCILFAIL
-        || rs == D3DRENDERSTATE_STENCILZFAIL
-        || rs == D3DRENDERSTATE_STENCILPASS
-        || rs == D3DRENDERSTATE_STENCILFUNC
-        || rs == D3DRENDERSTATE_STENCILREF
-        || rs == D3DRENDERSTATE_STENCILMASK
-        || rs == D3DRENDERSTATE_STENCILWRITEMASK
-        || rs == D3DRENDERSTATE_TEXTUREFACTOR
-        || rs == D3DRENDERSTATE_WRAP0
-        || rs == D3DRENDERSTATE_WRAP1
-        || rs == D3DRENDERSTATE_WRAP2
-        || rs == D3DRENDERSTATE_WRAP3
-        || rs == D3DRENDERSTATE_WRAP4
-        || rs == D3DRENDERSTATE_WRAP5
-        || rs == D3DRENDERSTATE_WRAP6
-        || rs == D3DRENDERSTATE_WRAP7
-        || rs == D3DRENDERSTATE_CLIPPING
-        || rs == D3DRENDERSTATE_LIGHTING
-        || rs == D3DRENDERSTATE_EXTENTS
-        || rs == D3DRENDERSTATE_AMBIENT
-        || rs == D3DRENDERSTATE_FOGVERTEXMODE
-        || rs == D3DRENDERSTATE_COLORVERTEX
-        || rs == D3DRENDERSTATE_LOCALVIEWER
-        || rs == D3DRENDERSTATE_NORMALIZENORMALS
-        || rs == D3DRENDERSTATE_COLORKEYBLENDENABLE
-        || rs == D3DRENDERSTATE_DIFFUSEMATERIALSOURCE
-        || rs == D3DRENDERSTATE_SPECULARMATERIALSOURCE
-        || rs == D3DRENDERSTATE_AMBIENTMATERIALSOURCE
-        || rs == D3DRENDERSTATE_EMISSIVEMATERIALSOURCE
-        || rs == D3DRENDERSTATE_VERTEXBLEND
-        || rs == D3DRENDERSTATE_CLIPPLANEENABLE;
+    if (rclsid == IID_IDirect3DTnLHalDevice) {
+      desc7->dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
+                        | D3DDEVCAPS_HWTRANSFORMANDLIGHT
+                        | D3DDEVCAPS_DRAWPRIMITIVES2
+                        | D3DDEVCAPS_DRAWPRIMITIVES2EX;
+    } else if (rclsid == IID_IDirect3DHALDevice) {
+      desc7->dwDevCaps |= D3DDEVCAPS_HWRASTERIZATION
+                        | D3DDEVCAPS_DRAWPRIMITIVES2
+                        | D3DDEVCAPS_DRAWPRIMITIVES2EX;
+    } else {
+      desc7->dwDevCaps &= ~D3DDEVCAPS_HWRASTERIZATION
+                        & ~D3DDEVCAPS_HWTRANSFORMANDLIGHT
+                        & ~D3DDEVCAPS_DRAWPRIMITIVES2
+                        & ~D3DDEVCAPS_DRAWPRIMITIVES2EX;
+    }
   }
 
   inline Matrix4 MatrixD3DTo4(const D3DMATRIX* m) {

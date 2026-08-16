@@ -1,4 +1,5 @@
 #include "d3d9_format.h"
+#include "d3d9_adapter.h"
 #include "d3d9_names.h"
 
 namespace dxvk {
@@ -585,11 +586,6 @@ namespace dxvk {
   }
 
 
-  void D3D9VkFormatTable::RefreshFormatSupport(bool isD3D8Compatible) {
-    m_w11v11u10Support = isD3D8Compatible;
-  }
-
-
   bool D3D9VkFormatTable::CheckImageFormatSupport(
     const Rc<DxvkAdapter>&      Adapter,
           VkFormat              Format,
@@ -598,6 +594,13 @@ namespace dxvk {
 
     return (supported.linearTilingFeatures  & Features) == Features
         || (supported.optimalTilingFeatures & Features) == Features;
+  }
+
+
+  void D3D9VkFormatTable::RefreshFormatSupport(
+    const D3D9Adapter*          pParent) {
+    // W11V11U10 is only supported by D3D8
+    m_w11v11u10Support = pParent->IsD3DCompatibile(D3DCompatibility::D3D8);
   }
 
 }

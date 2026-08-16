@@ -6,17 +6,13 @@
 
 namespace dxvk {
 
-  std::atomic<uint32_t> D3DLight::s_lightCount = 0;
+  std::atomic<uint32_t> D3DLight::s_light9Index = 0;
 
   D3DLight::D3DLight(IUnknown* pParent)
     : DDrawChildObject<IUnknown, IDirect3DLight>(pParent) {
-    m_lightCount = ++s_lightCount;
-
-    Logger::debug(str::format("D3DLight: Created a new light nr. [[1-", m_lightCount, "]]"));
   }
 
   D3DLight::~D3DLight() {
-    Logger::debug(str::format("D3DLight: Light nr. [[1-", m_lightCount, "]] bites the dust"));
   }
 
   HRESULT STDMETHODCALLTYPE D3DLight::QueryInterface(REFIID riid, void** ppvObject) {
@@ -103,13 +99,18 @@ namespace dxvk {
     // D3DLIGHT structure lights are, apparently, considered to be active by default
     m_isActive            = isD3DLight2 ? (m_flags & D3DLIGHT_ACTIVE) : true;
 
+    D3DCommonViewport* commonViewport = nullptr;
+    if (m_viewport6 != nullptr) {
+      commonViewport = m_viewport6->GetCommonViewport();
+    } else if (m_viewport5 != nullptr) {
+      commonViewport = m_viewport5->GetCommonViewport();
+    } else if (m_viewport3 != nullptr) {
+      commonViewport = m_viewport3->GetCommonViewport();
+    }
+
     // Update the D3D9 light directly if it's actively being used
-    if (m_viewport6 != nullptr && m_viewport6->GetCommonViewport()->IsCurrentViewport())
-      m_viewport6->ApplyAndActivateLight(m_lightCount, this);
-    else if (m_viewport5 != nullptr && m_viewport5->GetCommonViewport()->IsCurrentViewport())
-      m_viewport5->ApplyAndActivateLight(m_lightCount, this);
-    else if (m_viewport3 != nullptr && m_viewport3->GetCommonViewport()->IsCurrentViewport())
-      m_viewport3->ApplyAndActivateLight(m_lightCount, this);
+    if (commonViewport != nullptr && commonViewport->IsCurrentViewport())
+      commonViewport->ApplyAndActivateLight(this);
 
     return D3D_OK;
   }
