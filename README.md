@@ -84,26 +84,36 @@ git clone --branch main --recurse https://github.com/pythonlover02/DXVK-Sarek.gi
 
 - [wine 7.1](https://www.winehq.org/) or newer
 - [Meson](https://mesonbuild.com/) build system (at least version 0.49)
+- [GNU make](https://www.gnu.org/software/make/) 4.3 or newer
 - [Mingw-w64](https://www.mingw-w64.org) compiler and headers (at least version 10.0)
 - [glslang](https://github.com/KhronosGroup/glslang) compiler
 
 ### Building DLLs
 
+Every build target is a file, so make only rebuilds what actually changed.
+Everything lands under `build/`; `make clean` is a single `rm -rf`.
+
+| Command | What it builds |
+|---------|----------------|
+| `make` | `build/x64` and `build/x32` |
+| `make x64` | 64-bit DLLs only |
+| `make x32` | 32-bit DLLs only |
+| `make dist` | the sources with `build/` populated, in `build/dist/` |
+| `make release` | tarball in `releases/`, host toolchain |
+| `make release-container` | the same, built inside the SteamRT sniper SDK |
+| `make clean` | `rm -rf build releases` |
+
 The simple way, inside the DXVK directory, run:
 
 ```
-./package-release.sh master /your/target/directory --no-package
+make
 ```
 
-This creates a folder `dxvk-master` in `/your/target/directory` containing both 32-bit and 64-bit versions of DXVK, which can be set up the same way as the release versions.
+This gives you both 32-bit and 64-bit versions of DXVK in `build/x32` and `build/x64`, which can be set up the same way as the release versions.
 
-To preserve the build directories for development, pass `--dev-build` to the script. This option implies `--no-package`. After making changes to the source, rebuild with:
+The meson build directories stay in `build/build.32` and `build/build.64`, so after making changes to the source just run `make` again and only what changed is rebuilt. `ninja install` inside those directories still works as before.
 
-```
-# change to build.32 for 32-bit
-cd /your/target/directory/build.64
-ninja install
-```
+The artifacts on the Actions tab are `make dist` trees: the sources with `build/` already filled in. Take the DLLs straight out of `build/x32` and `build/x64`, or run `make` on top to rebuild. The submodules are not shipped in there, so a rebuild from an artifact uses your distribution's Vulkan-Headers and SPIRV-Headers instead.
 
 ### Compiling manually
 

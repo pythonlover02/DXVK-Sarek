@@ -3,242 +3,80 @@ name: Artifacts (SteamRT)
 on: [push, pull_request, workflow_dispatch]
 
 jobs:
-  artifacts-sniper:
-    runs-on: ubuntu-latest
+  artifacts-steamrt:
+    runs-on: ${{ matrix.runner }}
     container:
-      image: registry.gitlab.steamos.cloud/proton/sniper/sdk:latest
+      image: ${{ matrix.image }}
       options: --user 1001
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: sniper
+            runner: ubuntu-22.04
+            image: registry.gitlab.steamos.cloud/proton/sniper/sdk:latest
+            arches: 32 64
+            make_args: >-
+              CROSSFILE_DIR=.github/crossfiles
+              CROSSFILE_32=steamrt-i386.txt
+              CROSSFILE_64=steamrt-x86_64.txt
+              ARCHDIR_32=i386-windows
+              ARCHDIR_64=x86_64-windows
+              MESON_OPTS_64=-Denable_ddraw=false
+          - variant: steamrt4
+            runner: ubuntu-22.04
+            image: registry.gitlab.steamos.cloud/proton/steamrt4/sdk/x86_64:latest
+            arches: 32 64
+            make_args: >-
+              CROSSFILE_DIR=.github/crossfiles
+              CROSSFILE_32=steamrt-i386.txt
+              CROSSFILE_64=steamrt-x86_64.txt
+              ARCHDIR_32=i386-windows
+              ARCHDIR_64=x86_64-windows
+              MESON_OPTS_64=-Denable_ddraw=false
+          - variant: steamrt4-arm64
+            runner: ubuntu-24.04-arm
+            image: registry.gitlab.steamos.cloud/proton/steamrt4/sdk/arm64-llvm:latest
+            arches: 32 64 aarch64
+            make_args: >-
+              CROSSFILE_DIR=.github/crossfiles
+              CROSSFILE_32=steamrt-i386-llvm.txt
+              CROSSFILE_64=steamrt-x86_64-llvm.txt
+              CROSSFILE_aarch64=steamrt-aarch64-llvm.txt
+              ARCHDIR_32=i386-windows
+              ARCHDIR_64=x86_64-windows
+              ARCHDIR_aarch64=aarch64-windows
+              MESON_OPTS_64=-Denable_ddraw=false
+              MESON_OPTS_aarch64=-Denable_ddraw=false
 
     steps:
     - name: Checkout code
       id: checkout-code
-      uses: actions/checkout@v6
+      uses: actions/checkout@v4
       with:
         submodules: recursive
         fetch-depth: 0
 
     - name: Setup problem matcher
-      uses: Joshua-Ashton/gcc-problem-matcher@master
+      uses: Joshua-Ashton/gcc-problem-matcher@v3
 
-    - name: Prepare build
-      id: prepare-build
+    - name: Get version
+      id: get-version
       shell: bash
       run: |
-        export VERSION_NAME="${GITHUB_REF##*/}-${GITHUB_SHA##*/}"
-        echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
-        mkdir -p build/build.i386
-        mkdir -p build/build.x86_64
-        mkdir -p build/dxvk-sarek-${VERSION_NAME}
+        echo "VERSION_NAME=${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::8}" >> $GITHUB_ENV
+        echo "VERSION=$(cat RELEASE)" >> $GITHUB_ENV
 
-    - name: Configure i386
-      id: configure-artifacts-i386
+    - name: Build dist tree
+      id: build-dist
       shell: bash
-      run: >-
-        meson setup --cross-file .github/crossfiles/steamrt-i386.txt
-        --buildtype "release"
-        --prefix "$( realpath build/dxvk-sarek-${{ env.VERSION_NAME }} )"
-        --strip
-        --bindir "i386-windows"
-        --libdir "i386-windows"
-        -Db_ndebug=if-release
-        -Dbuild_id=false
-        "build/build.i386"
-
-    - name: Build i386
-      id: build-artifacts-i386
-      shell: bash
-      run: ninja -v -C build/build.i386 install
-
-    - name: Configure x86_64
-      id: configure-artifacts-x86_64
-      shell: bash
-      run: >-
-        meson setup --cross-file .github/crossfiles/steamrt-x86_64.txt
-        --buildtype "release"
-        --prefix "$( realpath build/dxvk-sarek-${{ env.VERSION_NAME }} )"
-        --strip
-        --bindir "x86_64-windows"
-        --libdir "x86_64-windows"
-        -Db_ndebug=if-release
-        -Dbuild_id=false
-        -Denable_ddraw=false
-        "build/build.x86_64"
-
-    - name: Build x86_64
-      id: build-artifacts-x86_64
-      shell: bash
-      run: ninja -v -C build/build.x86_64 install
+      run: make dist ARCHES="${{ matrix.arches }}" ${{ matrix.make_args }}
 
     - name: Upload artifacts
       id: upload-artifacts
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@v4
       with:
-        name: dxvk-sarek-sniper-${{ env.VERSION_NAME }}
-        path: build/dxvk-sarek-${{ env.VERSION_NAME }}
-        if-no-files-found: error
-
-  artifacts-steamrt4:
-    runs-on: ubuntu-latest
-    container:
-      image: registry.gitlab.steamos.cloud/proton/steamrt4/sdk/x86_64:latest
-      options: --user 1001
-
-    steps:
-    - name: Checkout code
-      id: checkout-code
-      uses: actions/checkout@v6
-      with:
-        submodules: recursive
-        fetch-depth: 0
-
-    - name: Setup problem matcher
-      uses: Joshua-Ashton/gcc-problem-matcher@master
-
-    - name: Prepare build
-      id: prepare-build
-      shell: bash
-      run: |
-        export VERSION_NAME="${GITHUB_REF##*/}-${GITHUB_SHA##*/}"
-        echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
-        mkdir -p build/build.i386
-        mkdir -p build/build.x86_64
-        mkdir -p build/dxvk-sarek-${VERSION_NAME}
-
-    - name: Configure i386
-      id: configure-artifacts-i386
-      shell: bash
-      run: >-
-        meson setup --cross-file .github/crossfiles/steamrt-i386.txt
-        --buildtype "release"
-        --prefix "$( realpath build/dxvk-sarek-${{ env.VERSION_NAME }} )"
-        --strip
-        --bindir "i386-windows"
-        --libdir "i386-windows"
-        -Db_ndebug=if-release
-        -Dbuild_id=false
-        "build/build.i386"
-
-    - name: Build i386
-      id: build-artifacts-i386
-      shell: bash
-      run: ninja -v -C build/build.i386 install
-
-    - name: Configure x86_64
-      id: configure-artifacts-x86_64
-      shell: bash
-      run: >-
-        meson setup --cross-file .github/crossfiles/steamrt-x86_64.txt
-        --buildtype "release"
-        --prefix "$( realpath build/dxvk-sarek-${{ env.VERSION_NAME }} )"
-        --strip
-        --bindir "x86_64-windows"
-        --libdir "x86_64-windows"
-        -Db_ndebug=if-release
-        -Dbuild_id=false
-        -Denable_ddraw=false
-        "build/build.x86_64"
-
-    - name: Build x86_64
-      id: build-artifacts-x86_64
-      shell: bash
-      run: ninja -v -C build/build.x86_64 install
-
-    - name: Upload artifacts
-      id: upload-artifacts
-      uses: actions/upload-artifact@v7
-      with:
-        name: dxvk-sarek-steamrt4-${{ env.VERSION_NAME }}
-        path: build/dxvk-sarek-${{ env.VERSION_NAME }}
-        if-no-files-found: error
-
-  artifacts-steamrt4-arm64:
-    runs-on: ubuntu-24.04-arm
-    container:
-      image: registry.gitlab.steamos.cloud/proton/steamrt4/sdk/arm64-llvm:latest
-      options: --user 1001
-
-    steps:
-    - name: Checkout code
-      id: checkout-code
-      uses: actions/checkout@v6
-      with:
-        submodules: recursive
-        fetch-depth: 0
-
-    - name: Prepare build
-      id: prepare-build
-      shell: bash
-      run: |
-        export VERSION_NAME="${GITHUB_REF##*/}-${GITHUB_SHA##*/}"
-        echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
-        mkdir -p build/build.i386
-        mkdir -p build/build.x86_64
-        mkdir -p build/build.aarch64
-        mkdir -p build/dxvk-sarek-${VERSION_NAME}
-
-    - name: Configure i386
-      id: configure-artifacts-i386
-      shell: bash
-      run: >-
-        meson setup --cross-file .github/crossfiles/steamrt-i386-llvm.txt
-        --buildtype "release"
-        --prefix "$( realpath build/dxvk-sarek-${{ env.VERSION_NAME }} )"
-        --strip
-        --bindir "i386-windows"
-        --libdir "i386-windows"
-        -Db_ndebug=if-release
-        -Dbuild_id=false
-        "build/build.i386"
-
-    - name: Build i386
-      id: build-artifacts-i386
-      shell: bash
-      run: ninja -v -C build/build.i386 install
-
-    - name: Configure x86_64
-      id: configure-artifacts-x86_64
-      shell: bash
-      run: >-
-        meson setup --cross-file .github/crossfiles/steamrt-x86_64-llvm.txt
-        --buildtype "release"
-        --prefix "$( realpath build/dxvk-sarek-${{ env.VERSION_NAME }} )"
-        --strip
-        --bindir "x86_64-windows"
-        --libdir "x86_64-windows"
-        -Db_ndebug=if-release
-        -Dbuild_id=false
-        -Denable_ddraw=false
-        "build/build.x86_64"
-
-    - name: Build x86_64
-      id: build-artifacts-x86_64
-      shell: bash
-      run: ninja -v -C build/build.x86_64 install
-
-    - name: Configure aarch64
-      id: configure-artifacts-arm64ec
-      shell: bash
-      run: >-
-        meson setup --cross-file .github/crossfiles/steamrt-aarch64-llvm.txt
-        --buildtype "release"
-        --prefix "$( realpath build/dxvk-sarek-${{ env.VERSION_NAME }} )"
-        --strip
-        --bindir "aarch64-windows"
-        --libdir "aarch64-windows"
-        -Db_ndebug=if-release
-        -Dbuild_id=false
-        -Denable_ddraw=false
-        "build/build.aarch64"
-
-    - name: Build aarch64
-      id: build-artifacts-aarch64
-      shell: bash
-      run: ninja -v -C build/build.aarch64 install
-
-    - name: Upload artifacts
-      id: upload-artifacts
-      uses: actions/upload-artifact@v7
-      with:
-        name: dxvk-sarek-steamrt4-arm64-${{ env.VERSION_NAME }}
-        path: build/dxvk-sarek-${{ env.VERSION_NAME }}
+        name: dxvk-sarek-${{ matrix.variant }}-${{ env.VERSION_NAME }}
+        path: build/dist/dxvk-sarek-${{ env.VERSION }}
         if-no-files-found: error

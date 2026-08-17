@@ -4,7 +4,7 @@ on: [push, pull_request, workflow_dispatch]
 
 jobs:
   artifacts-mingw-w64:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
 
     steps:
     - name: Checkout code
@@ -17,19 +17,25 @@ jobs:
     - name: Setup problem matcher
       uses: Joshua-Ashton/gcc-problem-matcher@v3
 
-    - name: Build release
-      id: build-release
+    - name: Get version
+      id: get-version
+      shell: bash
+      run: |
+        echo "VERSION_NAME=${GITHUB_REF_NAME//\//-}-${GITHUB_SHA::8}" >> $GITHUB_ENV
+        echo "VERSION=$(cat RELEASE)" >> $GITHUB_ENV
+
+    - name: Build dist tree
+      id: build-dist
       uses: Joshua-Ashton/arch-mingw-github-action@v8
       with:
         command: |
-          export VERSION_NAME="${GITHUB_REF##*/}-${GITHUB_SHA##*/}"
-          ./package-release.sh ${VERSION_NAME} build --no-package
-          echo "VERSION_NAME=${VERSION_NAME}" >> $GITHUB_ENV
+          make
+          make dist
 
     - name: Upload artifacts
       id: upload-artifacts
       uses: actions/upload-artifact@v4
       with:
         name: dxvk-sarek-${{ env.VERSION_NAME }}
-        path: build/dxvk-${{ env.VERSION_NAME }}
+        path: build/dist/dxvk-sarek-${{ env.VERSION }}
         if-no-files-found: error
