@@ -139,7 +139,7 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE GetInfo(DWORD info_id, void *info, DWORD info_size);
 
-    void InitializeDS();
+    HRESULT InitializeRTAndDS();
 
     void UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface);
 
@@ -161,7 +161,7 @@ namespace dxvk {
       return m_ds.ptr();
     }
 
-    void GetD3D9Lights(std::vector<d3d9::D3DLIGHT9>* lights9) {
+    void GetD3D9ActiveLights(std::vector<d3d9::D3DLIGHT9>* lights9) {
       for (const auto& [idx, light9] : m_lights) {
         if (m_lightsStates[idx])
           lights9->push_back(light9);
@@ -170,19 +170,7 @@ namespace dxvk {
 
   private:
 
-    inline HRESULT InitializeIndexBuffers();
-
-    inline void UploadIndices(d3d9::IDirect3DIndexBuffer9* ib9, WORD* indices, DWORD indexCount);
-
     inline void DDrawDirtySurfaceUpload();
-
-    inline bool LogIndexBufferUsageStats() const {
-      for (uint32_t m_ib9_upload : m_ib9_uploads) {
-        if (m_ib9_upload > 0)
-          return true;
-      }
-      return false;
-    }
 
     inline bool ShouldRecord() const { return m_recorder != nullptr; }
 
@@ -191,34 +179,30 @@ namespace dxvk {
         m_commonIntf->SetCommonD3DDevice(m_commonD3DDevice.ptr());
     }
 
-    Com<D3DCommonDevice>        m_commonD3DDevice;
+    Com<D3DCommonDevice>            m_commonD3DDevice;
 
-    DDrawCommonInterface*       m_commonIntf            = nullptr;
+    DDrawCommonInterface*           m_commonIntf            = nullptr;
 
-    Com<DxvkD3D8Bridge>         m_bridge;
+    Com<IDxvkLegacyD3DDeviceBridge> m_bridge;
 
-    D3DMultithread              m_multithread;
+    D3DMultithread                  m_multithread;
 
-    D3DDEVICEDESC7              m_desc;
+    D3DDEVICEDESC7                  m_desc;
 
-    Com<DDraw7Surface>          m_rt;
-    Com<DDraw7Surface, false>   m_ds;
+    Com<DDraw7Surface>              m_rt;
+    Com<DDraw7Surface, false>       m_ds;
 
     std::array<Com<DDraw7Surface, false>, ddrawCaps::TextureStageCount> m_textures;
 
     std::unordered_map<DWORD, d3d9::D3DLIGHT9> m_lights;
     std::unordered_map<DWORD, BOOL>            m_lightsStates;
 
-    D3D7StateBlock*             m_recorder              = nullptr;
-    DWORD                       m_recorderHandle        = 0;
-    DWORD                       m_handle                = 0;
+    D3D7StateBlock*                 m_recorder              = nullptr;
+    DWORD                           m_recorderHandle        = 0;
+    DWORD                           m_handle                = 0;
     std::unordered_map<DWORD, D3D7StateBlock> m_stateBlocks;
 
     std::array<Com<d3d9::IDirect3DIndexBuffer9>, ddrawCaps::IndexBufferCount> m_ib9;
-    uint32_t m_ib9_uploads[ddrawCaps::IndexBufferCount] = { };
-
-    uint32_t                    m_deviceCount           = 0;
-    static std::atomic<uint32_t> s_deviceCount;
 
   };
 

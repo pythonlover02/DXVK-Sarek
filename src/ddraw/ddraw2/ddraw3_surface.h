@@ -106,8 +106,6 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE SetSurfaceDesc(LPDDSURFACEDESC lpDDSD, DWORD dwFlags);
 
-    IDirectDrawSurface3* GetShadowOrProxied();
-
     HRESULT InitializeOrUploadD3D9();
 
     void DownloadSurfaceData();
@@ -118,6 +116,15 @@ namespace dxvk {
 
     DDraw3Surface* GetShadowSurface() const {
       return m_shadowSurf.ptr();
+    }
+
+    IDirectDrawSurface3* GetShadowOrProxied() {
+      d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
+
+      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr))
+        return m_shadowSurf->GetProxied();
+
+      return m_proxy.ptr();
     }
 
     DDrawCommonSurface* GetCommonSurface() const {
@@ -166,13 +173,16 @@ namespace dxvk {
 
     inline HRESULT UploadSurfaceData();
 
+    bool                     m_readOnlyLock = false;
+    std::atomic<uint8_t>     m_lockCount    = 0u;
+
     Com<DDrawCommonSurface>  m_commonSurf;
 
-    DDrawCommonInterface*    m_commonIntf = nullptr;
+    DDrawCommonInterface*    m_commonIntf   = nullptr;
 
     Com<DDrawSurface, false> m_originSurf;
 
-    DDraw3Surface*           m_parentSurf = nullptr;
+    DDraw3Surface*           m_parentSurf   = nullptr;
 
     // Offscreen plain surface we use to mask unwanted DDraw interactions, such
     // as forced swapchain presents caused by blits/locks on primary surfaces
@@ -187,9 +197,6 @@ namespace dxvk {
     // They are implemented with linked list, so for example only one mip level
     // will be held in a parent texture, and the next mip level will be held in the previous mip.
     std::unordered_map<IDirectDrawSurface3*, Com<DDraw3Surface, false>> m_attachedSurfaces;
-
-    uint32_t                 m_surfCount  = 0;
-    static std::atomic<uint32_t> s_surfCount;
 
   };
 

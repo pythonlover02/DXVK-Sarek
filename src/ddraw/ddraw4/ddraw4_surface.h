@@ -117,8 +117,6 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE ChangeUniquenessValue();
 
-    IDirectDrawSurface4* GetShadowOrProxied();
-
     HRESULT InitializeD3D9RenderTarget();
 
     HRESULT InitializeD3D9DepthStencil();
@@ -133,6 +131,15 @@ namespace dxvk {
 
     DDraw4Surface* GetShadowSurface() const {
       return m_shadowSurf.ptr();
+    }
+
+    IDirectDrawSurface4* GetShadowOrProxied() {
+      d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
+
+      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr))
+        return m_shadowSurf->GetProxied();
+
+      return m_proxy.ptr();
     }
 
     DDrawCommonSurface* GetCommonSurface() const {
@@ -183,11 +190,12 @@ namespace dxvk {
 
   private:
 
-    inline void UpdateMipMapCount();
-
     inline HRESULT UploadSurfaceData();
 
-    bool                    m_isChildObject = true;
+    bool                    m_isChildObject = false;
+
+    bool                    m_readOnlyLock  = false;
+    std::atomic<uint8_t>    m_lockCount     = 0u;
 
     Com<DDrawCommonSurface> m_commonSurf;
     DDrawCommonInterface*   m_commonIntf    = nullptr;
@@ -213,9 +221,6 @@ namespace dxvk {
     // They are implemented with linked list, so for example only one mip level
     // will be held in a parent texture, and the next mip level will be held in the previous mip.
     std::unordered_map<IDirectDrawSurface4*, Com<DDraw4Surface, false>> m_attachedSurfaces;
-
-    uint32_t                m_surfCount     = 0;
-    static std::atomic<uint32_t> s_surfCount;
 
   };
 

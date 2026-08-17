@@ -7,15 +7,22 @@
 
 namespace dxvk {
 
-  enum class FSAAEmulation {
+  enum class AlternatePixelCenter {
     Disabled,
-    Forced
+    Enabled,
+    Legacy
   };
 
   enum class D3DLegacyPresentGuard {
     Auto,
     Disabled,
     Strict
+  };
+
+  enum class FSAAEmulation {
+    Disabled,
+    Enabled,
+    Forced
   };
 
   struct D3DOptions {
@@ -60,9 +67,6 @@ namespace dxvk {
     /// Process vertices on the CPU, instead of relaying to D3D9
     bool cpuProcessVertices;
 
-    /// Correction offset for X/Y vertex position
-    float vertexOffset;
-
     /// Resize the back buffer size to screen size when needed
     bool backBufferResize;
 
@@ -101,6 +105,9 @@ namespace dxvk {
 
     /// Extends features and relaxes validations to enable apitrace debugging
     bool apitraceMode;
+
+    /// Half-texel correction offset for X/Y vertex position
+    AlternatePixelCenter alternatePixelCenter;
 
     /// By default guards against legacy presents while inside of a scene
     D3DLegacyPresentGuard legacyPresentGuard;

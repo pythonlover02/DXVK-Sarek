@@ -107,7 +107,7 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE GetClipStatus(D3DCLIPSTATUS *clip_status);
 
-    void InitializeDS();
+    HRESULT InitializeRTAndDS();
 
     void UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface);
 
@@ -135,10 +135,6 @@ namespace dxvk {
 
     inline void DDrawDirtySurfaceUpload();
 
-    inline void AddViewportInternal(IDirect3DViewport2* viewport);
-
-    inline void DeleteViewportInternal(IDirect3DViewport2* viewport);
-
     inline HRESULT SetTextureInternal(DDrawSurface* surface, DWORD textureHandle);
 
     inline void RefreshLastUsedDevice() {
@@ -163,34 +159,31 @@ namespace dxvk {
       }
     }
 
-    Com<D3DCommonDevice>           m_commonD3DDevice;
+    Com<D3DCommonDevice>            m_commonD3DDevice;
 
-    DDrawCommonInterface*          m_commonIntf       = nullptr;
+    DDrawCommonInterface*           m_commonIntf       = nullptr;
 
-    Com<DxvkD3D8Bridge>            m_bridge;
+    Com<IDxvkLegacyD3DDeviceBridge> m_bridge;
 
-    Com<D3D3Device, false>         m_device3;
+    Com<D3D3Device, false>          m_device3;
 
-    D3DMultithread                 m_multithread;
+    D3DMultithread                  m_multithread;
 
-    D3DDEVICEDESC2                 m_desc;
+    D3DDEVICEDESC2                  m_desc;
 
-    Com<DDrawSurface>              m_rt;
-    Com<DDrawSurface, false>       m_ds;
+    Com<DDrawSurface>               m_rt;
+    Com<DDrawSurface, false>        m_ds;
 
-    Com<D3D5Viewport>              m_currentViewport;
-    std::vector<Com<D3D5Viewport>> m_viewports;
+    Com<D3D5Viewport>               m_currentViewport;
+    std::vector<Com<D3D5Viewport>>  m_viewports;
 
-    VertexStreamInfo               m_vertexStreamInfo;
-    std::vector<D3DVERTEX>         m_vertexStream;
-    std::vector<D3DLVERTEX>        m_lvertexStream;
-    std::vector<D3DTLVERTEX>       m_tlvertexStream;
+    D3DMATRIX                       m_projectionMatrix = { };
+    const D3DMATRIX*                m_legacyProjection = nullptr;
 
-    D3DMATRIX                      m_projectionMatrix = { };
-    const D3DMATRIX*               m_legacyProjection = nullptr;
-
-    uint32_t                       m_deviceCount      = 0;
-    static std::atomic<uint32_t>   s_deviceCount;
+    VertexStreamInfo                m_vertexStreamInfo;
+    std::vector<D3DVERTEX>          m_vertexStream;
+    std::vector<D3DLVERTEX>         m_lvertexStream;
+    std::vector<D3DTLVERTEX>        m_tlvertexStream;
 
   };
 

@@ -4,6 +4,7 @@
 
 #include "d3d9_options.h"
 #include "d3d9_format.h"
+#include "d3d9_bridge.h"
 
 #include "../dxvk/dxvk_adapter.h"
 
@@ -87,9 +88,9 @@ namespace dxvk {
       return m_d3d9Formats.GetUnsupportedFormatInfo(Format);
     }
 
-    void RefreshFormatsTable(bool isD3D8Compatible) const {
-        m_d3d9Formats.RefreshFormatSupport(isD3D8Compatible);
-      }
+    void RefreshFormatsTable() const;
+
+    bool IsD3DCompatibile(D3DCompatibility d3dCompatibility) const;
 
   private:
 

@@ -101,8 +101,6 @@ namespace dxvk {
 
     HRESULT STDMETHODCALLTYPE UpdateOverlayZOrder(DWORD dwFlags, LPDIRECTDRAWSURFACE lpDDSReference);
 
-    IDirectDrawSurface* GetShadowOrProxied();
-
     HRESULT InitializeD3D9RenderTarget();
 
     HRESULT InitializeD3D9DepthStencil();
@@ -111,14 +109,21 @@ namespace dxvk {
 
     void DownloadSurfaceData();
 
-    void UpdateMipMapCount();
-
     void SetShadowSurface(Com<DDrawSurface>&& shadowSurf) {
       m_shadowSurf = shadowSurf;
     }
 
     DDrawSurface* GetShadowSurface() const {
       return m_shadowSurf.ptr();
+    }
+
+    IDirectDrawSurface* GetShadowOrProxied() {
+      d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
+
+      if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr))
+        return m_shadowSurf->GetProxied();
+
+      return m_proxy.ptr();
     }
 
     DDrawCommonSurface* GetCommonSurface() const {
@@ -197,9 +202,10 @@ namespace dxvk {
 
     inline HRESULT CreateDeviceInternal(REFIID riid, void** ppvObject);
 
-    inline DWORD DetermineBackBufferCount(IDirectDrawSurface* renderTarget);
+    bool                      m_isChildObject = false;
 
-    bool                      m_isChildObject = true;
+    bool                      m_readOnlyLock  = false;
+    std::atomic<uint8_t>      m_lockCount     = 0u;
 
     Com<DDrawCommonSurface>   m_commonSurf;
     DDrawCommonInterface*     m_commonIntf    = nullptr;
@@ -226,9 +232,6 @@ namespace dxvk {
     // They are implemented with linked list, so for example only one mip level
     // will be held in a parent texture, and the next mip level will be held in the previous mip.
     std::unordered_map<IDirectDrawSurface*, Com<DDrawSurface, false>> m_attachedSurfaces;
-
-    uint32_t                  m_surfCount     = 0;
-    static std::atomic<uint32_t> s_surfCount;
 
   };
 

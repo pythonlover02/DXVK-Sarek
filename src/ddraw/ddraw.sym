@@ -10,7 +10,7 @@
     DirectDrawCreate;
     DirectDrawCreateClipper;
     DirectDrawCreateEx;
-  	DirectDrawEnumerateA;
+    DirectDrawEnumerateA;
     DirectDrawEnumerateExA;
     DirectDrawEnumerateExW;
     DirectDrawEnumerateW;

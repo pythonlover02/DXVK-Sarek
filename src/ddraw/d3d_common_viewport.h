@@ -33,21 +33,21 @@ namespace dxvk {
       return S_OK;
     }
 
-    D3D6Viewport* GetCurrentD3D6Viewport();
+    void ApplyViewport();
 
-    D3D5Viewport* GetCurrentD3D5Viewport();
+    void DeactivateLights();
 
-    D3D3Viewport* GetCurrentD3D3Viewport();
+    void DeactivateLight(D3DLight* light);
 
-    DDrawCommonSurface* GetCommonRenderTarget();
+    void ApplyAndActivateLights();
 
-    DDrawCommonSurface* GetCommonDepthStencil();
-
-    D3DCommonDevice* GetCommonD3DDevice();
-
-    void UpdateSurfaceDirtyTracking(bool dirtyRenderTarget, bool dirtyDepthStencil, bool dirtyPrimarySurface);
+    void ApplyAndActivateLight(D3DLight* light);
 
     HRESULT TransformVertices(DWORD vertex_count, D3DTRANSFORMDATA *data, DWORD flags, DWORD *offscreen);
+
+    D3DCommonDevice* GetCommonD3DDevice() const {
+      return m_commonD3DDevice;
+    }
 
     d3d9::D3DVIEWPORT9* GetD3D9Viewport() {
       return &m_viewport9;
@@ -117,6 +117,32 @@ namespace dxvk {
       return m_isIdentityMatrix ? nullptr : &m_legacyProjection;
     }
 
+    void SetD3D6Device(D3D6Device* device6) {
+      m_device6 = device6;
+
+      RefreshCommonD3DDevice();
+    }
+
+    void SetD3D5Device(D3D5Device* device5) {
+      m_device5 = device5;
+
+      RefreshCommonD3DDevice();
+    }
+
+    void SetD3D3Device(D3D3Device* device3) {
+      m_device3 = device3;
+
+      RefreshCommonD3DDevice();
+    }
+
+    bool IsBoundToD3D3Device() const {
+      return m_device3 != nullptr;
+    }
+
+    bool HasDevice() const {
+      return m_commonD3DDevice != nullptr;
+    }
+
     void SetIsCurrentViewport(bool isCurrentViewport) {
       m_isCurrentViewport = isCurrentViewport;
     }
@@ -157,39 +183,15 @@ namespace dxvk {
       return m_origin;
     }
 
-    void SetD3D6Device(D3D6Device* device6) {
-      m_device6 = device6;
-    }
-
-    D3D6Device* GetD3D6Device() const {
-      return m_device6;
-    }
-
-    void SetD3D5Device(D3D5Device* device5) {
-      m_device5 = device5;
-    }
-
-    D3D5Device* GetD3D5Device() const {
-      return m_device5;
-    }
-
-    void SetD3D3Device(D3D3Device* device3) {
-      m_device3 = device3;
-    }
-
-    D3D3Device* GetD3D3Device() const {
-      return m_device3;
-    }
-
-    bool HasDevice() const {
-      return m_device6 != nullptr || m_device5 != nullptr || m_device3 != nullptr;
-    }
-
-    void GetD3D9Lights(std::vector<d3d9::D3DLIGHT9>* lights9) {
-      for (auto light: m_lights) {
+    void GetD3D9ActiveLights(std::vector<d3d9::D3DLIGHT9>* lights9) {
+      for (auto light : m_lights) {
         if (light->IsActive())
           lights9->push_back(*light->GetD3D9Light());
       }
+    }
+
+    bool HasLights() const {
+      return m_lights.size() > 0;
     }
 
     std::vector<Com<D3DLight>>& GetLights() {
@@ -197,6 +199,8 @@ namespace dxvk {
     }
 
   private:
+
+    void RefreshCommonD3DDevice();
 
     bool                  m_isViewportSet     = false;
     bool                  m_isCurrentViewport = false;
@@ -213,6 +217,11 @@ namespace dxvk {
     D3DVECTOR             m_legacyClip        = { };
     D3DMATRIX             m_legacyProjection  = { };
 
+    D3DCommonDevice*      m_commonD3DDevice   = nullptr;
+    D3D6Device*           m_device6           = nullptr;
+    D3D5Device*           m_device5           = nullptr;
+    D3D3Device*           m_device3           = nullptr;
+
     d3d9::D3DVIEWPORT9    m_viewport9         = { };
 
     D3D6Viewport*         m_d3d6Viewport      = nullptr;
@@ -222,11 +231,6 @@ namespace dxvk {
     // Track the origin viewport, as in the viewport
     // that gets created through a CreateViewport call
     IUnknown*             m_origin            = nullptr;
-
-    // Track all devices this viewport is attached to
-    D3D6Device*           m_device6           = nullptr;
-    D3D5Device*           m_device5           = nullptr;
-    D3D3Device*           m_device3           = nullptr;
 
     std::vector<Com<D3DLight>> m_lights;
 

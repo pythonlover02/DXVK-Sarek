@@ -15,8 +15,6 @@
 
 namespace dxvk {
 
-  std::atomic<uint32_t> DDraw2Interface::s_intfCount = 0;
-
   DDraw2Interface::DDraw2Interface(
         DDrawCommonInterface* commonIntf,
         Com<IDirectDraw2>&& proxyIntf)
@@ -40,16 +38,10 @@ namespace dxvk {
     // Note: IDirectDraw2 can never be the origin interface
 
     m_commonIntf->SetDD2Interface(this);
-
-    m_intfCount = ++s_intfCount;
-
-    Logger::debug(str::format("DDraw2Interface: Created a new interface nr. <<2-", m_intfCount, ">>"));
   }
 
   DDraw2Interface::~DDraw2Interface() {
     m_commonIntf->SetDD2Interface(nullptr);
-
-    Logger::debug(str::format("DDraw2Interface: Interface nr. <<2-", m_intfCount, ">> bites the dust"));
   }
 
   HRESULT STDMETHODCALLTYPE DDraw2Interface::QueryInterface(REFIID riid, void** ppvObject) {
@@ -208,57 +200,72 @@ namespace dxvk {
 
     InitReturnPtr(lplpDDSurface);
 
-    // Because we are removing the DDSCAPS_WRITEONLY flag below, we need
-    // to first validate the combinations that would otherwise cause issues
-    HRESULT hr = ValidateSurfaceFlags(lpDDSurfaceDesc);
-    if (unlikely(FAILED(hr)))
-      return hr;
+    if (likely(lpDDSurfaceDesc->dwFlags & DDSD_CAPS)) {
+      // Because we are removing the DDSCAPS_WRITEONLY flag below, we need
+      // to first validate the combinations that would otherwise cause issues
+      HRESULT hr = ValidateSurfaceFlags(lpDDSurfaceDesc);
+      if (unlikely(FAILED(hr)))
+        return hr;
 
-    // We need to ensure we can always read from surfaces for upload to
-    // D3D9, so always strip the DDSCAPS_WRITEONLY flag on creation
-    lpDDSurfaceDesc->ddsCaps.dwCaps &= ~DDSCAPS_WRITEONLY;
-
-    // Work around a WineD3D bug/limitation that prevents
-    // read back from L6V5U5 and X8L8V8U8 video memory surfaces
-    //
-    // Note: Doing this for other surfaces/formats is a bad idea,
-    // because some games expect these flags to remain in place, and
-    // may crash in case they find that's not the case
-    if (unlikely((lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_BUMPLUMINANCE)
-              && (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_VIDEOMEMORY))) {
-      Logger::warn("DDraw2Interface::CreateSurface: Video memory DDPF_BUMPLUMINANCE surface");
-      lpDDSurfaceDesc->ddsCaps.dwCaps &= ~DDSCAPS_VIDEOMEMORY &
-                                         ~DDSCAPS_LOCALVIDMEM &
-                                         ~DDSCAPS_NONLOCALVIDMEM;
-      lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_SYSTEMMEMORY;
+      // We need to ensure we can always read from surfaces for upload to
+      // D3D9, so always strip the DDSCAPS_WRITEONLY flag on creation
+      lpDDSurfaceDesc->ddsCaps.dwCaps &= ~DDSCAPS_WRITEONLY;
     }
 
-    if (unlikely(lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_ZBUFFER)) {
-      if (unlikely(m_commonIntf->GetOptions()->useD16forD24X8
-                && lpDDSurfaceDesc->ddpfPixelFormat.dwZBitMask == 0xFFFFFF
-                && lpDDSurfaceDesc->ddpfPixelFormat.dwStencilBitMask == 0x0)) {
-        // Games such as Need for Speed: Porsche are broken with 32-bit color
-        // on night tracks with "projected" lights, because they clearly were
-        // designed with 16-bit Z buffers in mind. Fix it up by silently swapping
-        // D16 for D24X8 on depth stencil creation.
-        Logger::info("DDraw2Interface::CreateSurface: Using D16 instead of D24X8");
-        lpDDSurfaceDesc->ddpfPixelFormat.dwZBufferBitDepth = 16;
-        lpDDSurfaceDesc->ddpfPixelFormat.dwZBitMask = 0xFFFF;
-      } else if (unlikely(lpDDSurfaceDesc->ddpfPixelFormat.dwZBitMask == 0xFFFFFFFF)) {
-        if (m_commonIntf->GetOptions()->useD24X8forD32) {
-          // In case of up-front unsupported and unadvertised D32 depth stencil use,
-          // replace it with D24X8, as some games, such as Sacrifice, rely on it
-          // to properly enable 32-bit display modes (and revert to 16-bit otherwise)
-          Logger::info("DDraw2Interface::CreateSurface: Using D24X8 instead of D32");
-          lpDDSurfaceDesc->ddpfPixelFormat.dwZBitMask = 0xFFFFFF;
-        } else {
-          Logger::warn("DDraw2Interface::CreateSurface: Use of unsupported D32");
+    if (likely(lpDDSurfaceDesc->dwFlags & DDSD_PIXELFORMAT)) {
+      // WineD3D will fail to create 8-bit texture surfaces at times, for whatever reason...
+      if (unlikely((lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_TEXTURE)
+               &&  (lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_RGB)
+               &&   lpDDSurfaceDesc->ddpfPixelFormat.dwRGBBitCount == 8
+               && !(lpDDSurfaceDesc->ddpfPixelFormat.dwFlags & DDPF_PALETTEINDEXED8))) {
+        static bool s_8bitTextureWarningShown;
+
+        if (!std::exchange(s_8bitTextureWarningShown, true))
+          Logger::warn("DDraw2Interface::CreateSurface: Use of potentially unsupported 8-bit texture surface");
+      }
+
+      // Work around a WineD3D bug/limitation that prevents
+      // read back from L6V5U5 and X8L8V8U8 video memory surfaces
+      //
+      // Note: Doing this for other surfaces/formats is a bad idea,
+      // because some games expect these flags to remain in place, and
+      // may crash in case they find that's not the case
+      if (unlikely((lpDDSurfaceDesc->ddpfPixelFormat.dwFlags == (DDPF_BUMPDUDV | DDPF_BUMPLUMINANCE))
+                && (lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_VIDEOMEMORY))) {
+        Logger::warn("DDraw2Interface::CreateSurface: Video memory DDPF_BUMPLUMINANCE surface");
+        lpDDSurfaceDesc->ddsCaps.dwCaps &= ~DDSCAPS_VIDEOMEMORY &
+                                           ~DDSCAPS_LOCALVIDMEM &
+                                           ~DDSCAPS_NONLOCALVIDMEM;
+        lpDDSurfaceDesc->ddsCaps.dwCaps |= DDSCAPS_SYSTEMMEMORY;
+      }
+
+      if (unlikely(lpDDSurfaceDesc->ddsCaps.dwCaps & DDSCAPS_ZBUFFER)) {
+        if (unlikely(m_commonIntf->GetOptions()->useD16forD24X8
+                  && lpDDSurfaceDesc->ddpfPixelFormat.dwZBitMask == 0xFFFFFF
+                  && lpDDSurfaceDesc->ddpfPixelFormat.dwStencilBitMask == 0x0)) {
+          // Games such as Need for Speed: Porsche are broken with 32-bit color
+          // on night tracks with "projected" lights, because they clearly were
+          // designed with 16-bit Z buffers in mind. Fix it up by silently swapping
+          // D16 for D24X8 on depth stencil creation.
+          Logger::debug("DDraw2Interface::CreateSurface: Using D16 instead of D24X8");
+          lpDDSurfaceDesc->ddpfPixelFormat.dwZBufferBitDepth = 16;
+          lpDDSurfaceDesc->ddpfPixelFormat.dwZBitMask = 0xFFFF;
+        } else if (unlikely(lpDDSurfaceDesc->ddpfPixelFormat.dwZBitMask == 0xFFFFFFFF)) {
+          if (m_commonIntf->GetOptions()->useD24X8forD32) {
+            // In case of up-front unsupported and unadvertised D32 depth stencil use,
+            // replace it with D24X8, as some games, such as Sacrifice, rely on it
+            // to properly enable 32-bit display modes (and revert to 16-bit otherwise)
+            Logger::debug("DDraw2Interface::CreateSurface: Using D24X8 instead of D32");
+            lpDDSurfaceDesc->ddpfPixelFormat.dwZBitMask = 0xFFFFFF;
+          } else {
+            Logger::warn("DDraw2Interface::CreateSurface: Use of unsupported D32");
+          }
         }
       }
     }
 
     Com<IDirectDrawSurface> ddrawSurfaceProxied;
-    hr = m_proxy->CreateSurface(lpDDSurfaceDesc, &ddrawSurfaceProxied, pUnkOuter);
+    HRESULT hr = m_proxy->CreateSurface(lpDDSurfaceDesc, &ddrawSurfaceProxied, pUnkOuter);
     // Some games simply try creating surfaces with various formats until something works...
     if (unlikely(FAILED(hr)))
       return hr;
@@ -273,10 +280,8 @@ namespace dxvk {
 
         // Shadow surface creation for the primary surface
         // (it needs to be based on the same incoming desc)
-        if (unlikely(!surface->GetCommonSurface()->Is8BitFormat() &&
-                      m_commonIntf->GetOptions()->forceLegacyPresent)) {
-          Logger::debug("DDraw2Interface::CreateSurface: Creating shadow surface");
-
+        if (unlikely(m_commonIntf->GetOptions()->forceLegacyPresent &&
+                    !surface->GetCommonSurface()->SkipD3D9Operations())) {
           DDSURFACEDESC shadowDesc = *lpDDSurfaceDesc;
           const DDSURFACEDESC* primaryDesc = surface->GetCommonSurface()->GetDesc();
 
@@ -340,7 +345,35 @@ namespace dxvk {
   }
 
   HRESULT STDMETHODCALLTYPE DDraw2Interface::EnumDisplayModes(DWORD dwFlags, LPDDSURFACEDESC lpDDSurfaceDesc, LPVOID lpContext, LPDDENUMMODESCALLBACK lpEnumModesCallback) {
-    return m_proxy->EnumDisplayModes(dwFlags, lpDDSurfaceDesc, lpContext, lpEnumModesCallback);
+    if (unlikely(lpEnumModesCallback == nullptr))
+      return DDERR_INVALIDPARAMS;
+
+    std::vector<DDSURFACEDESC> displayModes;
+    HRESULT hr = m_proxy->EnumDisplayModes(dwFlags, lpDDSurfaceDesc, reinterpret_cast<void*>(&displayModes), EnumDisplayModesCallback);
+    if (unlikely(FAILED(hr)))
+      return hr;
+
+    const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
+
+    hr = DDENUMRET_OK;
+
+    auto displayModeIt = displayModes.begin();
+    while (displayModeIt != displayModes.end() && hr == DDENUMRET_OK) {
+      DDSURFACEDESC dmDesc = *displayModeIt;
+
+      if (unlikely(d3dOptions->mask8BitModes && dmDesc.ddpfPixelFormat.dwRGBBitCount == 8)) {
+        static bool s_maskModeWarningShown;
+
+        if (!std::exchange(s_maskModeWarningShown, true))
+          Logger::warn("DDraw2Interface::EnumDisplayModes: Masking 8-bit display modes");
+      } else {
+        hr = lpEnumModesCallback(&dmDesc, lpContext);
+      }
+
+      ++displayModeIt;
+    }
+
+    return DD_OK;
   }
 
   HRESULT STDMETHODCALLTYPE DDraw2Interface::EnumSurfaces(DWORD dwFlags, LPDDSURFACEDESC lpDDSD, LPVOID lpContext, LPDDENUMSURFACESCALLBACK lpEnumSurfacesCallback) {
@@ -451,8 +484,17 @@ namespace dxvk {
 
     const D3DOptions* d3dOptions = m_commonIntf->GetOptions();
 
-    if (unlikely(d3dOptions->mask8BitModes && lpDDSurfaceDesc->ddpfPixelFormat.dwRGBBitCount == 8))
+    if (unlikely(d3dOptions->mask8BitModes
+              && lpDDSurfaceDesc->dwFlags & DDSD_PIXELFORMAT
+              && lpDDSurfaceDesc->ddpfPixelFormat.dwRGBBitCount == 8)) {
+      // Report a fake D3DFMT_R5G6B5 back buffer scenario
+      lpDDSurfaceDesc->ddpfPixelFormat.dwFlags = DDPF_RGB;
       lpDDSurfaceDesc->ddpfPixelFormat.dwRGBBitCount = 16;
+      lpDDSurfaceDesc->ddpfPixelFormat.dwRGBAlphaBitMask = 0x0000;
+      lpDDSurfaceDesc->ddpfPixelFormat.dwRBitMask = 0xf800;
+      lpDDSurfaceDesc->ddpfPixelFormat.dwGBitMask = 0x07e0;
+      lpDDSurfaceDesc->ddpfPixelFormat.dwBBitMask = 0x001f;
+    }
 
     return DD_OK;
   }
@@ -557,7 +599,7 @@ namespace dxvk {
     DDrawCommonSurface* ps = m_commonIntf->GetPrimarySurface();
 
     if (likely(ps != nullptr)) {
-      hr = ps->RefreshSurfaceDescripton();
+      hr = ps->RefreshSurfaceDescripton(true);
       if (unlikely(FAILED(hr)))
         Logger::warn("DDraw2Interface::SetDisplayMode: Failed to update primary surface desc");
     }

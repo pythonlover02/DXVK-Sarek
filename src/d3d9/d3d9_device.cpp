@@ -49,14 +49,10 @@ namespace dxvk {
     , m_d3d9Options        ( dxvkDevice, pParent->GetInstance()->config() )
     , m_multithread        ( BehaviorFlags & D3DCREATE_MULTITHREADED )
     , m_isSWVP             ( (BehaviorFlags & D3DCREATE_SOFTWARE_VERTEXPROCESSING) != 0 )
-    , m_isD3D3Compatible   ( pParent->IsD3D3Compatible() )
-    , m_isD3D5Compatible   ( pParent->IsD3D5Compatible() )
-    , m_isD3D6Compatible   ( pParent->IsD3D6Compatible() )
-    , m_isD3D7Compatible   ( pParent->IsD3D7Compatible() )
-    , m_isD3D8Compatible   ( pParent->IsD3D8Compatible() )
     , m_csThread           ( dxvkDevice, dxvkDevice->createContext() )
     , m_csChunk            ( AllocCsChunk() )
-    , m_d3d8Bridge         ( this ) {
+    , m_legacyD3DBridge    ( this )
+    , m_d3dCompatibility   ( pParent->GetD3DCompatibilityFlags() ) {
     // If we can SWVP, then we use an extended constant set
     // as SWVP has many more slots available than HWVP.
     bool canSWVP = CanSWVP();
@@ -175,18 +171,16 @@ namespace dxvk {
 
     *ppvObject = nullptr;
 
-    bool extended = m_parent->IsExtended()
-                 && riid == __uuidof(IDirect3DDevice9Ex);
-
     if (riid == __uuidof(IUnknown)
      || riid == __uuidof(IDirect3DDevice9)
-     || extended) {
+     || (m_d3dCompatibility.test(D3DCompatibility::D3D9Ex) &&
+         riid == __uuidof(IDirect3DDevice9Ex))) {
       *ppvObject = ref(this);
       return S_OK;
     }
 
-    if (riid == __uuidof(IDxvkD3D8Bridge)) {
-      *ppvObject = ref(&m_d3d8Bridge);
+    if (riid == __uuidof(IDxvkLegacyD3DDeviceBridge)) {
+      *ppvObject = ref(&m_legacyD3DBridge);
       return S_OK;
     }
 
@@ -373,7 +367,7 @@ namespace dxvk {
   }
 
 
-  void    STDMETHODCALLTYPE D3D9DeviceEx::SetCursorPosition(int X, int Y, DWORD Flags) {
+  void STDMETHODCALLTYPE D3D9DeviceEx::SetCursorPosition(int X, int Y, DWORD Flags) {
     D3D9DeviceLock lock = LockDevice();
 
     // I was not able to find an instance
@@ -388,7 +382,7 @@ namespace dxvk {
   }
 
 
-  BOOL    STDMETHODCALLTYPE D3D9DeviceEx::ShowCursor(BOOL bShow) {
+  BOOL STDMETHODCALLTYPE D3D9DeviceEx::ShowCursor(BOOL bShow) {
     D3D9DeviceLock lock = LockDevice();
 
     return m_cursor.ShowCursor(bShow);
@@ -421,7 +415,7 @@ namespace dxvk {
   }
 
 
-  UINT    STDMETHODCALLTYPE D3D9DeviceEx::GetNumberOfSwapChains() {
+  UINT STDMETHODCALLTYPE D3D9DeviceEx::GetNumberOfSwapChains() {
     // This only counts the implicit swapchain...
 
     return 1;
@@ -3039,8 +3033,8 @@ namespace dxvk {
     const uint32_t minorVersion = D3DSHADER_VERSION_MINOR(pFunction[0]);
 
     // Late fixed-function capable hardware exposed support for VS 1.1
-    const uint32_t shaderModelVS = m_isD3D8Compatible ? 1u : std::max(1u, m_d3d9Options.shaderModel);
-
+    const uint32_t shaderModelVS = m_d3dCompatibility.test(D3DCompatibility::D3D8) ? 1u
+                                                                                   : std::max(1u, m_d3d9Options.shaderModel);
     if (unlikely(majorVersion > shaderModelVS
               || (majorVersion == 1 && minorVersion > 1)
               // Skip checking the SM2 minor version, as it has a 2_x mode apparently
@@ -3390,8 +3384,8 @@ namespace dxvk {
     const uint32_t majorVersion = D3DSHADER_VERSION_MAJOR(pFunction[0]);
     const uint32_t minorVersion = D3DSHADER_VERSION_MINOR(pFunction[0]);
 
-    const uint32_t shaderModelPS = m_isD3D8Compatible ? std::min(1u, m_d3d9Options.shaderModel) : m_d3d9Options.shaderModel;
-
+    const uint32_t shaderModelPS = m_d3dCompatibility.test(D3DCompatibility::D3D8) ? std::min(1u, m_d3d9Options.shaderModel)
+                                                                                   : m_d3d9Options.shaderModel;
     if (unlikely(majorVersion > shaderModelPS
               || (majorVersion == 1 && minorVersion > 4)
               // Skip checking the SM2 minor version, as it has a 2_x mode apparently
@@ -4280,11 +4274,6 @@ namespace dxvk {
     }
 
     return D3D_OK;
-  }
-
-
-  bool D3D9DeviceEx::IsExtended() {
-    return m_parent->IsExtended();
   }
 
 
@@ -7599,11 +7588,11 @@ namespace dxvk {
     rs[D3DRS_COLORVERTEX]            = TRUE;
     rs[D3DRS_LOCALVIEWER]            = TRUE;
     rs[D3DRS_RANGEFOGENABLE]         = FALSE;
-    rs[D3DRS_NORMALIZENORMALS]       = m_isD3D6Compatible ? TRUE : FALSE;
+    rs[D3DRS_NORMALIZENORMALS]       = m_d3dCompatibility.test(D3DCompatibility::D3D6) ? TRUE : FALSE;
     m_flags.set(D3D9DeviceFlag::DirtyFFVertexShader);
 
     // PS
-    rs[D3DRS_SPECULARENABLE] = m_isD3D5Compatible ? TRUE : FALSE;
+    rs[D3DRS_SPECULARENABLE] = m_d3dCompatibility.test(D3DCompatibility::D3D5) ? TRUE : FALSE;
 
     rs[D3DRS_AMBIENT]                = 0;
     m_flags.set(D3D9DeviceFlag::DirtyFFVertexData);
@@ -7611,8 +7600,10 @@ namespace dxvk {
     rs[D3DRS_FOGENABLE]                  = FALSE;
     rs[D3DRS_FOGCOLOR]                   = 0;
     rs[D3DRS_FOGTABLEMODE]               = D3DFOG_NONE;
-    rs[D3DRS_FOGSTART]                   = m_isD3D6Compatible ? bit::cast<DWORD>(1.0f)   : bit::cast<DWORD>(0.0f);
-    rs[D3DRS_FOGEND]                     = m_isD3D6Compatible ? bit::cast<DWORD>(100.0f) : bit::cast<DWORD>(1.0f);
+    rs[D3DRS_FOGSTART]                   = m_d3dCompatibility.test(D3DCompatibility::D3D6) ? bit::cast<DWORD>(1.0f)
+                                                                                           : bit::cast<DWORD>(0.0f);
+    rs[D3DRS_FOGEND]                     = m_d3dCompatibility.test(D3DCompatibility::D3D6) ? bit::cast<DWORD>(100.0f)
+                                                                                           : bit::cast<DWORD>(1.0f);
     rs[D3DRS_FOGDENSITY]                 = bit::cast<DWORD>(1.0f);
     rs[D3DRS_FOGVERTEXMODE]              = D3DFOG_NONE;
     m_flags.set(D3D9DeviceFlag::DirtyFogColor);
@@ -7630,7 +7621,8 @@ namespace dxvk {
     rs[D3DRS_POINTSCALE_B]               = bit::cast<DWORD>(0.0f);
     rs[D3DRS_POINTSCALE_C]               = bit::cast<DWORD>(0.0f);
     rs[D3DRS_POINTSIZE]                  = bit::cast<DWORD>(1.0f);
-    rs[D3DRS_POINTSIZE_MIN]              = m_isD3D8Compatible ? bit::cast<DWORD>(0.0f) : bit::cast<DWORD>(1.0f);
+    rs[D3DRS_POINTSIZE_MIN]              = m_d3dCompatibility.test(D3DCompatibility::D3D8) ? bit::cast<DWORD>(0.0f)
+                                                                                           : bit::cast<DWORD>(1.0f);
     rs[D3DRS_POINTSIZE_MAX]              = bit::cast<DWORD>(64.0f);
     UpdatePushConstant<D3D9RenderStateItem::PointSize>();
     UpdatePushConstant<D3D9RenderStateItem::PointSizeMin>();
@@ -7659,7 +7651,7 @@ namespace dxvk {
     rs[D3DRS_WRAP6]                      = 0;
     rs[D3DRS_WRAP7]                      = 0;
     rs[D3DRS_CLIPPING]                   = TRUE;
-    rs[D3DRS_MULTISAMPLEANTIALIAS]       = m_isD3D7Compatible ? FALSE : TRUE;
+    rs[D3DRS_MULTISAMPLEANTIALIAS]       = m_d3dCompatibility.test(D3DCompatibility::D3D7) ? FALSE : TRUE;
     rs[D3DRS_PATCHEDGESTYLE]             = D3DPATCHEDGE_DISCRETE;
     rs[D3DRS_DEBUGMONITORTOKEN]          = D3DDMT_ENABLE;
     rs[D3DRS_POSITIONDEGREE]             = D3DDEGREE_CUBIC;
@@ -7763,7 +7755,7 @@ namespace dxvk {
 
     // In D3D8, this represents the value of D3DRS_PATCHSEGMENTS.
     // It defaults to 1.0f and is reset as any other render state.
-    if (m_isD3D8Compatible)
+    if (m_d3dCompatibility.test(D3DCompatibility::D3D8))
       m_state.nPatchSegments = 1.0f;
 
     return D3D_OK;

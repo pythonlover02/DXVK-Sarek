@@ -10,6 +10,16 @@
 
 namespace dxvk {
 
+  enum class D3D9SurfaceType : uint8_t {
+    None,
+    BackBuffer,
+    CubeTexture,
+    Texture,
+    DepthStencil,
+    OffscreenPlainSurface,
+    RenderTarget
+  };
+
   class D3DCommonDevice;
 
   class DDraw7Surface;
@@ -35,9 +45,11 @@ namespace dxvk {
 
     DDrawCommonSurface* GetShadowCommonSurface();
 
-    HRESULT RefreshSurfaceDescripton();
+    HRESULT RefreshSurfaceDescripton(const bool refreshFormat);
 
-    d3d9::IDirect3DDevice9* RefreshD3D9Device();
+    void RefreshD3D9Device();
+
+    d3d9::IDirect3DDevice9* GetRefreshedD3D9Device();
 
     HRESULT InitializeD3D9(const bool initRenderTarget);
 
@@ -83,8 +95,21 @@ namespace dxvk {
       return m_cubeMap9.ptr();
     }
 
+    void ResetD3D9Objects() {
+      m_cubeMap9 = nullptr;
+      m_texture9 = nullptr;
+      m_surface9 = nullptr;
+      // Also reset all D3D9 related tracking flags
+      m_d3d9SurfaceType = D3D9SurfaceType::None;
+      m_dirtyD3D9 = false;
+    }
+
     d3d9::D3DFORMAT GetD3D9Format() const {
       return m_format9;
+    }
+
+    D3D9SurfaceType GetD3D9SurfaceType() const {
+      return m_d3d9SurfaceType;
     }
 
     bool IsDesc2Set() const {
@@ -94,7 +119,7 @@ namespace dxvk {
     void SetDesc2(const DDSURFACEDESC2& desc2) {
       m_desc2 = desc2;
       m_isDesc2Set = true;
-      RefreshStaticDescData();
+      RefreshStaticDescData(true);
     }
 
     const DDSURFACEDESC2* GetDesc2() const {
@@ -108,7 +133,7 @@ namespace dxvk {
     void SetDesc(const DDSURFACEDESC& desc) {
       m_desc = desc;
       m_isDescSet = true;
-      RefreshStaticDescData();
+      RefreshStaticDescData(true);
     }
 
     const DDSURFACEDESC* GetDesc() const {
@@ -116,8 +141,8 @@ namespace dxvk {
     }
 
     uint8_t GetColorBitCount() const {
-      return (m_desc2.dwFlags & DDSD_PIXELFORMAT) ? m_desc2.ddpfPixelFormat.dwRGBBitCount
-                                                  : m_desc.ddpfPixelFormat.dwRGBBitCount;
+      return (m_desc2.dwFlags & DDSD_PIXELFORMAT) ? m_desc2.ddpfPixelFormat.dwRGBBitCount :
+             (m_desc.dwFlags & DDSD_PIXELFORMAT)  ? m_desc.ddpfPixelFormat.dwRGBBitCount : 0u;
     }
 
     bool IsAlphaFormat() const {
@@ -129,19 +154,17 @@ namespace dxvk {
       return (m_desc2.dwFlags & DDSD_CKSRCBLT) || (m_desc.dwFlags & DDSD_CKSRCBLT);
     }
 
-    const DDCOLORKEY* GetColorKey() const {
-      return (m_desc2.dwFlags & DDSD_CKSRCBLT) ? &m_desc2.ddckCKSrcBlt : &m_desc.ddckCKSrcBlt;
-    }
-
     DDCOLORKEY GetColorKeyNormalized() const {
-      const DDPIXELFORMAT* pixelFormat = (m_desc2.dwFlags & DDSD_PIXELFORMAT) ? &m_desc2.ddpfPixelFormat : &m_desc.ddpfPixelFormat;
-      const DDCOLORKEY*    colorKey    = (m_desc2.dwFlags & DDSD_CKSRCBLT) ? &m_desc2.ddckCKSrcBlt : &m_desc.ddckCKSrcBlt;
+      const DDPIXELFORMAT* pixelFormat = (m_desc2.dwFlags & DDSD_PIXELFORMAT) ? &m_desc2.ddpfPixelFormat :
+                                         (m_desc.dwFlags & DDSD_PIXELFORMAT)  ? &m_desc.ddpfPixelFormat : nullptr;
+      const DDCOLORKEY*    colorKey    = (m_desc2.dwFlags & DDSD_CKSRCBLT) ? &m_desc2.ddckCKSrcBlt :
+                                         (m_desc.dwFlags & DDSD_CKSRCBLT)  ? &m_desc.ddckCKSrcBlt : nullptr;
 
       // Empire of the Ants relies on us using the "Low" color space DWORD
-      return ColorKeyToARGB(pixelFormat, colorKey->dwColorSpaceLowValue);
+      return ColorKeyToARGB(pixelFormat, colorKey != nullptr ? colorKey->dwColorSpaceLowValue : 0u);
     }
 
-    bool IsFullSurfaceLock(RECT* lockRect, RECT* fullSurfaceRect) const {
+    bool IsFullSurfaceLock(const RECT* lockRect, const RECT* fullSurfaceRect) const {
       if (lockRect == nullptr) {
         if (fullSurfaceRect == nullptr)
           return true;
@@ -149,14 +172,11 @@ namespace dxvk {
         lockRect = fullSurfaceRect;
       }
 
-      const DWORD width  = (m_desc2.dwFlags & DDSD_WIDTH)  ? m_desc2.dwWidth  : m_desc.dwWidth;
-      const DWORD height = (m_desc2.dwFlags & DDSD_HEIGHT) ? m_desc2.dwHeight : m_desc.dwHeight;
-
-      return width  == static_cast<DWORD>(lockRect->right  - lockRect->left) &&
-             height == static_cast<DWORD>(lockRect->bottom - lockRect->top);
+      return (m_rect.right  == lockRect->right  - lockRect->left) &&
+             (m_rect.bottom == lockRect->bottom - lockRect->top);
     }
 
-    RECT* GetFullSurfaceRect() {
+    const RECT* GetFullSurfaceRect() const {
       return &m_rect;
     }
 
@@ -167,12 +187,7 @@ namespace dxvk {
     }
 
     uint16_t GetMipCount() const {
-      // Properly handle textures with auto-generated mip maps
-      return std::max<uint16_t>(1u, m_mipCount);
-    }
-
-    void SetMipCount(uint16_t mipCount) {
-      m_mipCount = mipCount;
+      return m_mipCount;
     }
 
     uint32_t GetBackBufferIndex() const {
@@ -207,28 +222,12 @@ namespace dxvk {
       m_dirtyD3D9 = false;
     }
 
-    bool IsAttached() const {
-      return m_isAttached;
-    }
-
     void SetIsAttached(bool isAttached) {
       m_isAttached = isAttached;
     }
 
-    void MarkAsD3D9BackBuffer() {
-      m_isD3D9BackBuffer = true;
-    }
-
-    bool IsD3D9BackBuffer() const {
-      return m_isD3D9BackBuffer;
-    }
-
-    void MarkAsD3D9DepthStencil() {
-      m_isD3D9DepthStencil = true;
-    }
-
-    bool IsD3D9DepthStencil() const {
-      return m_isD3D9DepthStencil;
+    bool IsAttached() const {
+      return m_isAttached;
     }
 
     void MarkWithTextureHandle() {
@@ -327,6 +326,11 @@ namespace dxvk {
           || m_desc.ddsCaps.dwCaps  & DDSCAPS_BACKBUFFER;
     }
 
+    bool IsFlippable() const {
+      return m_desc2.ddsCaps.dwCaps & DDSCAPS_FLIP
+          || m_desc.ddsCaps.dwCaps  & DDSCAPS_FLIP;
+    }
+
     bool IsDepthStencil() const {
       return m_desc2.ddsCaps.dwCaps & DDSCAPS_ZBUFFER
           || m_desc.ddsCaps.dwCaps  & DDSCAPS_ZBUFFER;
@@ -343,16 +347,6 @@ namespace dxvk {
           || m_hasTextureHandle;
     }
 
-    bool IsOverlay() const {
-      return m_desc2.ddsCaps.dwCaps & DDSCAPS_OVERLAY
-          || m_desc.ddsCaps.dwCaps  & DDSCAPS_OVERLAY;
-    }
-
-    bool Is3DSurface() const {
-      return m_desc2.ddsCaps.dwCaps & DDSCAPS_3DDEVICE
-          || m_desc.ddsCaps.dwCaps  & DDSCAPS_3DDEVICE;
-    }
-
     bool IsTextureMip() const {
       return m_desc2.ddsCaps.dwCaps  & DDSCAPS_MIPMAP
           || m_desc2.ddsCaps.dwCaps2 & DDSCAPS2_MIPMAPSUBLEVEL
@@ -363,14 +357,21 @@ namespace dxvk {
       return m_desc2.ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP;
     }
 
-    bool IsFlippable() const {
-      return m_desc2.ddsCaps.dwCaps & DDSCAPS_FLIP
-          || m_desc.ddsCaps.dwCaps  & DDSCAPS_FLIP;
+    bool IsTextureOrCubeMap() const {
+      return m_desc2.ddsCaps.dwCaps  & DDSCAPS_TEXTURE
+          || m_desc2.ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP
+          || m_desc.ddsCaps.dwCaps   & DDSCAPS_TEXTURE
+          || m_hasTextureHandle;
     }
 
-    bool IsNotKnown() const {
-      return !(m_desc2.dwFlags & DDSD_CAPS)
-          && !(m_desc.dwFlags  & DDSD_CAPS);
+    bool IsOverlay() const {
+      return m_desc2.ddsCaps.dwCaps & DDSCAPS_OVERLAY
+          || m_desc.ddsCaps.dwCaps  & DDSCAPS_OVERLAY;
+    }
+
+    bool Is3DSurface() const {
+      return m_desc2.ddsCaps.dwCaps & DDSCAPS_3DDEVICE
+          || m_desc.ddsCaps.dwCaps  & DDSCAPS_3DDEVICE;
     }
 
     bool IsManaged() const {
@@ -378,21 +379,24 @@ namespace dxvk {
           || m_desc2.ddsCaps.dwCaps2 & DDSCAPS2_D3DTEXTUREMANAGE;
     }
 
+    bool IsInVideoMemory() const {
+      return m_desc2.ddsCaps.dwCaps & DDSCAPS_VIDEOMEMORY
+          || m_desc.ddsCaps.dwCaps  & DDSCAPS_VIDEOMEMORY;
+    }
+
+    bool IsInLocalVideoMemory() const {
+      return m_desc2.ddsCaps.dwCaps & DDSCAPS_LOCALVIDMEM
+          || m_desc.ddsCaps.dwCaps  & DDSCAPS_LOCALVIDMEM;
+    }
+
+    bool IsInNonLocalVideoMemory() const {
+      return m_desc2.ddsCaps.dwCaps & DDSCAPS_NONLOCALVIDMEM
+          || m_desc.ddsCaps.dwCaps  & DDSCAPS_NONLOCALVIDMEM;
+    }
+
     bool IsInSystemMemory() const {
       return m_desc2.ddsCaps.dwCaps & DDSCAPS_SYSTEMMEMORY
           || m_desc.ddsCaps.dwCaps  & DDSCAPS_SYSTEMMEMORY;
-    }
-
-    bool HasColorKey() const {
-      return m_desc2.dwFlags & DDSD_CKSRCBLT
-          || m_desc.dwFlags  & DDSD_CKSRCBLT;
-    }
-
-    bool IsTextureOrCubeMap() const {
-      return m_desc2.ddsCaps.dwCaps  & DDSCAPS_TEXTURE
-          || m_desc2.ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP
-          || m_desc.ddsCaps.dwCaps   & DDSCAPS_TEXTURE
-          || m_hasTextureHandle;
     }
 
     bool IsRenderTarget() const {
@@ -411,31 +415,26 @@ namespace dxvk {
           || m_format9 == d3d9::D3DFMT_DXT5;
     }
 
-    bool Is8BitFormat() const {
-      return m_format9 == d3d9::D3DFMT_R3G3B2
-          || m_format9 == d3d9::D3DFMT_P8;
-    }
-
     // D3D7 is a bit more sane here, as always, so handle it separately
     HRESULT ValidateRTUsage7(bool isHALOrTNLHALDevice, bool isDeviceCreation) const {
       // Render targets require the DDSCAPS_3DDEVICE flag
       if (unlikely(!Is3DSurface())) {
-        Logger::err("DDrawCommonInterface::ValidateRTUsage: Missing DDSCAPS_3DDEVICE");
+        Logger::err("DDrawCommonSurface::ValidateRTUsage: Missing DDSCAPS_3DDEVICE");
         return DDERR_INVALIDCAPS;
       }
       // Depth stencil surfaces can't be set as render targets
       if (unlikely(IsDepthStencil())) {
-        Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid DDSCAPS_ZBUFFER");
+        Logger::err("DDrawCommonSurface::ValidateRTUsage: Invalid DDSCAPS_ZBUFFER");
         return isDeviceCreation ? DDERR_INVALIDCAPS : DDERR_INVALIDPIXELFORMAT;
       }
       // DXVK doesn't support P8 render targets, so pretend these are always invalid
       if (unlikely(m_format9 == d3d9::D3DFMT_P8)) {
-        Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid P8 render target");
+        Logger::err("DDrawCommonSurface::ValidateRTUsage: Invalid P8 render target");
         return isDeviceCreation ? DDERR_NOPALETTEATTACHED : DDERR_INVALIDPARAMS;
       }
       // Render targets can't be created in system memory on HAL/HAL T&L devices
       if (unlikely(IsInSystemMemory() && isHALOrTNLHALDevice)) {
-        Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid DDSCAPS_SYSTEMMEMORY");
+        Logger::err("DDrawCommonSurface::ValidateRTUsage: Invalid DDSCAPS_SYSTEMMEMORY");
         return isDeviceCreation ? D3DERR_SURFACENOTINVIDMEM : DDERR_INVALIDPARAMS;
       }
 
@@ -446,27 +445,41 @@ namespace dxvk {
     HRESULT ValidateRTUsage(bool isHALDevice, bool isDeviceCreation) const {
       // Render targets require the DDSCAPS_3DDEVICE flag
       if (unlikely(!Is3DSurface())) {
-        Logger::err("DDrawCommonInterface::ValidateRTUsage: Missing DDSCAPS_3DDEVICE");
+        Logger::err("DDrawCommonSurface::ValidateRTUsage: Missing DDSCAPS_3DDEVICE");
         return DDERR_INVALIDCAPS;
       }
       // Depth stencil surfaces can't be set as render targets
       if (unlikely(IsDepthStencil())) {
-        Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid DDSCAPS_ZBUFFER");
+        Logger::err("DDrawCommonSurface::ValidateRTUsage: Invalid DDSCAPS_ZBUFFER");
         return isDeviceCreation ? DDERR_INVALIDCAPS : DDERR_INVALIDPIXELFORMAT;
       }
       // DXVK doesn't support P8 render targets, so pretend these are always invalid
       if (unlikely(m_format9 == d3d9::D3DFMT_P8)) {
-        Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid P8 render target");
+        Logger::err("DDrawCommonSurface::ValidateRTUsage: Invalid P8 render target");
         return isDeviceCreation ? DDERR_NOPALETTEATTACHED : DDERR_INVALIDPARAMS;
       }
       // Render targets can't be created in system memory on HAL devices,
       // however system memory surfaces can later be set as render targets... yeah...
       if (unlikely(isDeviceCreation && IsInSystemMemory() && isHALDevice)) {
-        Logger::err("DDrawCommonInterface::ValidateRTUsage: Invalid DDSCAPS_SYSTEMMEMORY");
+        Logger::err("DDrawCommonSurface::ValidateRTUsage: Invalid DDSCAPS_SYSTEMMEMORY");
         return D3DERR_SURFACENOTINVIDMEM;
       }
 
       return DD_OK;
+    }
+
+    bool SkipD3D9Operations() const {
+      // Skip all D3D9 operations on P8 textures/surfaces, since DXVK doesn't support them
+      if (unlikely(m_format9 == d3d9::D3DFMT_P8)) {
+        static bool s_formatP8ErrorShown;
+
+        if (!std::exchange(s_formatP8ErrorShown, true))
+          Logger::warn("DDrawCommonSurface: Unsupported format D3DFMT_P8");
+
+        return true;
+      }
+
+      return false;
     }
 
     void ListSurfaceDetails() const {
@@ -479,49 +492,94 @@ namespace dxvk {
       else if (IsTextureMip())            type = "texture mipmap";
       else if (IsTexture())               type = "texture";
       else if (IsDepthStencil())          type = "depth stencil";
-      else if (IsOffScreenPlainSurface()) type = "offscreen plain surface";
       else if (IsOverlay())               type = "overlay";
+      else if (IsOffScreenPlainSurface()) type = "offscreen plain surface";
       else if (Is3DSurface())             type = "render target";
-      else if (IsNotKnown())              type = "unknown";
 
-      const DWORD width          = (m_desc2.dwFlags & DDSD_WIDTH)  ? m_desc2.dwWidth  : m_desc.dwWidth;
-      const DWORD height         = (m_desc2.dwFlags & DDSD_HEIGHT) ? m_desc2.dwHeight : m_desc.dwHeight;
-      const DWORD mipMapCount    = (m_desc2.dwFlags & DDSD_MIPMAPCOUNT) ? m_desc2.dwMipMapCount : m_desc.dwMipMapCount;
-      const DWORD backBuferCount = (m_desc2.dwFlags & DDSD_BACKBUFFERCOUNT) ? m_desc2.dwBackBufferCount : m_desc.dwBackBufferCount;
+      const DWORD mipMapCount    = (m_desc2.dwFlags & DDSD_MIPMAPCOUNT) ? m_desc2.dwMipMapCount :
+                                   (m_desc.dwFlags & DDSD_MIPMAPCOUNT) ? m_desc.dwMipMapCount : 0u;
+      const DWORD backBuferCount = (m_desc2.dwFlags & DDSD_BACKBUFFERCOUNT) ? m_desc2.dwBackBufferCount :
+                                   (m_desc.dwFlags & DDSD_BACKBUFFERCOUNT) ? m_desc.dwBackBufferCount : 0u;
 
-      Logger::debug(str::format("   Type:        ", type));
-      Logger::debug(str::format("   Dimensions:  ", width, "x", height));
-      Logger::debug(str::format("   Format:      ", GetD3D9Format()));
-      Logger::debug(str::format("   IsComplex:   ", IsComplex() ? "yes" : "no"));
-      Logger::debug(str::format("   HasMipMaps:  ", mipMapCount ? "yes" : "no"));
-      Logger::debug(str::format("   IsAttached:  ", IsAttached() ? "yes" : "no"));
-      Logger::debug(str::format("   ColorKey:    ", HasColorKey() ? "yes" : "no"));
-      if (IsFrontBuffer())
+      Logger::debug(str::format("   Type:        ", type,
+                              "\n   Dimensions:  ", m_rect.right, "x", m_rect.bottom,
+                              "\n   Format:      ", GetD3D9Format(),
+                              "\n   IsComplex:   ", IsComplex() ? "yes" : "no",
+                              "\n   IsAttached:  ", IsAttached() ? "yes" : "no"));
+      if (mipMapCount)
+        Logger::debug(str::format("   MipMaps:     ", mipMapCount));
+      if (backBuferCount)
         Logger::debug(str::format("   BackBuffers: ", backBuferCount));
     }
 
   private:
 
-    inline void RefreshStaticDescData() {
-      m_rect.right  = (m_desc2.dwFlags & DDSD_WIDTH)  ? m_desc2.dwWidth  : m_desc.dwWidth;
-      m_rect.bottom = (m_desc2.dwFlags & DDSD_HEIGHT) ? m_desc2.dwHeight : m_desc.dwHeight;
-      m_format9 = ConvertFormat((m_desc2.dwFlags & DDSD_PIXELFORMAT) ? m_desc2.ddpfPixelFormat : m_desc.ddpfPixelFormat);
+    // Note: The flag check order IS important here, as some flags take
+    // priority over others when considering D3D9 surface type mappings
+    inline void DetermineD3D9SurfaceType(const bool initRenderTarget) {
+      // Primary Surface
+      if (IsPrimarySurface()) {
+        m_d3d9SurfaceType = D3D9SurfaceType::BackBuffer;
+      // Front Buffer
+      } else if (IsFrontBuffer()) {
+        m_d3d9SurfaceType = D3D9SurfaceType::BackBuffer;
+      // Back Buffer
+      } else if (IsBackBufferOrFlippable()) {
+        m_d3d9SurfaceType = D3D9SurfaceType::BackBuffer;
+      // Cube maps
+      } else if (IsCubeMap()) {
+        m_d3d9SurfaceType = D3D9SurfaceType::CubeTexture;
+      // Textures
+      } else if (IsTexture()) {
+        m_d3d9SurfaceType = D3D9SurfaceType::Texture;
+      // Depth Stencil
+      } else if (IsDepthStencil()) {
+        m_d3d9SurfaceType = D3D9SurfaceType::DepthStencil;
+      // Overlays
+      } else if (unlikely(IsOverlay())) {
+        m_d3d9SurfaceType = D3D9SurfaceType::OffscreenPlainSurface;
+      // Offscreen Plain Surfaces
+      } else if (IsOffScreenPlainSurface()) {
+        if (unlikely(initRenderTarget)) {
+          m_d3d9SurfaceType = D3D9SurfaceType::BackBuffer;
+        } else {
+          m_d3d9SurfaceType = D3D9SurfaceType::OffscreenPlainSurface;
+        }
+      // Generic render target
+      } else if (Is3DSurface()) {
+        m_d3d9SurfaceType = D3D9SurfaceType::RenderTarget;
+      // We sometimes get generic surfaces, with only dimensions, format and placement info
+      } else {
+        m_d3d9SurfaceType = D3D9SurfaceType::OffscreenPlainSurface;
+      }
+    }
+
+    inline void RefreshStaticDescData(const bool refreshFormat) {
       // determine and cache various frequently used flag combinations
       m_isRenderTarget          = IsFrontBuffer() || IsBackBuffer() || IsFlippable() || Is3DSurface();
       m_isBackBufferOrFlippable = !IsPrimarySurface() && !IsFrontBuffer() && (IsBackBuffer() || IsFlippable());
+      // refresh static values such as the full surface rect and format
+      m_rect.right  = (m_desc2.dwFlags & DDSD_WIDTH) ? m_desc2.dwWidth :
+                      (m_desc.dwFlags & DDSD_WIDTH) ? m_desc.dwWidth  : 0;
+      m_rect.bottom = (m_desc2.dwFlags & DDSD_HEIGHT) ? m_desc2.dwHeight :
+                      (m_desc.dwFlags & DDSD_HEIGHT) ? m_desc.dwHeight : 0;
+      if (refreshFormat) {
+        const d3d9::D3DFORMAT format9 = ConvertFormat((m_desc2.dwFlags & DDSD_PIXELFORMAT) ? m_desc2.ddpfPixelFormat : m_desc.ddpfPixelFormat);
+        // warn if a format change is detected on an already initialized surface
+        if (unlikely(m_surface9 != nullptr && m_format9 != format9))
+          Logger::warn("DDrawCommonSurface::RefreshStaticDescData: Surface format has changed post initialization");
+        m_format9 = format9;
+      }
     }
 
     bool                             m_dirtyDDraw         = false;
     bool                             m_dirtyD3D9          = false;
 
-    bool                             m_isAttached         = false;
-    bool                             m_isD3D9BackBuffer   = false;
-    bool                             m_isD3D9DepthStencil = false;
-
     bool                             m_isDesc2Set         = false;
     bool                             m_isDescSet          = false;
     bool                             m_hasTextureHandle   = false;
 
+    bool                             m_isAttached         = false;
     bool                             m_isRenderTarget     = false;
     bool                             m_isBackBufferOrFlippable = false;
 
@@ -534,6 +592,7 @@ namespace dxvk {
 
     DDSURFACEDESC                    m_desc               = { };
     DDSURFACEDESC2                   m_desc2              = { };
+    D3D9SurfaceType                  m_d3d9SurfaceType    = D3D9SurfaceType::None;
     RECT                             m_rect               = { };
 
     Com<DDrawClipper>                m_clipper;
