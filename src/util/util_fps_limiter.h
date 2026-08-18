@@ -6,6 +6,49 @@
 namespace dxvk {
 
   /**
+   * \brief Frame pacing mode
+   *
+   * How the limiter waits out the remainder of a frame.
+   *
+   * \li \c Precise sleeps coarsely, then busy-waits the last stretch.
+   *     Most accurate, and keeps a core hot every frame.
+   * \li \c Sleep issues one sleep for the whole remainder. Cheapest, and
+   *     only as accurate as the platform timer.
+   * \li \c Sliced sleeps in bounded steps, re-measuring after each, then
+   *     busy-waits a short final margin.
+   * \li \c Spin busy-waits the entire remainder.
+   *
+   * Where the game is CPU-bound the busy-wait competes with it for a core
+   * it needs, which is why the cheaper modes are worth having even though
+   * they pace less tightly.
+   */
+  enum class FpsLimitPacing : uint32_t {
+    Precise = 0,
+    Sleep   = 1,
+    Sliced  = 2,
+    Spin    = 3,
+  };
+
+  /**
+   * \brief Frame rate limiter method
+   *
+   * How the deadline for the next frame is derived.
+   *
+   * \li \c Deviation carries a correction term across frames so that
+   *     sleep inaccuracy averages out.
+   * \li \c Timeline holds an absolute cadence, advancing by exactly one
+   *     interval per frame and resynchronising only after a frame that
+   *     overran a whole interval.
+   * \li \c Reactive measures each interval from the frame just presented
+   *     and never tries to catch up.
+   */
+  enum class FpsLimitMethod : uint32_t {
+    Deviation = 0,
+    Timeline  = 1,
+    Reactive  = 2,
+  };
+
+  /**
    * \brief Frame rate limiter
    *
    * Provides functionality to stall an application
@@ -68,9 +111,30 @@ namespace dxvk {
     NtTimerDuration m_sleepGranularity = NtTimerDuration::zero();
     NtTimerDuration m_sleepThreshold   = NtTimerDuration::zero();
 
+    FpsLimitPacing  m_pacing = FpsLimitPacing::Precise;
+    FpsLimitMethod  m_method = FpsLimitMethod::Deviation;
+
+    TimePoint       m_nextFrame;
+    bool            m_hasTarget         = false;
+    NtTimerDuration m_targetOfLastFrame = NtTimerDuration::zero();
+
     NtDelayExecutionProc NtDelayExecution = nullptr;
 
+    void delayDeviation();
+
+    void delayTimeline();
+
+    TimePoint nextTarget(TimePoint now);
+
     TimePoint sleep(TimePoint t0, NtTimerDuration duration);
+
+    TimePoint sleepOnce(NtTimerDuration duration);
+
+    TimePoint sleepPrecise(TimePoint t0, NtTimerDuration duration);
+
+    TimePoint sleepSliced(TimePoint t0, NtTimerDuration duration);
+
+    TimePoint spinUntil(TimePoint t0, NtTimerDuration duration);
 
     void initialize();
 
