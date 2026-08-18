@@ -1,4 +1,8 @@
+#include <string>
+
+#include "dxvk_asynccompiler.h"
 #include "dxvk_device.h"
+#include "dxvk_pipecompiler.h"
 #include "dxvk_pipemanager.h"
 #include "dxvk_state_cache.h"
 
@@ -6,9 +10,40 @@ namespace dxvk {
 
   namespace {
 
-    bool is_dyasync_enabled(const DxvkDevice* device) {
-      return env::getEnvVar("DXVK_DISABLE_DYASYNC") != "1"
-          && device->config().enableDyasync;
+    const char* method_name(DxvkShaderCompileMethod method) {
+      switch (method) {
+        case DxvkShaderCompileMethod::Dyasync: return "dyasync";
+        case DxvkShaderCompileMethod::Async:   return "async";
+        case DxvkShaderCompileMethod::None:    return "none";
+      }
+
+      return "none";
+    }
+
+    DxvkShaderCompileMethod method_from_name(
+      const std::string&            name,
+            DxvkShaderCompileMethod fallback) {
+      if (name == "none")
+        return DxvkShaderCompileMethod::None;
+
+      if (name == "dyasync")
+        return DxvkShaderCompileMethod::Dyasync;
+
+      if (name == "async")
+        return DxvkShaderCompileMethod::Async;
+
+      return fallback;
+    }
+
+    // The environment variable wins over the configuration file. A name
+    // neither of them recognizes falls through to the next source rather
+    // than silently disabling background compilation.
+    DxvkShaderCompileMethod resolve_compile_method(const DxvkDevice* device) {
+      return method_from_name(
+        env::getEnvVar("DXVK_SHADER_COMPILATION_METHOD"),
+        method_from_name(
+          device->config().shaderCompilationMethod,
+          DxvkShaderCompileMethod::Dyasync));
     }
 
     bool is_state_cache_enabled(const DxvkDevice* device) {
@@ -22,15 +57,20 @@ namespace dxvk {
   DxvkPipelineManager::DxvkPipelineManager(
           DxvkDevice*         device,
           DxvkRenderPassPool* passManager)
-    : m_device    (device)
-    , m_cache     (new DxvkPipelineCache(device->vkd()))
-    , m_stateCache(is_state_cache_enabled(device)
+    : m_device       (device)
+    , m_cache        (new DxvkPipelineCache(device->vkd()))
+    , m_stateCache   (is_state_cache_enabled(device)
           ? new DxvkStateCache(device, this, passManager)
           : nullptr)
-    , m_compiler  (is_dyasync_enabled(device)
+    , m_compileMethod(resolve_compile_method(device))
+    , m_dyasync      (m_compileMethod == DxvkShaderCompileMethod::Dyasync
           ? new DxvkPipelineCompiler(device)
+          : nullptr)
+    , m_async        (m_compileMethod == DxvkShaderCompileMethod::Async
+          ? new DxvkAsyncCompiler(device)
           : nullptr) {
-
+    Logger::info(str::format(
+      "DXVK: Shader compilation method: ", method_name(m_compileMethod)));
   }
 
 

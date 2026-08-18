@@ -43,12 +43,13 @@ namespace dxvk {
     /// Memory budget in bytes
     VkDeviceSize maxMemoryBudget = 0u;
 
-    // Enable or disable Dyasync
-    bool enableDyasync;
+    /// Shader compilation method. Supported values:
+    /// "dyasync" (default), "async", "none".
+    std::string shaderCompilationMethod;
 
-    // Number of compiler threads
-    // when using Dyasync
-    int32_t numDyasyncThreads;
+    // Number of compiler threads used by the
+    // active shader compilation method
+    int32_t numShaderCompilerThreads;
 
     /// Frame pacing mode. Supported values: "", "low-latency", "min-latency".
     /// Empty (default) preserves Sarek existing behaviour unchanged.

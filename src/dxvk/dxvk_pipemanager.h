@@ -5,11 +5,36 @@
 
 #include "dxvk_compute.h"
 #include "dxvk_graphics.h"
-#include "dxvk_pipecompiler.h"
 
 namespace dxvk {
 
+  // Forward declared rather than included: the compiler headers pull in
+  // dxvk_graphics.h and dxvk_include.h, which reach back here through
+  // dxvk_objects.h. Rc members only need a declaration, and every use of
+  // these types is in a translation unit that includes their header.
+  class DxvkAsyncCompiler;
+  class DxvkPipelineCompiler;
   class DxvkStateCache;
+
+  /**
+   * \brief Shader compilation method
+   *
+   * Decides what happens when a draw needs a pipeline that has not been
+   * compiled yet.
+   *
+   * \li \c None compiles it there and then, stalling the draw. This is
+   *     unpatched 1.10.x behaviour and the reference point for anything
+   *     that looks like a rendering bug.
+   * \li \c Dyasync substitutes the closest already-compiled variant of
+   *     the same shaders and compiles the correct one in the background,
+   *     so something valid is always on screen.
+   * \li \c Async draws nothing for that pipeline until it is ready.
+   */
+  enum class DxvkShaderCompileMethod : uint32_t {
+    None    = 0,
+    Dyasync = 1,
+    Async   = 2,
+  };
 
   /**
    * \brief Pipeline count
@@ -83,22 +108,34 @@ namespace dxvk {
     DxvkPipelineCount getPipelineCount() const;
 
     /**
-     * \brief Checks whether async compiler is busy
+     * \brief Checks whether the compiler is busy
      * \returns \c true if shaders are being compiled
      */
     bool isCompilingShaders() const;
 
     /**
-     * \brief Stops async compiler threads
+     * \brief Stops background compiler threads
      */
     void stopWorkerThreads() const;
+
+    /**
+     * \brief Queries the active shader compilation method
+     * \returns The method resolved at construction
+     */
+    DxvkShaderCompileMethod compileMethod() const {
+      return m_compileMethod;
+    }
 
   private:
 
     DxvkDevice*               m_device = nullptr;
     Rc<DxvkPipelineCache>     m_cache;
     Rc<DxvkStateCache>        m_stateCache;
-    Rc<DxvkPipelineCompiler>  m_compiler;
+
+    DxvkShaderCompileMethod   m_compileMethod = DxvkShaderCompileMethod::None;
+
+    Rc<DxvkPipelineCompiler>  m_dyasync;
+    Rc<DxvkAsyncCompiler>     m_async;
 
     std::atomic<uint32_t> m_numComputePipelines  = { 0 };
     std::atomic<uint32_t> m_numGraphicsPipelines = { 0 };

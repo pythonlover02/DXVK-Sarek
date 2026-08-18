@@ -82,7 +82,7 @@ namespace dxvk {
   DxvkPipelineCompiler::DxvkPipelineCompiler(const DxvkDevice* device) {
     uint32_t numWorkers = resolve_worker_count(
       dxvk::thread::hardware_concurrency(),
-      device->config().numDyasyncThreads,
+      device->config().numShaderCompilerThreads,
       env::is32BitHostPlatform(),
       env::getEnvVar("DXVK_ALL_CORES") == "1");
 

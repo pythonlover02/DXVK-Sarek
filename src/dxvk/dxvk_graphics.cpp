@@ -2,8 +2,10 @@
 
 #include "../util/util_time.h"
 
+#include "dxvk_asynccompiler.h"
 #include "dxvk_device.h"
 #include "dxvk_graphics.h"
+#include "dxvk_pipecompiler.h"
 #include "dxvk_pipemanager.h"
 #include "dxvk_spec_const.h"
 #include "dxvk_state_cache.h"
@@ -76,15 +78,38 @@ namespace dxvk {
     if (!this->validatePipelineState(state, true))
       return VK_NULL_HANDLE;
 
-    VkPipeline fallback = this->findFallback(renderPass);
-
-    if (fallback != VK_NULL_HANDLE && m_pipeMgr->m_compiler != nullptr) {
+    // Async substitutes nothing, so the draw is skipped until the real
+    // pipeline exists. The queued set is what keeps a state vector from
+    // being handed to the compiler again on every subsequent draw while
+    // it is still compiling; without it the queue would grow without
+    // bound from repeated draws of the same state.
+    if (m_pipeMgr->m_async != nullptr) {
       size_t h    = computeInstanceHash(state, renderPass);
       uint32_t qs = uint32_t(h) & QueuedSetMask;
       size_t expected = 0;
       if (m_queuedSet[qs].compare_exchange_strong(expected, h,
               std::memory_order_acq_rel, std::memory_order_relaxed)) {
-        if (!m_pipeMgr->m_compiler->queueCompilation(
+        m_pipeMgr->m_async->queueCompilation(this, state, renderPass);
+      } else if (expected != h) {
+        uint32_t qs2 = ((qs >> 7) ^ qs ^ 0x55u) & QueuedSetMask;
+        expected = 0;
+        if (m_queuedSet[qs2].compare_exchange_strong(expected, h,
+                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+          m_pipeMgr->m_async->queueCompilation(this, state, renderPass);
+        }
+      }
+      return VK_NULL_HANDLE;
+    }
+
+    VkPipeline fallback = this->findFallback(renderPass);
+
+    if (fallback != VK_NULL_HANDLE && m_pipeMgr->m_dyasync != nullptr) {
+      size_t h    = computeInstanceHash(state, renderPass);
+      uint32_t qs = uint32_t(h) & QueuedSetMask;
+      size_t expected = 0;
+      if (m_queuedSet[qs].compare_exchange_strong(expected, h,
+              std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        if (!m_pipeMgr->m_dyasync->queueCompilation(
               this, state, renderPass, DxvkPipelinePriority::Live)) {
           m_queuedSet[qs].store(0, std::memory_order_release);
         }
@@ -93,7 +118,7 @@ namespace dxvk {
         expected = 0;
         if (m_queuedSet[qs2].compare_exchange_strong(expected, h,
                 std::memory_order_acq_rel, std::memory_order_relaxed)) {
-          if (!m_pipeMgr->m_compiler->queueCompilation(
+          if (!m_pipeMgr->m_dyasync->queueCompilation(
                 this, state, renderPass, DxvkPipelinePriority::Live)) {
             m_queuedSet[qs2].store(0, std::memory_order_release);
           }
