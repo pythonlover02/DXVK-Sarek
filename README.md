@@ -33,7 +33,7 @@ A huge thank-you to the following contributors for their invaluable help:
 - [Frame Rate Limit](#frame-rate-limit)
 - [Device Filter](#device-filter)
 - [State Cache](#state-cache)
-- [Shader Compilation (dyasync)](#shader-compilation-dyasync)
+- [Shader Compilation](#shader-compilation)
 - [Frame Pacing (low-latency mode)](#frame-pacing-low-latency-mode)
 - [Debugging](#debugging)
 - [Troubleshooting](#troubleshooting)
@@ -159,6 +159,26 @@ The `DXVK_HUD` environment variable controls a HUD that can display the framerat
 
 The `DXVK_FRAME_RATE` environment variable can be used to limit the frame rate. A value of `0` uncaps the frame rate; any positive value limits rendering to that number of frames per second. The configuration file can be used as an alternative.
 
+Two further environment variables control how the limiter reaches its target. Both are environment-only, since the limiter is created before the configuration file is read, and both default to the behaviour DXVK-Sarek has always had. Note that these are separate from `dxvk.framePace`, which governs CPU frame submission rather than the limiter.
+
+`DXVK_FRAME_RATE_METHOD` selects how each frame's deadline is derived:
+
+- `deviation` (default) carries a correction term across frames so that sleep inaccuracy averages out over time.
+- `timeline` holds an absolute cadence, advancing by exactly one interval per frame and resynchronising only after a frame that overran a whole interval.
+- `reactive` measures each interval from the frame just presented and never tries to catch up.
+
+`DXVK_FRAME_RATE_PACING` selects how the limiter waits out the remainder of a frame:
+
+- `precise` (default) sleeps coarsely, then busy-waits the last stretch. The most accurate, and it keeps a core hot every frame.
+- `sliced` sleeps in bounded steps and re-measures after each, then busy-waits a short final margin. Nearly as accurate for a fraction of the CPU time.
+- `sleep` issues one sleep for the whole remainder. The cheapest, and only as accurate as the platform timer.
+- `spin` busy-waits throughout.
+
+> [!NOTE]
+> Under Box64 or FEX, `sliced` is usually the better choice. The busy-wait in `precise` competes with the game for a core it needs, which matters more on emulated ARM CPUs than the small accuracy gain does.
+
+The limiter methods and pacing modes are adapted from [volt](https://github.com/pythonlover02/volt-gui).
+
 ## Device Filter
 
 Some applications do not provide a method to select a different GPU. In that case, DXVK can be forced to use a given device:
@@ -175,19 +195,28 @@ DXVK caches pipeline state by default, so shaders can be recompiled ahead of tim
 - `DXVK_STATE_CACHE=0` disables the state cache
 - `DXVK_STATE_CACHE_PATH=/some/directory` specifies a directory for the cache files. Defaults to the current working directory of the application.
 
-## Shader Compilation (dyasync)
+## Shader Compilation
 
-DXVK-Sarek includes **dyasync (Dynamic Asynchronous Pipeline Compilation)**, enabled by default.
+DXVK-Sarek has three shader compilation methods, selected with `dxvk.shaderCompilationMethod` in `dxvk.conf` or with the `DXVK_SHADER_COMPILATION_METHOD` environment variable, which takes priority.
 
-When a shader is encountered for the very first time, it must be compiled synchronously this is unavoidable and may cause a brief stutter. Every variant after that is handled differently. A variant is created whenever the game uses the same shaders with a different combination of fixed-function state (blend mode, depth test, cull mode, render pass, etc.); each unique combination counts as a new variant.
+- `dyasync` **(default)** Dynamic Asynchronous Pipeline Compilation. When a shader is encountered for the very first time, it must be compiled synchronously this is unavoidable and may cause a brief stutter. Every variant after that is handled differently. A variant is created whenever the game uses the same shaders with a different combination of fixed-function state (blend mode, depth test, cull mode, render pass, etc.); each unique combination counts as a new variant. Rather than stalling the game, dyasync grabs the closest already-compiled pipeline for those same shaders and uses it as a placeholder while the correct variant builds in a background thread, then silently swaps it in once ready.
+- `async` Nothing stands in. Objects whose pipeline is not ready are not drawn at all until compilation finishes, and work is queued to the background threads without limit. This removes compilation stalls entirely, but only behaves well when there are spare cores to absorb the backlog.
+- `none` Unpatched 1.10.x behaviour. Everything compiles at draw time. Use this as the reference point when something looks like a rendering bug.
 
-When a new variant is needed, dyasync does not stall the game to compile it. Instead, it grabs the closest already-compiled pipeline for those same shaders (perhaps one compiled with different blend settings) and uses it as a placeholder while the correct variant builds in a background thread. Once the background compilation finishes, it silently swaps in the correct pipeline. This reduces stuttering and improves frametimes.
+`dxvk.numShaderCompilerThreads` sets the number of background threads used by whichever method is active. By default, DXVK-Sarek uses roughly half the available CPU cores for background compilation, leaving the rest free for the game. On CPUs with weak per-core performance that rely on all cores for good throughput, this may cause longer loading times. With `DXVK_ALL_CORES=1`, all available cores are used for both the game and shader compilation. This may cause brief unresponsiveness while compiling shaders but can improve the overall experience on such hardware.
 
-This approach is safer than the traditional async patch because something valid is always being rendered on screen there are no invisible or missing objects. That said, during the brief placeholder period, minor visual inaccuracies are possible (e.g. slightly wrong blending). **Use in multiplayer games at your own discretion.**
+> [!WARNING]
+> Both `dyasync` and `async` may produce brief visual inaccuracies, and manipulating shader compilation this way could theoretically be picked up by client-side anti-cheat. **Use in multiplayer games at your own discretion.**
 
-Dyasync can be disabled by setting `dxvk.enableDyasync = False` in `dxvk.conf`, in the `DXVK_CONFIG` environment variable, or by using the environment variable `DXVK_DISABLE_DYASYNC=1`.
+### Why dyasync is the default
 
-`DXVK_ALL_CORES=1` overrides the default way cores are assigned for shader compilation. By default, DXVK-Sarek uses roughly half the available CPU cores for background compilation, leaving the rest free for the game. On CPUs with weak per-core performance that rely on all cores for good throughput, this may cause longer loading times. With `DXVK_ALL_CORES=1`, all available cores are used for both the game and shader compilation. This may cause brief unresponsiveness while compiling shaders but can improve the overall experience on such hardware.
+If you switch from `async` to `dyasync` on a strong machine and start seeing fps dips, that is expected, and it is not a regression. Those dips are shader compilation happening at draw time, which is a cost `async` was hiding from you by rendering nothing.
+
+The reason `async` felt smoother is that fast hardware masks the problem it creates. With plenty of CPU headroom, the background thread backlog that full async builds up never starves the game meaningfully, so it just silently eats cores in the background and you do not notice. The tradeoff it makes not rendering objects and effects that are not compiled yet, and piling up a large thread backlog does not hurt you, because your hardware chews through that backlog fast enough that it never really becomes an issue.
+
+On weaker CPUs, which is what DXVK-Sarek mainly targets, that same backlog starves the game completely, rendering nothing on screen and making it unplayable. dyasync is more conservative by design: it only defers variants, and always keeps something valid rendering. In exactly those moments it maintains **higher** fps than full async does, while remaining safer for multiplayer since nothing ever goes invisible.
+
+The dips should settle down significantly once the shader cache is warm.
 
 ## Frame Pacing (low-latency mode)
 
