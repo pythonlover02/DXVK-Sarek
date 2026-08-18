@@ -42,6 +42,11 @@ namespace dxvk {
     m_vbTracked.clear();
     m_rcTracked.clear();
 
+    // A fresh command buffer has nothing bound, so the handles tracked
+    // for redundant-bind elimination no longer describe what is recorded.
+    m_gpActivePipeline = VK_NULL_HANDLE;
+    m_cpActivePipeline = VK_NULL_HANDLE;
+
     // The current state of the internal command buffer is
     // undefined, so we have to bind and set up everything
     // before any draw or dispatch command is recorded.
@@ -3880,6 +3885,18 @@ namespace dxvk {
 
 
   void DxvkContext::spillRenderPass(bool suspend) {
+    // Meta operations bind their own pipelines straight onto the command
+    // list without going through updateGraphicsPipelineState, which would
+    // leave the tracked handles naming a pipeline that is no longer bound.
+    // All of them spill first, so clearing here covers every one of them
+    // and gives a simple invariant: after a spill, nothing is known to be
+    // bound. This has to happen before the branch below, since a spill
+    // with no render pass bound does not reach unbindGraphicsPipeline.
+    // Draws inside a render pass, where the elimination pays off, are
+    // untouched.
+    m_gpActivePipeline = VK_NULL_HANDLE;
+    m_cpActivePipeline = VK_NULL_HANDLE;
+
     if (m_flags.test(DxvkContextFlag::GpRenderPassBound)) {
       m_flags.clr(DxvkContextFlag::GpRenderPassBound);
 
@@ -4072,14 +4089,25 @@ namespace dxvk {
 
 
   bool DxvkContext::updateComputePipelineState() {
-    m_cpActivePipeline = m_state.cp.pipeline->getPipelineHandle(m_state.cp.state);
+    VkPipeline pipeline = m_state.cp.pipeline->getPipelineHandle(m_state.cp.state);
 
-    if (unlikely(!m_cpActivePipeline))
+    if (unlikely(!pipeline)) {
+      m_cpActivePipeline = VK_NULL_HANDLE;
       return false;
+    }
 
-    m_cmd->cmdBindPipeline(
-      VK_PIPELINE_BIND_POINT_COMPUTE,
-      m_cpActivePipeline);
+    // Pipeline state gets dirtied by changes that resolve to the same
+    // pipeline object, such as a binding mask update or a spec constant
+    // that lands on the value it already had. Re-binding a handle that is
+    // already bound does nothing on the GPU but still costs a command and
+    // driver-side work, which is worth avoiding on a weak CPU.
+    if (pipeline != m_cpActivePipeline) {
+      m_cpActivePipeline = pipeline;
+
+      m_cmd->cmdBindPipeline(
+        VK_PIPELINE_BIND_POINT_COMPUTE,
+        m_cpActivePipeline);
+    }
 
     m_flags.clr(DxvkContextFlag::CpDirtyPipelineState);
     return true;
@@ -4166,15 +4194,25 @@ namespace dxvk {
       : DxvkContextFlag::GpDirtyStencilRef);
 
     // Retrieve and bind actual Vulkan pipeline handle
-    m_gpActivePipeline = m_state.gp.pipeline->getPipelineHandle(
+    VkPipeline pipeline = m_state.gp.pipeline->getPipelineHandle(
       m_state.gp.state, m_state.om.framebufferInfo.renderPass());
 
-    if (unlikely(!m_gpActivePipeline))
+    if (unlikely(!pipeline)) {
+      m_gpActivePipeline = VK_NULL_HANDLE;
       return false;
+    }
 
-    m_cmd->cmdBindPipeline(
-      VK_PIPELINE_BIND_POINT_GRAPHICS,
-      m_gpActivePipeline);
+    // See updateComputePipelineState. The tracked handle is cleared in
+    // beginRecording, in spillRenderPass and in unbindGraphicsPipeline,
+    // which between them cover every point at which something else may
+    // have bound a pipeline.
+    if (pipeline != m_gpActivePipeline) {
+      m_gpActivePipeline = pipeline;
+
+      m_cmd->cmdBindPipeline(
+        VK_PIPELINE_BIND_POINT_GRAPHICS,
+        m_gpActivePipeline);
+    }
 
     m_flags.clr(DxvkContextFlag::GpDirtyPipelineState);
     return true;
