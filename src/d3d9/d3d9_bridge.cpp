@@ -105,13 +105,12 @@ namespace dxvk {
   }
 
   HRESULT DxvkLegacyD3DDeviceBridge::SetColorKeyState(bool colorKeyState) {
-    //return m_device->SetColorKeyState(colorKeyState);
-    return D3D_OK;
+    return m_device->SetColorKeyState(colorKeyState);
   }
 
   HRESULT DxvkLegacyD3DDeviceBridge::SetColorKey(DWORD colorKeyLow, DWORD colorKeyHigh) {
-    //return m_device->SetColorKey(colorKeyLow, colorKeyHigh);
-    return D3D_OK;
+    // D7VK currently only sets color key for stage 0 due to spec consts size constraints in modern DXVK.
+    return m_device->SetColorKey(0, colorKeyLow, colorKeyHigh);
   }
 
   HRESULT DxvkLegacyD3DDeviceBridge::SetLegacyLightsState(bool legacyLightsState) {

@@ -810,6 +810,12 @@ namespace dxvk {
             uint32_t                minVal,
             uint32_t                maxVal);
 
+    uint32_t opSClamp(
+            uint32_t                resultType,
+            uint32_t                x,
+            uint32_t                minVal,
+            uint32_t                maxVal);
+
     uint32_t opIEqual(
             uint32_t                resultType,
             uint32_t                vector1,
