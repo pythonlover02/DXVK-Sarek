@@ -7053,6 +7053,7 @@ namespace dxvk {
       key.Data.Contents.SpecularEnabled  = m_state.renderStates[D3DRS_SPECULARENABLE];
 
       key.Data.Contents.UseLegacyLights  = m_useLegacyLights;
+      key.Data.Contents.AlternatePixelCenter = m_alternatePixelCenter;
 
       uint32_t lightCount = 0;
 

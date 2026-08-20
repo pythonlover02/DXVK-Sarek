@@ -932,6 +932,11 @@ namespace dxvk {
       return D3D_OK;
     }
 
+    HRESULT SetAlternatePixelCenter(bool alternatePixelCenter) {
+      m_alternatePixelCenter = alternatePixelCenter;
+      return D3D_OK;
+    }
+
     HRESULT ResetSwapChain(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode);
 
     HRESULT InitialReset(D3DPRESENT_PARAMETERS* pPresentationParameters, D3DDISPLAYMODEEX* pFullscreenDisplayMode);
@@ -1281,6 +1286,8 @@ namespace dxvk {
 
     // D3D6 and earlier legacy light model state
     bool                            m_useLegacyLights = false;
+    // Fixed function VS alternate pixel center hack
+    bool                            m_alternatePixelCenter = false;
 
     bool                            m_amdATOC         = false;
     bool                            m_nvATOC          = false;

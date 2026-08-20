@@ -115,6 +115,7 @@ namespace dxvk {
         uint32_t SpecularEnabled : 1;
 
         uint32_t UseLegacyLights : 1;
+        uint32_t AlternatePixelCenter : 1;
 
         uint32_t TexcoordDeclMask : 24;
         uint32_t HasFog : 1;

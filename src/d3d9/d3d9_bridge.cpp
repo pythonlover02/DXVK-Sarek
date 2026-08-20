@@ -119,8 +119,7 @@ namespace dxvk {
   }
 
   HRESULT DxvkLegacyD3DDeviceBridge::SetAlternatePixelCenter(bool alternatePixelCenter) {
-    //return m_device->SetAlternatePixelCenter(alternatePixelCenter);
-    return D3D_OK;
+    return m_device->SetAlternatePixelCenter(alternatePixelCenter);
   }
 
   DxvkLegacyD3DInterfaceBridge::DxvkLegacyD3DInterfaceBridge(D3D9InterfaceEx* pObject)

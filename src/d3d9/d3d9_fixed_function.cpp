@@ -807,6 +807,8 @@ namespace dxvk {
       normal = m_module.opFMix(m_vec3Type, normal, normal1, m_vs.constants.tweenFactor);
     }
 
+    const uint32_t xIndex = 0;
+    const uint32_t yIndex = 1;
     const uint32_t wIndex = 3;
 
     if (!m_vsKey.Data.Contents.HasPositionT) {
@@ -899,6 +901,15 @@ namespace dxvk {
 
       gl_Position = emitVectorTimesMatrix(4, 4, vtx, m_vs.constants.proj);
     } else {
+      if (m_vsKey.Data.Contents.AlternatePixelCenter) {
+        uint32_t x = m_module.opCompositeExtract(m_floatType, gl_Position, 1, &xIndex);
+        uint32_t y = m_module.opCompositeExtract(m_floatType, gl_Position, 1, &yIndex);
+        x = m_module.opFSub(m_floatType, x, m_module.constf32(0.5f));
+        y = m_module.opFSub(m_floatType, y, m_module.constf32(0.5f));
+        gl_Position = m_module.opCompositeInsert(m_vec4Type, x, gl_Position, 1, &xIndex);
+        gl_Position = m_module.opCompositeInsert(m_vec4Type, y, gl_Position, 1, &yIndex);
+      }
+
       gl_Position = m_module.opFMul(m_vec4Type, gl_Position, m_vs.constants.invExtent);
       gl_Position = m_module.opFAdd(m_vec4Type, gl_Position, m_vs.constants.invOffset);
 
