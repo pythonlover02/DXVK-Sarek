@@ -2284,6 +2284,25 @@ namespace dxvk {
   }
 
 
+  uint32_t SpirvModule::opSClamp(
+          uint32_t                resultType,
+          uint32_t                x,
+          uint32_t                minVal,
+          uint32_t                maxVal) {
+    uint32_t resultId = this->allocateId();
+
+    m_code.putIns (spv::OpExtInst, 8);
+    m_code.putWord(resultType);
+    m_code.putWord(resultId);
+    m_code.putWord(m_instExtGlsl450);
+    m_code.putWord(GLSLstd450SClamp);
+    m_code.putWord(x);
+    m_code.putWord(minVal);
+    m_code.putWord(maxVal);
+    return resultId;
+  }
+
+
   uint32_t SpirvModule::opIEqual(
           uint32_t                resultType,
           uint32_t                vector1,

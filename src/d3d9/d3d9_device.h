@@ -927,6 +927,23 @@ namespace dxvk {
 
     HRESULT ResetState(D3DPRESENT_PARAMETERS* pPresentationParameters);
 
+    HRESULT SetColorKeyState(bool colorKeyState) {
+      if (unlikely(m_useColorKey != colorKeyState)) {
+        m_useColorKey = colorKeyState;
+        m_flags.set(D3D9DeviceFlag::DirtyFFPixelShader);
+      }
+      return D3D_OK;
+    }
+
+    HRESULT SetColorKey(DWORD stage, DWORD colorKeyLow, DWORD colorKeyHigh) {
+      if (unlikely(m_colorKeyLow[stage] != colorKeyLow || m_colorKeyHigh[stage] != colorKeyHigh)) {
+        m_colorKeyLow[stage] = colorKeyLow;
+        m_colorKeyHigh[stage] = colorKeyHigh;
+        m_flags.set(D3D9DeviceFlag::DirtyFFPixelShader);
+      }
+      return D3D_OK;
+    }
+
     HRESULT SetLegacyLightsState(bool legacyLightState) {
       m_useLegacyLights = legacyLightState;
       return D3D_OK;
@@ -1278,6 +1295,13 @@ namespace dxvk {
     D3D9ShaderMasks                 m_psShaderMasks = FixedFunctionMask;
 
     bool                            m_isSWVP;
+
+    // D3D7 and earlier texture colorkeying
+    bool                            m_useColorKey = false;
+    std::array<DWORD,
+      caps::MaxSimultaneousTextures> m_colorKeyLow = { };
+    std::array<DWORD,
+      caps::MaxSimultaneousTextures> m_colorKeyHigh = { };
 
     // D3D6 and earlier legacy light model state
     bool                            m_useLegacyLights = false;
