@@ -1728,10 +1728,27 @@ namespace dxvk {
             texture = m_module.opImageSampleImplicitLod(m_vec4Type, imageVarId, texcoord, imageOperands);
           }
 
-          if (m_fsKey.Stages[0].Contents.GlobalColorKeyEnable) {
+          // Colorkeying reads back a texel by integer coordinate, which limits
+          // it to 2D stages: the size query answers with a three component
+          // vector for a volume texture, and the math below assumes two.
+          if (m_fsKey.Stages[0].Contents.GlobalColorKeyEnable
+           && D3DRESOURCETYPE(stage.Type + D3DRTYPE_TEXTURE) == D3DRTYPE_TEXTURE) {
             uint32_t image = m_module.opImage(m_ps.samplers[i].origTypeId, imageVarId);
-            uint32_t texSize = m_module.opImageQuerySize(m_ivec2Type, image);
-            uint32_t texelPos = m_module.opFMul(m_vec2Type, texcoord, m_module.opConvertStoF(m_vec2Type, texSize));
+
+            // The sampling coordinate carries an extra component for projected
+            // and Dref stages, so take xy and undo the projection before
+            // scaling into texel space. The bumpenvmap path above clears
+            // shouldProject once it has divided the coordinate itself.
+            std::array<uint32_t, 2> ckIndices = { 0, 1 };
+            uint32_t ckCoord = m_module.opVectorShuffle(m_vec2Type, texcoord, texcoord, ckIndices.size(), ckIndices.data());
+
+            if (shouldProject)
+              ckCoord = m_module.opVectorTimesScalar(m_vec2Type, ckCoord,
+                m_module.opFDiv(m_floatType, m_module.constf32(1.0f), projValue));
+
+            // A sampled image is queried with an explicit LOD.
+            uint32_t texSize = m_module.opImageQuerySizeLod(m_ivec2Type, image, m_module.consti32(0));
+            uint32_t texelPos = m_module.opFMul(m_vec2Type, ckCoord, m_module.opConvertStoF(m_vec2Type, texSize));
             uint32_t pixelCoord = m_module.opConvertFtoS(m_ivec2Type, texelPos);
 
             uint32_t xIndex = 0;
@@ -1774,8 +1791,14 @@ namespace dxvk {
             std::array<uint32_t, 2> v = { pixelCoordX, pixelCoordY };
             pixelCoord = m_module.opCompositeConstruct(m_ivec2Type, v.size(), v.data());
 
-            uint32_t texVal = m_module.opImageFetch(m_vec4Type, image, pixelCoord, imageOperands);
-            uint32_t texValInt = m_module.opConvertFtoS(m_ivec2Type, m_module.opFMul(m_vec2Type, texVal, m_module.constf32(255.0)));
+            // Fetch the level the dimensions were queried from, and compare the
+            // key across all four 8 bit channels.
+            SpirvImageOperands fetchOperands;
+            fetchOperands.flags = spv::ImageOperandsLodMask;
+            fetchOperands.sLod  = m_module.consti32(0);
+
+            uint32_t texVal = m_module.opImageFetch(m_vec4Type, image, pixelCoord, fetchOperands);
+            uint32_t texValInt = m_module.opConvertFtoS(m_ivec4Type, m_module.opVectorTimesScalar(m_vec4Type, texVal, m_module.constf32(255.0)));
 
             uint32_t keyLow = DecodeColorKey(stage.ColorKeyLow);
             uint32_t keyHigh = DecodeColorKey(stage.ColorKeyHigh);
