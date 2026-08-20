@@ -117,7 +117,7 @@ namespace dxvk {
     dxvk::mutex                       m_workerLock;
     dxvk::condition_variable          m_workerCond;
     std::queue<WorkerItem>            m_workerQueue;
-    std::atomic<uint32_t>             m_workerBusy;
+    std::atomic<uint32_t>             m_workerBusy = { 0u };
     std::vector<dxvk::thread>         m_workerThreads;
 
     dxvk::mutex                       m_writerLock;
