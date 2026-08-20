@@ -32,7 +32,7 @@ namespace dxvk {
 
     std::string alternatePixelCenterStr = Config::toLower(config.getOption<std::string>("ddraw.alternatePixelCenter", "false"));
     if (alternatePixelCenterStr == "true") {
-      this->alternatePixelCenter = AlternatePixelCenter::Disabled; // Unsupported in DXVK-Sarek
+      this->alternatePixelCenter = AlternatePixelCenter::Enabled;
     } else if (alternatePixelCenterStr == "legacy") {
       this->alternatePixelCenter = AlternatePixelCenter::Legacy;
     } else {
