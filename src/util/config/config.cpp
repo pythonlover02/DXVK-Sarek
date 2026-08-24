@@ -577,9 +577,9 @@ namespace dxvk {
     }} },
     /* Counter Strike: Global Offensive
        Needs NVAPI to avoid a forced AO + Smoke
-       exploit so we must force AMD vendor ID.    */
+       exploit so we must hide Nvidia GPUs.       */
     { R"(\\csgo\.exe$)", {{
-      { "d3d9.customVendorId",              "1002" },
+      { "d3d9.hideNvidiaGpu",               "True" },
     }} },
     /* Vampire - The Masquerade Bloodlines        */
     { R"(\\vampire\.exe$)", {{
@@ -597,7 +597,7 @@ namespace dxvk {
     }} },
     /* Skyrim (NVAPI)                             */
     { R"(\\TESV\.exe$)", {{
-      { "d3d9.customVendorId",              "1002" },
+      { "d3d9.hideNvidiaGpu",               "True" },
     }} },
     /* RTHDRIBL Demo
        Uses DONOTWAIT after GetRenderTargetData
@@ -624,7 +624,7 @@ namespace dxvk {
      * makes the game use a better looking render
      * path for mirrors                           */
     { R"(\\(GTAIV|EFLC)\.exe$)", {{
-      { "d3d9.customVendorId",              "1002" },
+      { "d3d9.hideNvidiaGpu",               "True" },
       { "dxgi.maxDeviceMemory",             "128" },
       { "d3d9.supportDFFormats",            "False" },
     }} },
@@ -670,7 +670,7 @@ namespace dxvk {
     /* Warhammer: Online                         *
      * Overly bright ground textures on Nvidia   */
     { R"(\\(WAR(-64)?|WARTEST(-64)?)\.exe$)", {{
-      { "d3d9.customVendorId",              "1002" },
+      { "d3d9.hideNvidiaGpu",               "True" },
     }} },
     /* Dragon Nest                               */
     { R"(\\DragonNest_x64\.exe$)", {{
@@ -696,9 +696,10 @@ namespace dxvk {
     { R"(\\Demonstone\.exe$)", {{
       { "d3d9.maxFrameRate",                "60" },
     }} },
-    /* Far Cry 1 has worse water rendering on AMD GPUs */
+    /* Far Cry 1                                 *
+     * Has worse water rendering on AMD GPUs     */
     { R"(\\FarCry\.exe$)", {{
-      { "d3d9.customVendorId",              "10de" },
+      { "d3d9.hideAmdGpu",                  "True" },
     }} },
     /* Sine Mora EX */
     { R"(\\SineMoraEX\.exe$)", {{
@@ -991,11 +992,13 @@ namespace dxvk {
       { "d3d9.customVendorId",              "10de" },
       { "dxgi.maxDeviceMemory",             "2047" },
     }} },
-    /* Fallout New Vegas - Various visual issues *
-     * with mods such as New Vegas Reloaded      */
-    { R"(\\FalloutNV(Launcher)?\.exe$)", {{
+    /* Fallout New Vegas - Various visual issues  *
+     * in mod New Vegas Reloaded. Nvidia path in  *
+     * same mod use NvAPI_D3D9_StretchRectEx for  *
+     * depth buffer resolves                      */
+    { R"(\\Fallout( -)? New Vegas.*\\(FalloutNV)?(Launcher)?\.exe$)", {{
       { "d3d9.floatEmulation",              "Strict" },
-      { "d3d9.customVendorId",              "1002" },
+      { "d3d9.hideNvidiaGpu",               "True" },
     }} },
     /* Dungeons and Dragons: Dragonshard         *
      * Massive FPS decreases in some scenes      */
