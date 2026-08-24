@@ -1104,6 +1104,11 @@ namespace dxvk {
       { "d3d9.customDeviceId",              "0330" },
       { "d3d9.customDeviceDesc",            "NVIDIA GeForce FX 5900 Ultra" },
     }} },
+    /* Astebreed                                  *
+     * Game speed is too fast above 60 fps        */
+    { R"(\\Astebreed\.exe$)", {{
+      { "d3d9.maxFrameRate",                "60" },
+    }} },
     /* Psi-Ops: The Mindgate Conspiracy           *
      * Broken input and physics above 60 fps      */
     { R"(\\PsiOps\.exe$)", {{
@@ -1154,6 +1159,11 @@ namespace dxvk {
      * in order to start up properly              */
     { R"(\\SCSDestinations\.exe$)", {{
       { "d3d9.supportCubeDepthFormats",     "True" },
+    }} },
+    /* Splinter Cell: Double Agent                *
+     * AMD path have a semi or fully black world  */
+    { R"(\\(SplinterCell4|SCDA_online)\.exe$)", {{
+      { "d3d9.hideAmdGpu",                  "True" },
     }} },
 
     /**********************************************/
