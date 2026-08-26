@@ -249,6 +249,18 @@ namespace dxvk {
             VkDriverIdKHR       driver) const;
 
     /**
+     * \brief Checks for feature support gaps
+     *
+     * Tests whether any feature the renderer relies on for correct
+     * output is missing. When this is true, rendering may be visibly
+     * wrong through no fault of the client API code.
+     * \param [in] features Enabled device features
+     * \returns \c true if any such feature is unsupported
+     */
+    static bool hasDegradedFeatures(
+      const DxvkDeviceFeatures& features);
+
+    /**
      * \brief Logs DXVK adapter info
      *
      * May be useful for bug reports
@@ -293,6 +305,7 @@ namespace dxvk {
 
     static void logNameList(const DxvkNameList& names);
     static void logFeatures(const DxvkDeviceFeatures& features);
+    static void logDegradation(const DxvkDeviceFeatures& features);
     static void logQueueFamilies(const DxvkAdapterQueueIndices& queues);
 
   };

@@ -74,7 +74,7 @@ namespace dxvk {
     }
 
     if (!device->features().extCustomBorderColor.customBorderColorWithoutFormat) {
-      Logger::warn("DXVK: Custom border colors not supported");
+      // Reported once at device creation rather than per sampler
       return VK_BORDER_COLOR_FLOAT_TRANSPARENT_BLACK;
     }
 

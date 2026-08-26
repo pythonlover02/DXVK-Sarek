@@ -346,6 +346,7 @@ namespace dxvk {
     Logger::info("Enabled device extensions:");
     this->logNameList(extensionNameList);
     this->logFeatures(enabledFeatures);
+    this->logDegradation(enabledFeatures);
 
     // Create pNext chain for additional device features
     enabledFeatures.core.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2_KHR;
@@ -769,6 +770,70 @@ namespace dxvk {
     }
 
     return VK_QUEUE_FAMILY_IGNORED;
+  }
+
+
+  // Features with no working fallback. Each is emulated or ignored when
+  // missing, so the device still runs but draws something other than what
+  // the application asked for. The text names the symptom rather than the
+  // extension, so a screenshot in a report can be matched against the log
+  // without knowing any Vulkan. Filled through a reference because the
+  // list type cannot be copied or moved out of a function.
+  static void degradedFeatureList(
+    const DxvkDeviceFeatures&           features,
+          small_vector<const char*, 8>& result) {
+    if (!features.extCustomBorderColor.customBorderColorWithoutFormat)
+      result.push_back("Custom border colors unsupported. Border addressing "
+        "falls back to transparent black: wrong colors along texture edges, "
+        "dark seams on decals and terrain.");
+
+    if (!features.extDepthClipEnable.depthClipEnable)
+      result.push_back("Depth clip control unsupported. Clipping is "
+        "approximated by depth clamping: geometry that should be cut at the "
+        "near plane is stretched or missing.");
+
+    if (!features.extTransformFeedback.transformFeedback)
+      result.push_back("Transform feedback unsupported. D3D11 stream output "
+        "and D3D9 ProcessVertices are unavailable: missing particles, grass "
+        "or skinned geometry.");
+
+    if (!features.extVertexAttributeDivisor.vertexAttributeInstanceRateDivisor)
+      result.push_back("Vertex attribute divisor unsupported. Instance "
+        "divisors are ignored: instanced geometry drawn at wrong positions "
+        "or collapsed onto a single instance.");
+
+    if (!features.extNonSeamlessCubeMap.nonSeamlessCubeMap)
+      result.push_back("Non-seamless cube maps unsupported. D3D9 cube map "
+        "edges are filtered seamlessly: reflections differ from the "
+        "reference at face boundaries.");
+
+    if (!features.core.features.depthBounds)
+      result.push_back("Depth bounds test unsupported. The test is ignored: "
+        "light volumes and decals may bleed past their intended bounds.");
+  }
+
+
+  bool DxvkAdapter::hasDegradedFeatures(const DxvkDeviceFeatures& features) {
+    small_vector<const char*, 8> issues;
+    degradedFeatureList(features, issues);
+    return issues.size() != 0;
+  }
+
+
+  void DxvkAdapter::logDegradation(const DxvkDeviceFeatures& features) {
+    small_vector<const char*, 8> issues;
+    degradedFeatureList(features, issues);
+
+    if (!issues.size()) {
+      Logger::info("Degraded features: none");
+      return;
+    }
+
+    Logger::warn(str::format("Degraded features: ", issues.size(),
+      " unsupported, rendering may be incorrect:"));
+
+    for (size_t i = 0; i < issues.size(); i++)
+      Logger::warn(str::format("  ", issues[i]));
   }
 
 
