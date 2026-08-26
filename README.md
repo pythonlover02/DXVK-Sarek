@@ -249,7 +249,7 @@ DXVK caches pipeline state by default, so shaders can be recompiled ahead of tim
 
 DXVK-Sarek has three shader compilation methods, selected with `dxvk.shaderCompilationMethod` in `dxvk.conf` or with the `DXVK_SHADER_COMPILATION_METHOD` environment variable, which takes priority.
 
-- `dyasync` **(default)** Dynamic Asynchronous Pipeline Compilation. When a shader is encountered for the very first time, it must be compiled synchronously this is unavoidable and may cause a brief stutter. Every variant after that is handled differently. A variant is created whenever the game uses the same shaders with a different combination of fixed-function state (blend mode, depth test, cull mode, render pass, etc.); each unique combination counts as a new variant. Rather than stalling the game, dyasync grabs the closest already-compiled pipeline for those same shaders and uses it as a placeholder while the correct variant builds in a background thread, then silently swaps it in once ready.
+- `dyasync` **(default)** Dynamic Asynchronous Pipeline Compilation. The first time a shader is seen it compiles synchronously, which is unavoidable and may stutter briefly. After that, every variant is deferred. A variant is the same shaders with a different combination of fixed-function state: blend mode, depth test, cull mode, render pass. Instead of stalling, dyasync draws the closest already-compiled pipeline as a placeholder, builds the right one in a background thread, and swaps it in when ready.
 - `async` Nothing stands in. Objects whose pipeline is not ready are not drawn at all until compilation finishes, and work is queued to the background threads without limit. This removes compilation stalls entirely, but only behaves well when there are spare cores to absorb the backlog.
 - `none` Unpatched 1.10.x behaviour. Everything compiles at draw time. Use this as the reference point when something looks like a rendering bug.
 
@@ -260,13 +260,13 @@ DXVK-Sarek has three shader compilation methods, selected with `dxvk.shaderCompi
 
 ### Why dyasync is the default
 
-If you switch from `async` to `dyasync` on a strong machine and start seeing fps dips, that is expected, and it is not a regression. Those dips are shader compilation happening at draw time, which is a cost `async` was hiding from you by rendering nothing.
+Switching from `async` to `dyasync` on a strong machine can show fps dips. That's expected, not a regression: those dips are compilation at draw time, a cost `async` was hiding by rendering nothing.
 
-The reason `async` felt smoother is that fast hardware masks the problem it creates. With plenty of CPU headroom, the background thread backlog that full async builds up never starves the game meaningfully, so it just silently eats cores in the background and you do not notice. The tradeoff it makes not rendering objects and effects that are not compiled yet, and piling up a large thread backlog does not hurt you, because your hardware chews through that backlog fast enough that it never really becomes an issue.
+`async` feels smoother on fast hardware because fast hardware masks what it does. With spare cores, the backlog it builds never starves the game, so you don't notice it skipping objects and effects that aren't compiled yet.
 
-On weaker CPUs, which is what DXVK-Sarek mainly targets, that same backlog starves the game completely, rendering nothing on screen and making it unplayable. dyasync is more conservative by design: it only defers variants, and always keeps something valid rendering. In exactly those moments it maintains **higher** fps than full async does, while remaining safer for multiplayer since nothing ever goes invisible.
+On weak CPUs, which is what DXVK-Sarek targets, that same backlog starves the game and nothing renders at all. dyasync only defers variants and always keeps something valid on screen, so in exactly those moments it holds **higher** fps than async, and nothing ever goes invisible.
 
-The dips should settle down significantly once the shader cache is warm.
+The dips settle once the shader cache is warm.
 
 ## Frame Pacing (low-latency mode)
 
