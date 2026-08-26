@@ -26,7 +26,7 @@ jobs:
 
     - name: Build dist tree
       id: build-dist
-      uses: Joshua-Ashton/arch-mingw-github-action@v8
+      uses: WinterSnowfall/arch-mingw-github-action@v2
       with:
         command: |
           make
