@@ -318,6 +318,23 @@ namespace dxvk {
       enabledFeatures.khrBufferDeviceAddress.bufferDeviceAddress = VK_TRUE;
     }
 
+    // Diagnostic mode. Every extension used here is optional, so a device
+    // is created on nearly any implementation and anything missing shows
+    // up later as incorrect rendering rather than a failure. Promoting the
+    // optional ones to required makes extension negotiation name each
+    // unsupported extension and refuse the device, which answers whether a
+    // report belongs to us or to the driver. Passive and disabled
+    // extensions keep their mode: nothing relies on them, so failing a
+    // device over one would report nothing useful.
+    if (env::getEnvVar("DXVK_SAREK_STRICT") == "1") {
+      Logger::warn("DxvkAdapter: Strict mode, optional extensions are required");
+
+      for (auto* ext : devExtensionList) {
+        if (ext->mode() == DxvkExtMode::Optional)
+          ext->setMode(DxvkExtMode::Required);
+      }
+    }
+
     DxvkNameSet extensionsEnabled;
 
     if (!m_deviceExtensions.enableExtensions(
