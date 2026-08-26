@@ -748,9 +748,21 @@ namespace dxvk {
       m_deviceFeatures.extTransformFeedback.pNext = std::exchange(m_deviceFeatures.core.pNext, &m_deviceFeatures.extTransformFeedback);
     }
 
-    if (m_deviceExtensions.supports(VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME) >= 3) {
+    uint32_t divisorRevision = m_deviceExtensions.supports(VK_EXT_VERTEX_ATTRIBUTE_DIVISOR_EXTENSION_NAME);
+
+    if (divisorRevision >= 3) {
       m_deviceFeatures.extVertexAttributeDivisor.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES_EXT;
       m_deviceFeatures.extVertexAttributeDivisor.pNext = std::exchange(m_deviceFeatures.core.pNext, &m_deviceFeatures.extVertexAttributeDivisor);
+    } else if (divisorRevision) {
+      // Revisions 1 and 2 have no feature struct at all: supporting the
+      // extension is the capability, driven by the pipeline struct alone,
+      // and only the zero divisor is added in revision 3. Without this the
+      // bit reads zero on those drivers and the pipeline code drops the
+      // divisor struct, silently ignoring instance divisors on hardware
+      // that handles them. Nothing is chained here, so these values are
+      // not overwritten by the feature query that follows.
+      m_deviceFeatures.extVertexAttributeDivisor.vertexAttributeInstanceRateDivisor = VK_TRUE;
+      m_deviceFeatures.extVertexAttributeDivisor.vertexAttributeInstanceRateZeroDivisor = VK_FALSE;
     }
 
     if (m_deviceExtensions.supports(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME)) {

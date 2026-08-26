@@ -505,6 +505,14 @@ namespace dxvk {
     for (uint32_t i = 0; i < state.il.bindingCount(); i++) {
       if (state.ilBindings[i].inputRate() == VK_VERTEX_INPUT_RATE_INSTANCE
        && state.ilBindings[i].divisor()   != 1) {
+        // A zero divisor makes every instance read the first element and
+        // needs a feature bit older extension revisions do not have. Using
+        // the default instance rate instead draws too many unique
+        // instances, which is far less wrong than an invalid pipeline.
+        if (!state.ilBindings[i].divisor()
+         && !m_pipeMgr->m_device->features().extVertexAttributeDivisor.vertexAttributeInstanceRateZeroDivisor)
+          continue;
+
         const uint32_t id = viDivisorCount++;
 
         viDivisorDesc[id].binding = i; /* see below */
