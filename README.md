@@ -26,6 +26,7 @@ A huge thank-you to the following contributors for their invaluable help:
 
 - [Proton-Sarek: discontinued](#proton-sarek-discontinued)
 - [ARM Emulation & Mobile GPUs](#arm-emulation--mobile-gpus-box64-fex-mali-adreno)
+- [Degraded Features](#degraded-features)
 - [How to Use](#how-to-use)
 - [Build Instructions](#build-instructions)
 - [Logs](#logs)
@@ -63,6 +64,43 @@ DXVK-Sarek includes fixes that allow the project to run on mobile and ARM transl
 > **If you are using a Mali GPU, do not report issues related to performance or visual artifacts.** These problems are almost certainly caused by the GPU's lack of support for critical Vulkan extensions. While I have made efforts to allow Mali GPUs to run the project, I cannot provide fixes or support for these devices.
 
 **For developers and contributors:** my only rule is that Mali / other-device fixes don't affect other devices. That way you don't have to worry too much about what upstream does, and I don't have to manually cherry-pick patches from your fork. If you're alright with it, just open PRs against the repo once you think things are ready. If not, that's fine too I wanted to extend the offer, since contributing upstream means the fixes reach more users through official releases and the work gets properly credited there.
+
+## Degraded Features
+
+Almost every Vulkan extension here is optional. That's what lets it run on hardware upstream won't touch. The cost is that a device gets created on almost anything, so a missing extension doesn't fail loudly, it shows up as a rendering bug: wrong colors, missing geometry, instanced objects in the wrong place.
+
+The log now lists what's missing and what it looks like on screen, right after the extension and feature lists:
+
+```
+warn:  Degraded features: 2 unsupported, rendering may be incorrect:
+warn:    Depth clip control unsupported. Clipping is approximated by depth
+         clamping: geometry that should be cut at the near plane is stretched
+         or missing.
+warn:    Transform feedback unsupported. D3D11 stream output and D3D9
+         ProcessVertices are unavailable: missing particles, grass or skinned
+         geometry.
+```
+
+If nothing is missing it says `Degraded features: none`, which is just as useful in a report.
+
+`DXVK_HUD=devinfo` puts `[DEGRADED]` on the device line, so a screenshot shows it without a log.
+
+### Strict mode
+
+`DXVK_SAREK_STRICT=1` makes every optional extension required. Device creation fails and the log names each missing one:
+
+```
+info:  Required Vulkan extension VK_EXT_transform_feedback not supported
+info:  Required Vulkan extension VK_EXT_depth_clip_enable not supported
+err:   DxvkAdapter: Failed to create device
+```
+
+Don't play with this on. If the game runs with it, the bug is mine and worth reporting here. If it refuses to start, the missing extensions are on your driver.
+
+Extensions that only report info, like `VK_EXT_memory_budget`, are left alone. Nothing depends on them.
+
+> [!NOTE]
+> A missing extension doesn't mean your driver is broken. Old drivers came out before some of these existed and no update is going to add them.
 
 ## How to Use
 
@@ -133,11 +171,23 @@ When used with Wine, DXVK prints log messages to `stderr`. Standalone log files 
 
 On Windows, log files are created in the game's working directory by default, which is usually next to the game executable.
 
+### Reporting an issue
+
+Attach the log for the API the game uses: `app_d3d11.log` for D3D10 and D3D11, `app_d3d9.log` for D3D8 and D3D9, plus `app_dxgi.log` if the problem involves the swap chain, present or display mode. The wrong log is the most common reason a report goes nowhere.
+
+Leave `DXVK_LOG_LEVEL` alone. The default `info` is where the startup block is written: device name, driver and Vulkan versions, extensions, features, and the degraded list. `warn` or `error` drops all of it. `debug` adds noise without adding to that block.
+
+For rendering bugs, three things narrow it down:
+
+- The startup block, so I know what your hardware supports instead of guessing.
+- A run with `dxvk.shaderCompilationMethod = none`, since `dyasync` and `async` can cause brief visual inaccuracies by design.
+- A run with `DXVK_SAREK_STRICT=1`, which says whether it's a driver gap or my bug.
+
 ## HUD
 
 The `DXVK_HUD` environment variable controls a HUD that can display the framerate and some stat counters. It accepts a comma-separated list of the following options:
 
-- `devinfo` displays the name of the GPU and the driver version
+- `devinfo` displays the name of the GPU and the driver version, plus `[DEGRADED]` when features are missing (see [Degraded Features](#degraded-features))
 - `fps` shows the current frame rate
 - `frametimes` shows a frame time graph
 - `submissions` shows the number of command buffers submitted per frame
