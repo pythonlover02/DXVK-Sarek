@@ -128,6 +128,11 @@ namespace dxvk::hud {
     VkPhysicalDeviceProperties props = device->adapter()->deviceProperties();
 
     m_deviceName = props.deviceName;
+
+    // Screenshots reach bug reports far more often than logs do, so the
+    // device line carries the same warning the log emits at startup.
+    if (DxvkAdapter::hasDegradedFeatures(device->features()))
+      m_deviceName += " [DEGRADED]";
     m_driverVer = str::format("Driver: ",
       VK_VERSION_MAJOR(props.driverVersion), ".",
       VK_VERSION_MINOR(props.driverVersion), ".",
