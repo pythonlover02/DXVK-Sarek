@@ -9,7 +9,7 @@ jobs:
     steps:
     - name: Checkout code
       id: checkout-code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         submodules: recursive
         fetch-depth: 0
@@ -82,19 +82,19 @@ jobs:
 
     - name: Upload artifacts
       id: upload-artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: dxvk-sarek-${{ env.VERSION_NAME }}-msvc-output
         path: artifacts\*
         if-no-files-found: error
 
   check-version:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
     - name: Checkout code
       id: checkout-code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
 
     - name: Check version sync
       id: check-version
