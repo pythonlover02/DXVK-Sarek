@@ -92,6 +92,38 @@ namespace dxvk::bit {
     #endif
   }
 
+  inline uint32_t tzcnt(uint64_t n) {
+    #if defined(DXVK_ARCH_X86_64) && defined(_MSC_VER) && !defined(__clang__)
+    if (n == 0)
+      return 64;
+    return (uint32_t)_tzcnt_u64(n);
+    #elif defined(DXVK_ARCH_X86_64) && defined(__BMI__)
+    return __tzcnt_u64(n);
+    #elif defined(DXVK_ARCH_X86_64) && (defined(__GNUC__) || defined(__clang__))
+    uint64_t res;
+    uint64_t tmp;
+    asm (
+      "tzcnt %2, %0;"
+      "mov  $64, %1;"
+      "test  %2, %2;"
+      "cmovz %1, %0;"
+      : "=&r" (res), "=&r" (tmp)
+      : "r" (n)
+      : "cc");
+    return res;
+    #elif defined(__GNUC__) || defined(__clang__)
+    return n != 0 ? __builtin_ctzll(n) : 64;
+    #else
+    uint32_t lo = uint32_t(n);
+    if (lo) {
+      return tzcnt(lo);
+    } else {
+      uint32_t hi = uint32_t(n >> 32);
+      return tzcnt(hi) + 32;
+    }
+    #endif
+  }
+
   inline uint32_t bsf(uint32_t n) {
     #if defined(_MSC_VER) && !defined(__clang__)
     unsigned long index;
@@ -347,7 +379,8 @@ namespace dxvk::bit {
 
     };
 
-    BitMask() { }
+    BitMask()
+      : m_mask(0) { }
 
     BitMask(uint32_t n)
       : m_mask(n) { }
