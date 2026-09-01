@@ -4,18 +4,22 @@ on: [push, pull_request, workflow_dispatch]
 
 jobs:
   artifacts-mingw-w64:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
+    container: archlinux/archlinux:base-devel
 
     steps:
+    - name: Install dependencies
+      run: pacman -Syu --needed --noconfirm git meson mingw-w64-gcc glslang
+
     - name: Checkout code
       id: checkout-code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v6
       with:
         submodules: recursive
         fetch-depth: 0
 
     - name: Setup problem matcher
-      uses: Joshua-Ashton/gcc-problem-matcher@v3
+      uses: Joshua-Ashton/gcc-problem-matcher@master
 
     - name: Get version
       id: get-version
@@ -26,15 +30,13 @@ jobs:
 
     - name: Build dist tree
       id: build-dist
-      uses: WinterSnowfall/arch-mingw-github-action@v2
-      with:
-        command: |
-          make
-          make dist
+      run: |
+        make
+        make dist
 
     - name: Upload artifacts
       id: upload-artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: dxvk-sarek-${{ env.VERSION_NAME }}
         path: build/dist/dxvk-sarek-${{ env.VERSION }}
