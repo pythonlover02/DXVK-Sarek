@@ -264,7 +264,7 @@ namespace dxvk {
 
     InitReturnPtr(lplpDirect3DMaterial);
 
-    *lplpDirect3DMaterial = ref(new D3D5Material(this));
+    *lplpDirect3DMaterial = ref(new D3D5Material(nullptr, this));
 
     return D3D_OK;
   }
@@ -335,7 +335,7 @@ namespace dxvk {
         lpD3DFRD2.ddHwDesc = descHAL_HAL;
         lpD3DFRD2.ddSwDesc = descHAL_HEL;
       } else {
-        Logger::err(str::format("D3D5Interface::FindDevice: Unknown device type: ", lpD3DFDS->guid));
+        Logger::warn(str::format("D3D5Interface::FindDevice: Unknown device type: ", lpD3DFDS->guid));
         return DDERR_NOTFOUND;
       }
 
@@ -388,29 +388,31 @@ namespace dxvk {
     bool  halFallback          = false;
     bool  rgbFallback          = false;
 
-    if (likely(!d3dOptions->forceSWVP)) {
-      if (rclsid == IID_IDirect3DHALDevice) {
-        Logger::info("D3D5Interface::CreateDevice: Creating an IID_IDirect3DHALDevice device");
+    if (rclsid == IID_IDirect3DHALDevice) {
+      Logger::info("D3D5Interface::CreateDevice: Creating an IID_IDirect3DHALDevice device");
+      if (likely(!d3dOptions->forceSWVP))
         deviceCreationFlags9 = D3DCREATE_MIXED_VERTEXPROCESSING;
-        isHALDevice = true;
-      } else if (rclsid == IID_IDirect3DRGBDevice) {
-        Logger::info("D3D5Interface::CreateDevice: Creating an IID_IDirect3DRGBDevice device");
-      } else if (rclsid == IID_IDirect3DMMXDevice) {
-        Logger::warn("D3D5Interface::CreateDevice: Unsupported MMX device, falling back to RGB");
-        rgbFallback = true;
-      } else if (rclsid == IID_IDirect3DRampDevice) {
-        Logger::warn("D3D5Interface::CreateDevice: Unsupported Ramp device, falling back to RGB");
-        rgbFallback = true;
+      isHALDevice = true;
+    } else if (rclsid == IID_IDirect3DRGBDevice) {
+      Logger::info("D3D5Interface::CreateDevice: Creating an IID_IDirect3DRGBDevice device");
+    } else if (rclsid == IID_IDirect3DMMXDevice) {
+      Logger::warn("D3D5Interface::CreateDevice: Unsupported MMX device, falling back to RGB");
+      rgbFallback = true;
+    } else if (rclsid == IID_IDirect3DRampDevice) {
+      Logger::warn("D3D5Interface::CreateDevice: Unsupported Ramp device, falling back to RGB");
+      rgbFallback = true;
+    } else if (unlikely(rclsid == IID_IUnknown)) {
+      Logger::warn("D3D5Interface::CreateDevice: Unsupported IID_IUnknown, falling back to RGB");
+      rgbFallback = true;
+    } else {
+      if (unlikely(rclsid != IID_WineD3DDevice)) {
+        Logger::warn("D3D5Interface::CreateDevice: Unknown device type, falling back to HAL");
+        Logger::warn(str::format(rclsid));
       } else {
-        if (unlikely(rclsid != IID_WineD3DDevice)) {
-          Logger::warn("D3D5Interface::CreateDevice: Unknown device type, falling back to HAL");
-          Logger::warn(str::format(rclsid));
-        } else {
-          Logger::info("D3D5Interface::CreateDevice: Creating an IID_WineD3DDevice HAL device");
-        }
-        halFallback = true;
-        // Don't enforce isHALDevice RT validations
+        Logger::info("D3D5Interface::CreateDevice: Creating an IID_WineD3DDevice HAL device");
       }
+      halFallback = true;
+      // Don't enforce isHALDevice RT validations
     }
 
     const IID rclsidOverride = halFallback ? IID_IDirect3DHALDevice :

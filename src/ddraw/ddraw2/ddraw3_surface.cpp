@@ -158,6 +158,20 @@ namespace dxvk {
     if (unlikely(riid == __uuidof(IDirectDrawColorControl))) {
       return E_NOINTERFACE;
     }
+    // The standard way of creating a new D3D3 device. Forward the call
+    // onto the base IDirectDrawSurface object, which we keep a reference to.
+    if (unlikely(riid == IID_IDirect3DHALDevice  || riid == IID_IDirect3DRGBDevice  ||
+                 riid == IID_IDirect3DRampDevice || riid == IID_WineD3DDevice)) {
+      // Surfaces which have been queried from an IDirectDrawSurface7
+      // object are unable to create a D3D3 device on this legacy path
+      if (unlikely(m_commonSurf->GetDD7Surface() == m_commonSurf->GetOrigin()))
+        return E_NOINTERFACE;
+
+      if (likely(m_commonSurf->GetDDSurface() != nullptr))
+        return m_commonSurf->GetDDSurface()->QueryInterface(riid, ppvObject);
+
+      return E_NOINTERFACE;
+    }
     if (unlikely(riid == __uuidof(IUnknown)
               || riid == __uuidof(IDirectDrawSurface))) {
       if (m_commonSurf->GetDDSurface() != nullptr)
@@ -267,12 +281,24 @@ namespace dxvk {
 
     attachedSurf->SetParentSurface(this);
 
+    hr = attachedSurf->GetCommonSurface()->RefreshSurfaceDescripton(false);
+    if (unlikely(FAILED(hr))) {
+      Logger::err("DDrawSurface3::AddAttachedSurface: Failed to retrieve updated attachment surface desc");
+      return hr;
+    }
+
     if (likely(attachedSurf->GetCommonSurface()->IsDepthStencil())) {
       m_depthStencil = attachedSurf;
     // If a flippable surface is attached, mark it as the next flippable surface
     } else if (unlikely(attachedSurf->GetCommonSurface()->IsBackBufferOrFlippable())) {
       DDrawSurface* attachedSurfParent = attachedSurf->GetCommonSurface()->GetDDSurface();
       m_parent->SetNextFlippable(attachedSurfParent);
+    }
+
+    hr = m_commonSurf->RefreshSurfaceDescripton(false);
+    if (unlikely(FAILED(hr))) {
+      Logger::err("DDrawSurface3::AddAttachedSurface: Failed to retrieve updated target surface desc");
+      return hr;
     }
 
     return DD_OK;
@@ -340,7 +366,7 @@ namespace dxvk {
 
     m_commonSurf->DirtyDDrawSurface();
 
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+    if (m_shadowSurf != nullptr && d3d9Device != nullptr) {
       const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
                                 !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
                                  m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
@@ -417,7 +443,7 @@ namespace dxvk {
 
     m_commonSurf->DirtyDDrawSurface();
 
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+    if (m_shadowSurf != nullptr && d3d9Device != nullptr) {
       const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
                                 !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
                                  m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
@@ -443,9 +469,9 @@ namespace dxvk {
     }
 
     if (lpDDSAttachedSurface == nullptr) {
-      HRESULT hrProxy = m_proxy->DeleteAttachedSurface(dwFlags, lpDDSAttachedSurface);
-      if (unlikely(FAILED(hrProxy)))
-        return hrProxy;
+      HRESULT hr = m_proxy->DeleteAttachedSurface(dwFlags, lpDDSAttachedSurface);
+      if (unlikely(FAILED(hr)))
+        return hr;
 
       // If lpDDSAttachedSurface is NULL, then all surfaces are detached
       m_depthStencil = nullptr;
@@ -461,12 +487,23 @@ namespace dxvk {
 
     attachedSurf->SetParentSurface(nullptr);
 
+    hr = attachedSurf->GetCommonSurface()->RefreshSurfaceDescripton(false);
+    if (unlikely(FAILED(hr))) {
+      Logger::err("DDrawSurface3::DeleteAttachedSurface: Failed to retrieve updated attachment surface desc");
+      return hr;
+    }
+
     if (likely(m_depthStencil == attachedSurf)) {
       m_depthStencil = nullptr;
     // Clear the next flippable surface or flippable surface detachment
-    } else if (unlikely(attachedSurf->GetCommonSurface()->IsBackBufferOrFlippable() &&
-                        attachedSurf->GetCommonSurface()->GetDDSurface() == m_parent->GetNextFlippable())) {
+    } else if (unlikely(m_parent->GetNextFlippable() == attachedSurf->GetCommonSurface()->GetDDSurface())) {
       m_parent->SetNextFlippable(nullptr);
+    }
+
+    hr = m_commonSurf->RefreshSurfaceDescripton(false);
+    if (unlikely(FAILED(hr))) {
+      Logger::err("DDrawSurface3::DeleteAttachedSurface: Failed to retrieve updated target surface desc");
+      return hr;
     }
 
     return DD_OK;
@@ -709,14 +746,17 @@ namespace dxvk {
       return hr;
 
     // For single surface locks, track the READONLY flag in order to skip dirtying
-    // on Unlock(). Reset the tracking in case of multiple simultaneous locks.
-    if (likely(!m_lockCount)) {
+    // on Unlock(). Reset flag tracking in case of multiple simultaneous locks,
+    // which are technically possible but extremely rare in practice.
+    //
+    // Note: Using lpDestRect as a key for tracking and/or matching Lock() to Unlock()
+    // calls, as the documentation suggests, isn't feasible, as there are applications
+    // which use nullptr during Lock() calls and then a non-null pointer on Unlock().
+    if (likely(!m_readOnlyLock)) {
       m_readOnlyLock = (dwFlags & DDLOCK_READONLY) && !(dwFlags & DDLOCK_WRITEONLY);
     } else {
       m_readOnlyLock = false;
     }
-
-    m_lockCount++;
 
     return DD_OK;
   }
@@ -739,15 +779,17 @@ namespace dxvk {
 
     m_commonSurf->DirtyDDrawSurface();
 
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
-      const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
-                                !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
-                                 m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
-                                 false : true;
-      if (shouldPresent) {
-        InitializeOrUploadD3D9();
-        d3d9Device->Present(NULL, NULL, NULL, NULL);
+    if (m_shadowSurf != nullptr) {
+      d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
+      if (likely(d3d9Device != nullptr)) {
+        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                   false : true;
+        if (shouldPresent) {
+          InitializeOrUploadD3D9();
+          d3d9Device->Present(NULL, NULL, NULL, NULL);
+        }
       }
     }
 
@@ -844,6 +886,9 @@ namespace dxvk {
       m_commonSurf->SetPalette(ddrawPalette);
     }
 
+    // Note: A palette update on a primary surface would cause immediate
+    // presentation, however we don't support P8 primary surfaces
+
     return DD_OK;
   }
 
@@ -854,23 +899,22 @@ namespace dxvk {
 
     if (!m_readOnlyLock) {
       m_commonSurf->DirtyDDrawSurface();
+
+      if (m_shadowSurf != nullptr) {
+        d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
+        if (likely(d3d9Device != nullptr)) {
+          const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                    !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                     m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                     false : true;
+          if (shouldPresent) {
+            InitializeOrUploadD3D9();
+            d3d9Device->Present(NULL, NULL, NULL, NULL);
+          }
+        }
+      }
     } else {
       m_readOnlyLock = false;
-    }
-
-    if (likely(m_lockCount))
-      m_lockCount--;
-
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
-      const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
-                                !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
-                                 m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
-                                 false : true;
-      if (shouldPresent) {
-        InitializeOrUploadD3D9();
-        d3d9Device->Present(NULL, NULL, NULL, NULL);
-      }
     }
 
     return DD_OK;
@@ -1001,7 +1045,7 @@ namespace dxvk {
 
     //Logger::debug(str::format("DDraw3Surface::UploadSurfaceData: Uploading nr. [[3-", std::hex, this, "]]"));
 
-    D3D9SurfaceType d3d9SurfaceType = m_commonSurf->GetD3D9SurfaceType();
+    const D3D9SurfaceType d3d9SurfaceType = m_commonSurf->GetD3D9SurfaceType();
 
     switch (d3d9SurfaceType) {
       case D3D9SurfaceType::Texture:

@@ -61,8 +61,8 @@ namespace dxvk {
     // Common D3D9 index buffers
     static constexpr DWORD Usage = D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY;
 
-    for (uint8_t ibIndex = 0; ibIndex < ddrawCaps::IndexBufferCount ; ibIndex++) {
-      const UINT ibSize = ddrawCaps::IndexCount[ibIndex] * sizeof(WORD);
+    for (uint32_t ibIndex = 0; ibIndex < ddrawCaps::IndexBufferCount ; ibIndex++) {
+      const uint32_t ibSize = ddrawCaps::IndexCount[ibIndex] * sizeof(WORD);
 
       HRESULT hr = device9->CreateIndexBuffer(ibSize, Usage, d3d9::D3DFMT_INDEX16,
                                               d3d9::D3DPOOL_DEFAULT, &m_ib9[ibIndex], nullptr);
@@ -566,18 +566,22 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D6Device::Begin(D3DPRIMITIVETYPE d3dptPrimitiveType, DWORD dwVertexTypeDesc, DWORD dwFlags) {
     D3DDeviceLock lock = LockDevice();
 
+    if (unlikely(m_vertexStream.isInitialized()))
+      return DDERR_INVALIDPARAMS;
+
     // All FVF combinations are technically supported,
     // but I doubt that is the case in practice
     if (dwVertexTypeDesc != D3DFVF_VERTEX &&
         dwVertexTypeDesc != D3DFVF_LVERTEX &&
         dwVertexTypeDesc != D3DFVF_TLVERTEX) {
-      Logger::warn("D3D6Device::Begin: Unsupported FVF format");
+      Logger::err("D3D6Device::Begin: Unsupported FVF format");
       return DDERR_INVALIDPARAMS;
     }
 
-    m_vertexStreamInfo.d3dpt = d3dptPrimitiveType;
-    m_vertexStreamInfo.d3dvt = ConvertFVFType(dwVertexTypeDesc);
-    m_vertexStreamInfo.dwFlags = dwFlags;
+    m_vertexStream.d3dpt = d3dptPrimitiveType;
+    m_vertexStream.d3dvt = ConvertFVFType(dwVertexTypeDesc);
+    m_vertexStream.dwFlags = dwFlags;
+    m_vertexStream.initialize();
 
     return D3D_OK;
   }
@@ -593,18 +597,20 @@ namespace dxvk {
     if (unlikely(vertex == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    switch (m_vertexStreamInfo.d3dvt) {
+    if (unlikely(!m_vertexStream.isInitialized()))
+      return DDERR_INVALIDPARAMS;
+
+    switch (m_vertexStream.d3dvt) {
       case D3DVT_VERTEX:
-        m_vertexStream.push_back(*reinterpret_cast<D3DVERTEX*>(vertex));
+        m_vertexStream.stream.vertex->push_back(*reinterpret_cast<D3DVERTEX*>(vertex));
         break;
       case D3DVT_LVERTEX:
-        m_lvertexStream.push_back(*reinterpret_cast<D3DLVERTEX*>(vertex));
+        m_vertexStream.stream.lvertex->push_back(*reinterpret_cast<D3DLVERTEX*>(vertex));
         break;
       case D3DVT_TLVERTEX:
-        m_tlvertexStream.push_back(*reinterpret_cast<D3DTLVERTEX*>(vertex));
+        m_vertexStream.stream.tlvertex->push_back(*reinterpret_cast<D3DTLVERTEX*>(vertex));
         break;
       default:
-        Logger::warn(">>> D3D6Device::Vertex: Invalid vertex type");
         return DDERR_INVALIDPARAMS;
     }
 
@@ -619,33 +625,35 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D6Device::End(DWORD dwFlags) {
     D3DDeviceLock lock = LockDevice();
 
+    if (unlikely(!m_vertexStream.isInitialized()))
+      return DDERR_INVALIDPARAMS;
+
     HRESULT hr;
 
-    switch (m_vertexStreamInfo.d3dvt) {
+    switch (m_vertexStream.d3dvt) {
       case D3DVT_VERTEX:
-        hr = DrawPrimitive(m_vertexStreamInfo.d3dpt, m_vertexStreamInfo.d3dvt, m_vertexStream.data(),
-                           m_vertexStream.size(), m_vertexStreamInfo.dwFlags);
-        m_vertexStream.clear();
+        hr = DrawPrimitive(m_vertexStream.d3dpt, ConvertVertexType(m_vertexStream.d3dvt),
+                           m_vertexStream.stream.vertex->data(),
+                           m_vertexStream.stream.vertex->size(), m_vertexStream.dwFlags);
         break;
       case D3DVT_LVERTEX:
-        hr = DrawPrimitive(m_vertexStreamInfo.d3dpt, m_vertexStreamInfo.d3dvt, m_lvertexStream.data(),
-                           m_lvertexStream.size(), m_vertexStreamInfo.dwFlags);
-        m_lvertexStream.clear();
+        hr = DrawPrimitive(m_vertexStream.d3dpt, ConvertVertexType(m_vertexStream.d3dvt),
+                           m_vertexStream.stream.lvertex->data(),
+                           m_vertexStream.stream.lvertex->size(), m_vertexStream.dwFlags);
         break;
       case D3DVT_TLVERTEX:
-        hr = DrawPrimitive(m_vertexStreamInfo.d3dpt, m_vertexStreamInfo.d3dvt, m_tlvertexStream.data(),
-                           m_tlvertexStream.size(), m_vertexStreamInfo.dwFlags);
-        m_tlvertexStream.clear();
+        hr = DrawPrimitive(m_vertexStream.d3dpt, ConvertVertexType(m_vertexStream.d3dvt),
+                           m_vertexStream.stream.tlvertex->data(),
+                           m_vertexStream.stream.tlvertex->size(), m_vertexStream.dwFlags);
         break;
       default:
-        Logger::warn(">>> D3D6Device::End: Invalid vertex type");
         return DDERR_INVALIDPARAMS;
     }
 
     if (unlikely(FAILED(hr)))
       Logger::err(">>> D3D6Device::End: Failed call to DrawPrimitive");
 
-    m_vertexStreamInfo = { };
+    m_vertexStream.reset();
 
     return hr;
   }
@@ -1067,9 +1075,6 @@ namespace dxvk {
         if (unlikely(FAILED(hr)))
           return hr;
 
-        if (unlikely(surface4 == nullptr))
-          m_bridge->SetColorKeyState(false);
-
         return D3D_OK;
       }
 
@@ -1299,14 +1304,19 @@ namespace dxvk {
       case D3DRENDERSTATE_COLORKEYENABLE: {
         m_commonD3DDevice->SetColorKeyEnable(dwRenderState);
 
-        DDrawCommonSurface* commonSurf = m_textures[0] != nullptr ?
-                                         m_textures[0]->GetCommonTexture()->GetCommonSurface() : nullptr;
-        const bool validColorKey = commonSurf != nullptr ? commonSurf->HasValidColorKey() : false;
-        m_bridge->SetColorKeyState(dwRenderState && validColorKey);
-        if (dwRenderState && validColorKey) {
-          DDCOLORKEY normalizedColorKey = commonSurf->GetColorKeyNormalized();
-          m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
-                                normalizedColorKey.dwColorSpaceHighValue);
+        for (DWORD stage = 0; stage < ddrawCaps::TextureStageCount; stage++) {
+          if (m_textures[stage] == nullptr)
+            continue;
+
+          DDrawCommonSurface* commonSurf = m_textures[stage]->GetCommonTexture()->GetCommonSurface();
+          const bool validColorKey = commonSurf != nullptr ? commonSurf->HasValidColorKey() : false;
+          m_bridge->SetColorKeyState(stage, dwRenderState && validColorKey);
+
+          if (dwRenderState && validColorKey) {
+            const DDCOLORKEY* normalizedColorKey = commonSurf->GetColorKeyNormalized();
+            m_bridge->SetColorKey(stage, normalizedColorKey->dwColorSpaceLowValue,
+                                  normalizedColorKey->dwColorSpaceHighValue);
+          }
         }
 
         return D3D_OK;
@@ -1513,13 +1523,15 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
+    const bool isTransformed = vertex_type & D3DFVF_XYZRHW;
     const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
                               (vertex_type & D3DFVF_NORMAL) &&
                               m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
-    HandlePreDrawLegacyProjection(device9, flags);
+    if (!isTransformed)
+      HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(vertex_type);
     HRESULT hr = device9->DrawPrimitiveUP(
@@ -1530,7 +1542,8 @@ namespace dxvk {
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
-    HandlePostDrawLegacyProjection(device9);
+    if (!isTransformed)
+      HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawPrimitive: Failed D3D9 call to DrawPrimitiveUP");
@@ -1557,13 +1570,15 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
+    const bool isTransformed = fvf & D3DFVF_XYZRHW;
     const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
                               (fvf & D3DFVF_NORMAL) &&
                               m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
-    HandlePreDrawLegacyProjection(device9, flags);
+    if (!isTransformed)
+      HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(fvf);
     HRESULT hr = device9->DrawIndexedPrimitiveUP(
@@ -1578,7 +1593,8 @@ namespace dxvk {
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
-    HandlePostDrawLegacyProjection(device9);
+    if (!isTransformed)
+      HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawIndexedPrimitive: Failed D3D9 call to DrawIndexedPrimitiveUP");
@@ -1634,13 +1650,15 @@ namespace dxvk {
     // Transform strided vertex data to a standard vertex buffer stream
     PackedVertexBuffer pvb = TransformStridedtoUP(fvf, strided_data, vertex_count);
 
+    const bool isTransformed = fvf & D3DFVF_XYZRHW;
     const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
                               (fvf & D3DFVF_NORMAL) &&
                               m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
-    HandlePreDrawLegacyProjection(device9, flags);
+    if (!isTransformed)
+      HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(fvf);
     HRESULT hr = device9->DrawPrimitiveUP(
@@ -1651,7 +1669,8 @@ namespace dxvk {
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
-    HandlePostDrawLegacyProjection(device9);
+    if (!isTransformed)
+      HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawPrimitiveStrided: Failed D3D9 call to DrawPrimitiveUP");
@@ -1681,13 +1700,15 @@ namespace dxvk {
     // Transform strided vertex data to a standard vertex buffer stream
     PackedVertexBuffer pvb = TransformStridedtoUP(fvf, strided_data, vertex_count);
 
+    const bool isTransformed = fvf & D3DFVF_XYZRHW;
     const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
                               (fvf & D3DFVF_NORMAL) &&
                               m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
-    HandlePreDrawLegacyProjection(device9, flags);
+    if (!isTransformed)
+      HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(fvf);
     HRESULT hr = device9->DrawIndexedPrimitiveUP(
@@ -1702,7 +1723,8 @@ namespace dxvk {
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
-    HandlePostDrawLegacyProjection(device9);
+    if (!isTransformed)
+      HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawIndexedPrimitiveStrided: Failed D3D9 call to DrawIndexedPrimitiveUP");
@@ -1726,31 +1748,35 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
 
     Com<D3D6VertexBuffer> vb6 = static_cast<D3D6VertexBuffer*>(vb);
-
-    if (unlikely(vb6->GetDevice() != this)) {
-      Logger::err("D3D6Device::DrawIndexedPrimitiveVB: Invalid vertex buffer parent device");
-      return DDERR_GENERIC;
-    }
+    D3DCommonBuffer* commonBuffer = vb6->GetCommonBuffer();
 
     if (unlikely(vb6->IsLocked())) {
       Logger::err("D3D6Device::DrawPrimitiveVB: Buffer is locked");
       return D3DERR_VERTEXBUFFERLOCKED;
     }
 
+    if (unlikely(m_commonD3DDevice != commonBuffer->GetCommonD3DDevice())) {
+      Logger::err("D3D6Device::DrawIndexedPrimitiveVB: Invalid vertex buffer parent device");
+      return DDERR_GENERIC;
+    }
+
     DDrawDirtySurfaceUpload();
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
+    const DWORD fvf = commonBuffer->GetFVF();
+    const bool isTransformed = fvf & D3DFVF_XYZRHW;
     const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
-                              (vb6->GetFVF() & D3DFVF_NORMAL) &&
+                              (fvf & D3DFVF_NORMAL) &&
                               m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
-    HandlePreDrawLegacyProjection(device9, flags);
+    if (!isTransformed)
+      HandlePreDrawLegacyProjection(device9, flags);
 
-    device9->SetFVF(vb6->GetFVF());
-    device9->SetStreamSource(0, vb6->GetD3D9VertexBuffer(), 0, vb6->GetStride());
+    device9->SetFVF(fvf);
+    device9->SetStreamSource(0, commonBuffer->GetD3D9VertexBuffer(), 0, commonBuffer->GetStride());
     HRESULT hr = device9->DrawPrimitive(
                       d3d9::D3DPRIMITIVETYPE(primitive_type),
                       start_vertex,
@@ -1758,7 +1784,8 @@ namespace dxvk {
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
-    HandlePostDrawLegacyProjection(device9);
+    if (!isTransformed)
+      HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawPrimitiveVB: Failed D3D9 call to DrawPrimitive");
@@ -1782,15 +1809,16 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
 
     Com<D3D6VertexBuffer> vb6 = static_cast<D3D6VertexBuffer*>(vb);
-
-    if (unlikely(vb6->GetDevice() != this)) {
-      Logger::err("D3D6Device::DrawIndexedPrimitiveVB: Invalid vertex buffer parent device");
-      return DDERR_GENERIC;
-    }
+    D3DCommonBuffer* commonBuffer = vb6->GetCommonBuffer();
 
     if (unlikely(vb6->IsLocked())) {
       Logger::err("D3D6Device::DrawIndexedPrimitiveVB: Buffer is locked");
       return D3DERR_VERTEXBUFFERLOCKED;
+    }
+
+    if (unlikely(m_commonD3DDevice != commonBuffer->GetCommonD3DDevice())) {
+      Logger::err("D3D6Device::DrawIndexedPrimitiveVB: Invalid vertex buffer parent device");
+      return DDERR_GENERIC;
     }
 
     if (unlikely(index_count > ddrawCaps::MaxIndexCount)) {
@@ -1802,13 +1830,16 @@ namespace dxvk {
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
+    const DWORD fvf = commonBuffer->GetFVF();
+    const bool isTransformed = fvf & D3DFVF_XYZRHW;
     const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
-                              (vb6->GetFVF() & D3DFVF_NORMAL) &&
+                              (fvf & D3DFVF_NORMAL) &&
                               m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
-    HandlePreDrawLegacyProjection(device9, flags);
+    if (!isTransformed)
+      HandlePreDrawLegacyProjection(device9, flags);
 
     uint8_t ibIndex = 0;
     // Fit index buffer uploads into the smallest buffer size possible
@@ -1826,19 +1857,20 @@ namespace dxvk {
     ib9->Unlock();
 
     device9->SetIndices(ib9);
-    device9->SetFVF(vb6->GetFVF());
-    device9->SetStreamSource(0, vb6->GetD3D9VertexBuffer(), 0, vb6->GetStride());
+    device9->SetFVF(fvf);
+    device9->SetStreamSource(0, commonBuffer->GetD3D9VertexBuffer(), 0, commonBuffer->GetStride());
     HRESULT hr = device9->DrawIndexedPrimitive(
                       d3d9::D3DPRIMITIVETYPE(primitive_type),
                       0,
                       0,
-                      vb6->GetNumVertices(),
+                      commonBuffer->GetNumVertices(),
                       0,
                       GetPrimitiveCount(primitive_type, index_count));
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
-    HandlePostDrawLegacyProjection(device9);
+    if (!isTransformed)
+      HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D6Device::DrawIndexedPrimitiveVB: Failed D3D9 call to DrawIndexedPrimitive");
@@ -1902,9 +1934,7 @@ namespace dxvk {
 
       if (likely(m_textures[stage] != nullptr)) {
         m_textures[stage] = nullptr;
-
-        if (likely(stage == 0))
-          m_bridge->SetColorKeyState(false);
+        m_bridge->SetColorKeyState(stage, false);
       }
 
       return D3D_OK;
@@ -1939,13 +1969,15 @@ namespace dxvk {
 
     d3d9::IDirect3DTexture9* tex9 = commonSurface->GetD3D9Texture();
 
-    if (likely(tex9 != nullptr)) {
-      hr = device9->SetTexture(stage, tex9);
-      if (unlikely(FAILED(hr))) {
-        Logger::warn("D3D6Device::SetTexture: Failed to bind D3D9 texture");
-        return hr;
-      }
+    // If a surface without a D3D9 texture gets bound, simply unbind the current texture.
+    // This is needed to handle the binding of surfaces which aren't explicitly marked as textures.
+    hr = device9->SetTexture(stage, tex9);
+    if (unlikely(FAILED(hr))) {
+      Logger::warn("D3D6Device::SetTexture: Failed to bind D3D9 texture");
+      return hr;
+    }
 
+    if (likely(tex9 != nullptr)) {
       if (likely(stage == 0)) {
         // "Any alpha values in the texture replace the alpha values in the colors that would
         //  have been used with no texturing; if the texture does not contain an alpha component,
@@ -1954,18 +1986,17 @@ namespace dxvk {
           const DWORD textureOp = commonSurface->IsAlphaFormat() ? D3DTOP_SELECTARG1 : D3DTOP_SELECTARG2;
           device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP, textureOp);
         }
-
-        const bool colorKeyEnable = m_commonD3DDevice->GetColorKeyEnable();
-        const bool validColorKey = commonSurface->HasValidColorKey();
-        m_bridge->SetColorKeyState(colorKeyEnable && validColorKey);
-        if (colorKeyEnable && validColorKey) {
-          DDCOLORKEY normalizedColorKey = commonSurface->GetColorKeyNormalized();
-          m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
-                                normalizedColorKey.dwColorSpaceHighValue);
-        }
       }
-    } else {
-      Logger::err("D3D6Device::SetTexture: Found no valid D3D9 texture");
+
+      const bool colorKeyEnable = m_commonD3DDevice->GetColorKeyEnable();
+      const bool validColorKey = commonSurface->HasValidColorKey();
+      m_bridge->SetColorKeyState(stage, colorKeyEnable && validColorKey);
+
+      if (colorKeyEnable && validColorKey) {
+        const DDCOLORKEY* normalizedColorKey = commonSurface->GetColorKeyNormalized();
+        m_bridge->SetColorKey(stage, normalizedColorKey->dwColorSpaceLowValue,
+                              normalizedColorKey->dwColorSpaceHighValue);
+      }
     }
 
     m_textures[stage] = texture6;
@@ -2167,8 +2198,11 @@ namespace dxvk {
         return hr;
       }
 
-      if (likely(m_commonD3DDevice->GetCurrentTextureHandle() != 0))
+      if (likely(m_commonD3DDevice->GetCurrentTextureHandle() != 0)) {
+        m_texture = nullptr;
         m_commonD3DDevice->SetCurrentTextureHandle(0);
+        m_bridge->SetColorKeyState(0, false);
+      }
 
       return D3D_OK;
     }
@@ -2192,13 +2226,15 @@ namespace dxvk {
 
     d3d9::IDirect3DTexture9* tex9 = commonSurface->GetD3D9Texture();
 
-    if (likely(tex9 != nullptr)) {
-      hr = device9->SetTexture(0, tex9);
-      if (unlikely(FAILED(hr))) {
-        Logger::warn("D3D6Device::SetTextureInternal: Failed to bind D3D9 texture");
-        return hr;
-      }
+    // If a surface without a D3D9 texture gets bound, simply unbind the current texture.
+    // This is needed to handle the binding of surfaces which aren't explicitly marked as textures.
+    hr = device9->SetTexture(0, tex9);
+    if (unlikely(FAILED(hr))) {
+      Logger::warn("D3D6Device::SetTextureInternal: Failed to bind D3D9 texture");
+      return hr;
+    }
 
+    if (likely(tex9 != nullptr)) {
       // "Any alpha values in the texture replace the alpha values in the colors that would
       //  have been used with no texturing; if the texture does not contain an alpha component,
       //  alpha values at the vertices in the source are interpolated between vertices."
@@ -2209,16 +2245,16 @@ namespace dxvk {
 
       const bool colorKeyEnable = m_commonD3DDevice->GetColorKeyEnable();
       const bool validColorKey = commonSurface->HasValidColorKey();
-      m_bridge->SetColorKeyState(colorKeyEnable && validColorKey);
+      m_bridge->SetColorKeyState(0, colorKeyEnable && validColorKey);
+
       if (colorKeyEnable && validColorKey) {
-        DDCOLORKEY normalizedColorKey = commonSurface->GetColorKeyNormalized();
-        m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
-                              normalizedColorKey.dwColorSpaceHighValue);
+        const DDCOLORKEY* normalizedColorKey = commonSurface->GetColorKeyNormalized();
+        m_bridge->SetColorKey(0, normalizedColorKey->dwColorSpaceLowValue,
+                              normalizedColorKey->dwColorSpaceHighValue);
       }
-    } else {
-      Logger::err("D3D6Device::SetTextureInternal: Found no valid D3D9 texture");
     }
 
+    m_texture = surface;
     m_commonD3DDevice->SetCurrentTextureHandle(textureHandle);
 
     return D3D_OK;

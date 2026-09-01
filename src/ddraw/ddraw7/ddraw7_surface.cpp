@@ -309,7 +309,7 @@ namespace dxvk {
 
     m_commonSurf->DirtyDDrawSurface();
 
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+    if (m_shadowSurf != nullptr && d3d9Device != nullptr) {
       const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
                                 !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
                                  m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
@@ -381,7 +381,7 @@ namespace dxvk {
 
     m_commonSurf->DirtyDDrawSurface();
 
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+    if (m_shadowSurf != nullptr && d3d9Device != nullptr) {
       const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
                                 !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
                                  m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
@@ -404,9 +404,9 @@ namespace dxvk {
     }
 
     if (lpDDSAttachedSurface == nullptr) {
-      HRESULT hrProxy = m_proxy->DeleteAttachedSurface(dwFlags, lpDDSAttachedSurface);
-      if (unlikely(FAILED(hrProxy)))
-        return hrProxy;
+      HRESULT hr = m_proxy->DeleteAttachedSurface(dwFlags, lpDDSAttachedSurface);
+      if (unlikely(FAILED(hr)))
+        return hr;
 
       // If lpDDSAttachedSurface is NULL, then all surfaces are detached
       m_depthStencil = nullptr;
@@ -737,14 +737,17 @@ namespace dxvk {
       return hr;
 
     // For single surface locks, track the READONLY flag in order to skip dirtying
-    // on Unlock(). Reset the tracking in case of multiple simultaneous locks.
-    if (likely(!m_lockCount)) {
+    // on Unlock(). Reset flag tracking in case of multiple simultaneous locks,
+    // which are technically possible but extremely rare in practice.
+    //
+    // Note: Using lpDestRect as a key for tracking and/or matching Lock() to Unlock()
+    // calls, as the documentation suggests, isn't feasible, as there are applications
+    // which use nullptr during Lock() calls and then a non-null pointer on Unlock().
+    if (likely(!m_readOnlyLock)) {
       m_readOnlyLock = (dwFlags & DDLOCK_READONLY) && !(dwFlags & DDLOCK_WRITEONLY);
     } else {
       m_readOnlyLock = false;
     }
-
-    m_lockCount++;
 
     return DD_OK;
   }
@@ -767,15 +770,17 @@ namespace dxvk {
 
     m_commonSurf->DirtyDDrawSurface();
 
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
-      const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
-                                !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
-                                 m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
-                                 false : true;
-      if (shouldPresent) {
-        InitializeOrUploadD3D9();
-        d3d9Device->Present(NULL, NULL, NULL, NULL);
+    if (m_shadowSurf != nullptr) {
+      d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
+      if (likely(d3d9Device != nullptr)) {
+        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                   false : true;
+        if (shouldPresent) {
+          InitializeOrUploadD3D9();
+          d3d9Device->Present(NULL, NULL, NULL, NULL);
+        }
       }
     }
 
@@ -872,6 +877,9 @@ namespace dxvk {
       m_commonSurf->SetPalette(ddrawPalette);
     }
 
+    // Note: A palette update on a primary surface would cause immediate
+    // presentation, however we don't support P8 primary surfaces
+
     return DD_OK;
   }
 
@@ -882,23 +890,22 @@ namespace dxvk {
 
     if (!m_readOnlyLock) {
       m_commonSurf->DirtyDDrawSurface();
+
+      if (m_shadowSurf != nullptr) {
+        d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
+        if (likely(d3d9Device != nullptr)) {
+          const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                    !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                     m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                     false : true;
+          if (shouldPresent) {
+            InitializeOrUploadD3D9();
+            d3d9Device->Present(NULL, NULL, NULL, NULL);
+          }
+        }
+      }
     } else {
       m_readOnlyLock = false;
-    }
-
-    if (likely(m_lockCount))
-      m_lockCount--;
-
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
-      const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
-                                !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
-                                 m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
-                                 false : true;
-      if (shouldPresent) {
-        InitializeOrUploadD3D9();
-        d3d9Device->Present(NULL, NULL, NULL, NULL);
-      }
     }
 
     return DD_OK;
@@ -1247,13 +1254,13 @@ namespace dxvk {
 
     //Logger::debug(str::format("DDraw7Surface::UploadSurfaceData: Uploading nr. [[7-", std::hex, this, "]]"));
 
-    D3D9SurfaceType d3d9SurfaceType = m_commonSurf->GetD3D9SurfaceType();
+    const D3D9SurfaceType d3d9SurfaceType = m_commonSurf->GetD3D9SurfaceType();
 
     switch (d3d9SurfaceType) {
       case D3D9SurfaceType::CubeTexture: {
         // In theory we won't know which faces have been generated,
         // so check them one by one, and upload as needed
-        const uint16_t mipCount    = m_commonSurf->GetMipCount();
+        const uint32_t mipCount    = m_commonSurf->GetMipCount();
         const bool     isDXTFormat = m_commonSurf->IsDXTFormat();
         if (likely(m_cubeMapSurfaces[0] != nullptr)) {
           BlitToD3D9CubeMap(m_commonSurf->GetD3D9CubeTexture(), m_cubeMapSurfaces[0], mipCount, isDXTFormat);

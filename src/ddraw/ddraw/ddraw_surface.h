@@ -17,6 +17,8 @@
 
 namespace dxvk {
 
+  class D3D3Device;
+
   /**
   * \brief IDirectDrawSurface interface implementation
   */
@@ -146,16 +148,8 @@ namespace dxvk {
       return m_texture3.ptr();
     }
 
-    void SetD3D3Texture(D3D3Texture* texture3) {
-      m_texture3 = texture3;
-    }
-
     D3D5Texture* GetD3D5Texture() const {
       return m_texture5.ptr();
-    }
-
-    void SetD3D5Texture(D3D5Texture* texture5) {
-      m_texture5 = texture5;
     }
 
     void SetAttachedDepthStencil(Com<DDrawSurface>&& depthStencil) {
@@ -203,14 +197,14 @@ namespace dxvk {
     inline HRESULT CreateDeviceInternal(REFIID riid, void** ppvObject);
 
     bool                      m_isChildObject = false;
-
-    bool                      m_readOnlyLock  = false;
-    std::atomic<uint8_t>      m_lockCount     = 0u;
+    std::atomic<bool>         m_readOnlyLock  = false;
 
     Com<DDrawCommonSurface>   m_commonSurf;
     DDrawCommonInterface*     m_commonIntf    = nullptr;
 
     DDrawSurface*             m_parentSurf    = nullptr;
+
+    Com<D3D3Device, false>    m_device3;
 
     Com<D3D3Texture, false>   m_texture3;
     Com<D3D5Texture, false>   m_texture5;

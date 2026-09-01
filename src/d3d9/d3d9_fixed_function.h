@@ -166,10 +166,10 @@ namespace dxvk {
         // Affects all stages.
         uint32_t     GlobalSpecularEnable : 1;
         uint32_t     GlobalFlatShade      : 1;
-        uint32_t     GlobalColorKeyEnable : 1;
 
         uint32_t     AddressU        : 3;
         uint32_t     AddressV        : 3;
+        uint32_t     ColorKeyEnable  : 1;
         uint32_t     ColorKeyLow     : 32;
         uint32_t     ColorKeyHigh    : 32;
       } Contents;

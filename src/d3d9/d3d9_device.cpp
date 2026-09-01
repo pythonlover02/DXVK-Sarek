@@ -7267,10 +7267,11 @@ namespace dxvk {
 
         stage.SampleDref = (m_depthTextures & (1 << idx)) != 0;
 
-        stage.ColorKeyLow  = m_colorKeyLow[idx];
-        stage.ColorKeyHigh = m_colorKeyHigh[idx];
-        stage.AddressU     = m_state.samplerStates[idx][D3DSAMP_ADDRESSU];
-        stage.AddressV     = m_state.samplerStates[idx][D3DSAMP_ADDRESSV];
+        stage.ColorKeyEnable = m_useColorKey[idx];
+        stage.ColorKeyLow    = m_colorKeyLow[idx];
+        stage.ColorKeyHigh   = m_colorKeyHigh[idx];
+        stage.AddressU       = m_state.samplerStates[idx][D3DSAMP_ADDRESSU];
+        stage.AddressV       = m_state.samplerStates[idx][D3DSAMP_ADDRESSV];
       }
 
       auto& stage0 = key.Stages[0].Contents;
@@ -7282,7 +7283,6 @@ namespace dxvk {
         stage0.AlphaArg1 = D3DTA_DIFFUSE;
       }
 
-      stage0.GlobalColorKeyEnable = m_useColorKey;
       stage0.GlobalSpecularEnable = m_state.renderStates[D3DRS_SPECULARENABLE];
       stage0.GlobalFlatShade      = m_state.renderStates[D3DRS_SHADEMODE] == D3DSHADE_FLAT;
 

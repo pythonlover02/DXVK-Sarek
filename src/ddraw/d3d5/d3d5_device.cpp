@@ -208,6 +208,9 @@ namespace dxvk {
     const D3DTEXTUREHANDLE handle1 = commonTex1->GetTextureHandle();
     const D3DTEXTUREHANDLE handle2 = commonTex2->GetTextureHandle();
 
+    if (unlikely(!handle1 || !handle2))
+      return DDERR_INVALIDPARAMS;
+
     DDrawCommonInterface::ReleaseTextureHandle(handle1);
     DDrawCommonInterface::ReleaseTextureHandle(handle2);
 
@@ -543,9 +546,20 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::Begin(D3DPRIMITIVETYPE d3dptPrimitiveType, D3DVERTEXTYPE dwVertexTypeDesc, DWORD dwFlags) {
     D3DDeviceLock lock = LockDevice();
 
-    m_vertexStreamInfo.d3dpt = d3dptPrimitiveType;
-    m_vertexStreamInfo.d3dvt = dwVertexTypeDesc;
-    m_vertexStreamInfo.dwFlags = dwFlags;
+    if (unlikely(m_vertexStream.isInitialized()))
+      return DDERR_INVALIDPARAMS;
+
+    if (unlikely(dwVertexTypeDesc != D3DVT_VERTEX
+              && dwVertexTypeDesc != D3DVT_LVERTEX
+              && dwVertexTypeDesc != D3DVT_TLVERTEX)) {
+      Logger::err(">>> D3D5Device::Begin: Invalid vertex type");
+      return DDERR_INVALIDPARAMS;
+    }
+
+    m_vertexStream.d3dpt = d3dptPrimitiveType;
+    m_vertexStream.d3dvt = dwVertexTypeDesc;
+    m_vertexStream.dwFlags = dwFlags;
+    m_vertexStream.initialize();
 
     return D3D_OK;
   }
@@ -561,18 +575,20 @@ namespace dxvk {
     if (unlikely(vertex == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    switch (m_vertexStreamInfo.d3dvt) {
+    if (unlikely(!m_vertexStream.isInitialized()))
+      return DDERR_INVALIDPARAMS;
+
+    switch (m_vertexStream.d3dvt) {
       case D3DVT_VERTEX:
-        m_vertexStream.push_back(*reinterpret_cast<D3DVERTEX*>(vertex));
+        m_vertexStream.stream.vertex->push_back(*reinterpret_cast<D3DVERTEX*>(vertex));
         break;
       case D3DVT_LVERTEX:
-        m_lvertexStream.push_back(*reinterpret_cast<D3DLVERTEX*>(vertex));
+        m_vertexStream.stream.lvertex->push_back(*reinterpret_cast<D3DLVERTEX*>(vertex));
         break;
       case D3DVT_TLVERTEX:
-        m_tlvertexStream.push_back(*reinterpret_cast<D3DTLVERTEX*>(vertex));
+        m_vertexStream.stream.tlvertex->push_back(*reinterpret_cast<D3DTLVERTEX*>(vertex));
         break;
       default:
-        Logger::warn(">>> D3D5Device::Vertex: Invalid vertex type");
         return DDERR_INVALIDPARAMS;
     }
 
@@ -587,33 +603,35 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D5Device::End(DWORD dwFlags) {
     D3DDeviceLock lock = LockDevice();
 
+    if (unlikely(!m_vertexStream.isInitialized()))
+      return DDERR_INVALIDPARAMS;
+
     HRESULT hr;
 
-    switch (m_vertexStreamInfo.d3dvt) {
+    switch (m_vertexStream.d3dvt) {
       case D3DVT_VERTEX:
-        hr = DrawPrimitive(m_vertexStreamInfo.d3dpt, m_vertexStreamInfo.d3dvt, m_vertexStream.data(),
-                           m_vertexStream.size(), m_vertexStreamInfo.dwFlags);
-        m_vertexStream.clear();
+        hr = DrawPrimitive(m_vertexStream.d3dpt, m_vertexStream.d3dvt,
+                           m_vertexStream.stream.vertex->data(),
+                           m_vertexStream.stream.vertex->size(), m_vertexStream.dwFlags);
         break;
       case D3DVT_LVERTEX:
-        hr = DrawPrimitive(m_vertexStreamInfo.d3dpt, m_vertexStreamInfo.d3dvt, m_lvertexStream.data(),
-                           m_lvertexStream.size(), m_vertexStreamInfo.dwFlags);
-        m_lvertexStream.clear();
+        hr = DrawPrimitive(m_vertexStream.d3dpt, m_vertexStream.d3dvt,
+                           m_vertexStream.stream.lvertex->data(),
+                           m_vertexStream.stream.lvertex->size(), m_vertexStream.dwFlags);
         break;
       case D3DVT_TLVERTEX:
-        hr = DrawPrimitive(m_vertexStreamInfo.d3dpt, m_vertexStreamInfo.d3dvt, m_tlvertexStream.data(),
-                           m_tlvertexStream.size(), m_vertexStreamInfo.dwFlags);
-        m_tlvertexStream.clear();
+        hr = DrawPrimitive(m_vertexStream.d3dpt, m_vertexStream.d3dvt,
+                           m_vertexStream.stream.tlvertex->data(),
+                           m_vertexStream.stream.tlvertex->size(), m_vertexStream.dwFlags);
         break;
       default:
-        Logger::warn(">>> D3D5Device::End: Invalid vertex type");
         return DDERR_INVALIDPARAMS;
     }
 
     if (unlikely(FAILED(hr)))
       Logger::err(">>> D3D5Device::End: Failed call to DrawPrimitive");
 
-    m_vertexStreamInfo = { };
+    m_vertexStream.reset();
 
     return hr;
   }
@@ -1001,9 +1019,6 @@ namespace dxvk {
         if (unlikely(FAILED(hr)))
           return hr;
 
-        if (unlikely(surface == nullptr))
-          m_bridge->SetColorKeyState(false);
-
         return D3D_OK;
       }
 
@@ -1242,11 +1257,12 @@ namespace dxvk {
         DDrawSurface* surface = currentTextureHandle != 0 ?
                                 DDrawCommonInterface::GetSurfaceFromTextureHandle(currentTextureHandle) : nullptr;
         const bool validColorKey = surface != nullptr ? surface->GetCommonSurface()->HasValidColorKey() : false;
-        m_bridge->SetColorKeyState(dwRenderState && validColorKey);
+        m_bridge->SetColorKeyState(0, dwRenderState && validColorKey);
+
         if (dwRenderState && validColorKey) {
-          DDCOLORKEY normalizedColorKey = surface->GetCommonSurface()->GetColorKeyNormalized();
-          m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
-                                normalizedColorKey.dwColorSpaceHighValue);
+          const DDCOLORKEY* normalizedColorKey = surface->GetCommonSurface()->GetColorKeyNormalized();
+          m_bridge->SetColorKey(0, normalizedColorKey->dwColorSpaceLowValue,
+                                normalizedColorKey->dwColorSpaceHighValue);
         }
 
         return D3D_OK;
@@ -1444,13 +1460,15 @@ namespace dxvk {
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
     const DWORD vertex_type5 = ConvertVertexType(vertex_type);
+    const bool isTransformed = vertex_type5 & D3DFVF_XYZRHW;
     const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
                               (vertex_type5 & D3DFVF_NORMAL) &&
                               m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
-    HandlePreDrawLegacyProjection(device9, flags);
+    if (!isTransformed)
+      HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(vertex_type5);
     HRESULT hr = device9->DrawPrimitiveUP(
@@ -1461,7 +1479,8 @@ namespace dxvk {
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
-    HandlePostDrawLegacyProjection(device9);
+    if (!isTransformed)
+      HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D5Device::DrawPrimitive: Failed D3D9 call to DrawPrimitiveUP");
@@ -1489,13 +1508,15 @@ namespace dxvk {
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
     const DWORD fvf5 = ConvertVertexType(fvf);
+    const bool isTransformed = fvf5 & D3DFVF_XYZRHW;
     const bool useLighting = !(flags & D3DDP_DONOTLIGHT) &&
                               (fvf5 & D3DFVF_NORMAL) &&
                               m_commonD3DDevice->GetCurrentMaterialHandle() != 0;
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, FALSE);
-    HandlePreDrawLegacyProjection(device9, flags);
+    if (!isTransformed)
+      HandlePreDrawLegacyProjection(device9, flags);
 
     device9->SetFVF(fvf5);
     HRESULT hr = device9->DrawIndexedPrimitiveUP(
@@ -1510,7 +1531,8 @@ namespace dxvk {
 
     if (!useLighting)
       device9->SetRenderState(d3d9::D3DRS_LIGHTING, TRUE);
-    HandlePostDrawLegacyProjection(device9);
+    if (!isTransformed)
+      HandlePostDrawLegacyProjection(device9);
 
     if (unlikely(FAILED(hr))) {
       Logger::err("D3D5Device::DrawIndexedPrimitive: Failed D3D9 call to DrawIndexedPrimitiveUP");
@@ -1623,8 +1645,11 @@ namespace dxvk {
         return hr;
       }
 
-      if (likely(m_commonD3DDevice->GetCurrentTextureHandle() != 0))
+      if (likely(m_commonD3DDevice->GetCurrentTextureHandle() != 0)) {
+        m_texture = nullptr;
         m_commonD3DDevice->SetCurrentTextureHandle(0);
+        m_bridge->SetColorKeyState(0, false);
+      }
 
       return D3D_OK;
     }
@@ -1648,13 +1673,15 @@ namespace dxvk {
 
     d3d9::IDirect3DTexture9* tex9 = commonSurface->GetD3D9Texture();
 
-    if (likely(tex9 != nullptr)) {
-      hr = device9->SetTexture(0, tex9);
-      if (unlikely(FAILED(hr))) {
-        Logger::warn("D3D5Device::SetTextureInternal: Failed to bind D3D9 texture");
-        return hr;
-      }
+    // If a surface without a D3D9 texture gets bound, simply unbind the current texture.
+    // This is needed to handle the binding of surfaces which aren't explicitly marked as textures.
+    hr = device9->SetTexture(0, tex9);
+    if (unlikely(FAILED(hr))) {
+      Logger::warn("D3D5Device::SetTextureInternal: Failed to bind D3D9 texture");
+      return hr;
+    }
 
+    if (likely(tex9 != nullptr)) {
       // "Any alpha values in the texture replace the alpha values in the colors that would
       //  have been used with no texturing; if the texture does not contain an alpha component,
       //  alpha values at the vertices in the source are interpolated between vertices."
@@ -1665,16 +1692,16 @@ namespace dxvk {
 
       const bool colorKeyEnable = m_commonD3DDevice->GetColorKeyEnable();
       const bool validColorKey = commonSurface->HasValidColorKey();
-      m_bridge->SetColorKeyState(colorKeyEnable && validColorKey);
+      m_bridge->SetColorKeyState(0, colorKeyEnable && validColorKey);
+
       if (colorKeyEnable && validColorKey) {
-        DDCOLORKEY normalizedColorKey = commonSurface->GetColorKeyNormalized();
-        m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
-                              normalizedColorKey.dwColorSpaceHighValue);
+        const DDCOLORKEY* normalizedColorKey = commonSurface->GetColorKeyNormalized();
+        m_bridge->SetColorKey(0, normalizedColorKey->dwColorSpaceLowValue,
+                              normalizedColorKey->dwColorSpaceHighValue);
       }
-    } else {
-      Logger::err("D3D5Device::SetTextureInternal: Found no valid D3D9 texture");
     }
 
+    m_texture = surface;
     m_commonD3DDevice->SetCurrentTextureHandle(textureHandle);
 
     return D3D_OK;

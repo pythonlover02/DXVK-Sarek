@@ -12,14 +12,107 @@
 namespace dxvk {
 
   struct PackedVertexBuffer {
-    UINT stride;
+    size_t stride;
     std::vector<uint8_t> vertexData;
   };
 
-  struct VertexStreamInfo {
-    D3DPRIMITIVETYPE d3dpt;
-    D3DVERTEXTYPE d3dvt;
-    DWORD dwFlags = 0;
+  struct VertexStream {
+  private:
+    bool          initialized = false;
+    D3DVERTEXTYPE cvt         = D3DVERTEXTYPE(0);
+
+  public:
+    D3DPRIMITIVETYPE d3dpt   = D3DPRIMITIVETYPE(0);
+    D3DVERTEXTYPE    d3dvt   = D3DVERTEXTYPE(0);
+    DWORD            dwFlags = 0;
+
+    union {
+      std::vector<D3DVERTEX>* vertex;
+      std::vector<D3DLVERTEX>* lvertex;
+      std::vector<D3DTLVERTEX>* tlvertex;
+    } stream = { nullptr };
+
+    VertexStream() = default;
+    // Don't allow copies, since they aren't handled
+    VertexStream(const VertexStream&) = delete;
+    VertexStream& operator=(const VertexStream&) = delete;
+
+    bool isInitialized() const {
+      return initialized;
+    }
+
+    void initialize() {
+      if (likely(cvt != D3DVERTEXTYPE(0))) {
+        if (likely(cvt == d3dvt)) {
+          switch (cvt) {
+            case D3DVT_VERTEX:
+              stream.vertex->clear();
+              break;
+            case D3DVT_LVERTEX:
+              stream.lvertex->clear();
+              break;
+            case D3DVT_TLVERTEX:
+              stream.tlvertex->clear();
+              break;
+            default:
+              break;
+          }
+
+          initialized = true;
+
+          return;
+        }
+
+        release();
+      }
+
+      switch (d3dvt) {
+        default:
+        case D3DVT_VERTEX:
+          stream.vertex = new std::vector<D3DVERTEX>();
+          cvt = D3DVT_VERTEX;
+          break;
+        case D3DVT_LVERTEX:
+          stream.lvertex = new std::vector<D3DLVERTEX>();
+          cvt = D3DVT_LVERTEX;
+          break;
+        case D3DVT_TLVERTEX:
+          stream.tlvertex = new std::vector<D3DTLVERTEX>();
+          cvt = D3DVT_TLVERTEX;
+          break;
+      }
+
+      initialized = true;
+    }
+
+    void reset() {
+      d3dpt   = D3DPRIMITIVETYPE(0);
+      d3dvt   = D3DVERTEXTYPE(0);
+      dwFlags = 0;
+
+      initialized = false;
+    }
+
+    void release() {
+      switch (cvt) {
+        case D3DVT_VERTEX:
+          delete stream.vertex;
+          break;
+        case D3DVT_LVERTEX:
+          delete stream.lvertex;
+          break;
+        case D3DVT_TLVERTEX:
+          delete stream.tlvertex;
+          break;
+        default:
+          break;
+      }
+      cvt = D3DVERTEXTYPE(0);
+    }
+
+    ~VertexStream() {
+      release();
+    }
   };
 
   inline bool IsValidDDrawCapsSize(DWORD size) {
@@ -85,14 +178,14 @@ namespace dxvk {
     }
   }
 
-  inline DWORD ConvertD3D6LockFlags(DWORD lockFlags, bool isSurface) {
+  inline DWORD ConvertD3DLockFlags(DWORD lockFlags, bool legacyDiscard, bool useExtendedFlags) {
     DWORD lockFlagsD3D9 = 0;
 
-    // DDLOCK_WAIT is default for DDraw surfaces, so ignore it
-    // and only factor in DDLOCK_DONOTWAIT. Buffers locks have
-    // a flipped logic compared to D3D9.
-    if ((!isSurface && !(lockFlags & DDLOCK_WAIT))
-     || (isSurface  &&  (lockFlags & DDLOCK_DONOTWAIT))) {
+    // Note: D3DLOCK_DONOTWAIT is ignored on D3D9 DYNAMIC buffers,
+    // and we mark nearly all buffers as DYNAMIC, but convert it anyway,
+    // for MANAGED buffers. Keep in mind the vertex buffer lock flag
+    // logic is flipped vs DDraw surfaces, which implicitly wait on locks.
+    if (!(lockFlags & DDLOCK_WAIT)) {
       lockFlagsD3D9 |= (DWORD)D3DLOCK_DONOTWAIT;
     }
     if (lockFlags & DDLOCK_NOSYSLOCK) {
@@ -102,74 +195,36 @@ namespace dxvk {
     if ((lockFlags & DDLOCK_READONLY) && !(lockFlags & DDLOCK_WRITEONLY)) {
       lockFlagsD3D9 |= (DWORD)D3DLOCK_READONLY;
     }
-
-    return lockFlagsD3D9;
-  }
-
-  inline DWORD ConvertD3D7LockFlags(DWORD lockFlags, bool legacyDiscard, bool isSurface) {
-    DWORD lockFlagsD3D9 = 0;
-
-    // DDLOCK_WAIT is default for DDraw7 surfaces, so ignore it
-    // and only factor in DDLOCK_DONOTWAIT. Buffers locks have
-    // a flipped logic compared to D3D9.
-    if ((!isSurface && !(lockFlags & DDLOCK_WAIT))
-     || (isSurface  &&  (lockFlags & DDLOCK_DONOTWAIT))) {
-      lockFlagsD3D9 |= (DWORD)D3DLOCK_DONOTWAIT;
-    }
-    if (lockFlags & DDLOCK_NOSYSLOCK) {
-      lockFlagsD3D9 |= (DWORD)D3DLOCK_NOSYSLOCK;
-    }
-    // Not sure if both can happen at the same time, but play it safe
-    if ((lockFlags & DDLOCK_READONLY) && !(lockFlags & DDLOCK_WRITEONLY)) {
-      lockFlagsD3D9 |= (DWORD)D3DLOCK_READONLY;
-    }
-    // This is called "legacy DISCARD" in D8VK, which apparently
-    // is expected to be enforced implicitly in D3D7. Earlier versions
-    // of D3D do not feature a DISCARD (or NOOVERWRITE) lock flag.
-    if ((lockFlags & DDLOCK_DISCARDCONTENTS) && !legacyDiscard) {
-      lockFlagsD3D9 |= (DWORD)D3DLOCK_DISCARD;
-    }
-    if (lockFlags & DDLOCK_NOOVERWRITE) {
-      lockFlagsD3D9 |= (DWORD)D3DLOCK_NOOVERWRITE;
+    if (useExtendedFlags) {
+      // This is called "legacy DISCARD" in D8VK, which apparently
+      // is expected to be enforced implicitly in D3D7. D3D6 vertex
+      // buffers do not use a DISCARD or NOOVERWRITE lock flag.
+      if ((lockFlags & DDLOCK_DISCARDCONTENTS) && !legacyDiscard) {
+        lockFlagsD3D9 |= (DWORD)D3DLOCK_DISCARD;
+      }
+      if (lockFlags & DDLOCK_NOOVERWRITE) {
+        lockFlagsD3D9 |= (DWORD)D3DLOCK_NOOVERWRITE;
+      }
     }
 
     return lockFlagsD3D9;
   }
 
-  inline DWORD ConvertD3D6UsageFlags(DWORD usageFlags, DWORD creationFlags, d3d9::D3DPOOL pool) {
+  inline DWORD ConvertD3DUsageFlags(DWORD usageFlags, DWORD creationFlags, d3d9::D3DPOOL pool) {
     DWORD usageFlagsD3D9 = 0;
 
     // The D3D6 docs do not mention the presence of a D3DVBCAPS_DONOTCLIP flag,
     // and only the creation flag D3DDP_DONOTCLIP is touted as being usable
-    if ((creationFlags & D3DDP_DONOTCLIP) || (usageFlags & D3DVBCAPS_DONOTCLIP)) {
+    if ((usageFlags & D3DVBCAPS_DONOTCLIP) || (creationFlags & D3DDP_DONOTCLIP)) {
       usageFlagsD3D9 |= (DWORD)D3DUSAGE_DONOTCLIP;
     }
     if (usageFlags & D3DVBCAPS_WRITEONLY) {
       usageFlagsD3D9 |= (DWORD)D3DUSAGE_WRITEONLY;
     }
     if (pool != d3d9::D3DPOOL_MANAGED) {
-      // D3D6 does not use DDLOCK_DISCARDCONTENTS or
-      // DDLOCK_NOOVERWRITE, however, still mark all non-MANAGED
+      // IDirect3DVertexBuffer (D3D6) does not use DDLOCK_DISCARDCONTENTS
+      // or DDLOCK_NOOVERWRITE, however, still mark all non-MANAGED
       // buffers as DYNAMIC to handle any potential CPU read-backs
-      usageFlagsD3D9 |= D3DUSAGE_DYNAMIC;
-    }
-
-    return usageFlagsD3D9;
-  }
-
-  inline DWORD ConvertD3D7UsageFlags(DWORD usageFlags, d3d9::D3DPOOL pool) {
-    DWORD usageFlagsD3D9 = 0;
-
-    if (usageFlags & D3DVBCAPS_DONOTCLIP) {
-      usageFlagsD3D9 |= (DWORD)D3DUSAGE_DONOTCLIP;
-    }
-    if (usageFlags & D3DVBCAPS_WRITEONLY) {
-      usageFlagsD3D9 |= (DWORD)D3DUSAGE_WRITEONLY;
-    }
-    if (pool != d3d9::D3DPOOL_MANAGED) {
-      // Though D3D7 does not specify it, all non-MANAGED buffers
-      // need to be DYNAMIC, either due to some lock flags not
-      // working properly otherwise, or for performance reasons
       usageFlagsD3D9 |= D3DUSAGE_DYNAMIC;
     }
 
@@ -257,15 +312,15 @@ namespace dxvk {
     return size;
   }
 
-  inline UINT GetPrimitiveCount(D3DPRIMITIVETYPE PrimitiveType, DWORD VertexCount) {
+  inline uint32_t GetPrimitiveCount(D3DPRIMITIVETYPE PrimitiveType, DWORD VertexCount) {
     switch (PrimitiveType) {
-      case D3DPT_POINTLIST:     return static_cast<UINT>(VertexCount);
-      case D3DPT_LINELIST:      return static_cast<UINT>(VertexCount / 2);
-      case D3DPT_LINESTRIP:     return static_cast<UINT>(VertexCount - 1);
+      case D3DPT_POINTLIST:     return static_cast<uint32_t>(VertexCount);
+      case D3DPT_LINELIST:      return static_cast<uint32_t>(VertexCount / 2);
+      case D3DPT_LINESTRIP:     return static_cast<uint32_t>(VertexCount - 1);
       default:
-      case D3DPT_TRIANGLELIST:  return static_cast<UINT>(VertexCount / 3);
-      case D3DPT_TRIANGLESTRIP: return static_cast<UINT>(VertexCount - 2);
-      case D3DPT_TRIANGLEFAN:   return static_cast<UINT>(VertexCount - 2);
+      case D3DPT_TRIANGLELIST:  return static_cast<uint32_t>(VertexCount / 3);
+      case D3DPT_TRIANGLESTRIP: return static_cast<uint32_t>(VertexCount - 2);
+      case D3DPT_TRIANGLEFAN:   return static_cast<uint32_t>(VertexCount - 2);
     }
   }
 
@@ -693,7 +748,7 @@ namespace dxvk {
                               | D3DPMISCCAPS_MASKZ;
 
     prim.dwRasterCaps         = D3DPRASTERCAPS_ANISOTROPY
-                              | D3DPRASTERCAPS_ANTIALIASEDGES // Technically not implemented in D3D9
+                           // | D3DPRASTERCAPS_ANTIALIASEDGES // Not implemented in D3D9
                            // | D3DPRASTERCAPS_ANTIALIASSORTDEPENDENT
                            // | D3DPRASTERCAPS_ANTIALIASSORTINDEPENDENT
                               | D3DPRASTERCAPS_DITHER
@@ -904,7 +959,7 @@ namespace dxvk {
                               | D3DPMISCCAPS_MASKZ;
 
     prim.dwRasterCaps         = D3DPRASTERCAPS_ANISOTROPY
-                              | D3DPRASTERCAPS_ANTIALIASEDGES // Technically not implemented in D3D9
+                           // | D3DPRASTERCAPS_ANTIALIASEDGES // Not implemented in D3D9
                            // | D3DPRASTERCAPS_ANTIALIASSORTDEPENDENT
                            // | D3DPRASTERCAPS_ANTIALIASSORTINDEPENDENT
                               | D3DPRASTERCAPS_DITHER
@@ -1145,7 +1200,7 @@ namespace dxvk {
                               | D3DPMISCCAPS_MASKZ;
 
     prim.dwRasterCaps         = D3DPRASTERCAPS_ANISOTROPY
-                              | D3DPRASTERCAPS_ANTIALIASEDGES // Technically not implemented in D3D9
+                           // | D3DPRASTERCAPS_ANTIALIASEDGES // Not implemented in D3D9
                            // | D3DPRASTERCAPS_ANTIALIASSORTDEPENDENT
                            // | D3DPRASTERCAPS_ANTIALIASSORTINDEPENDENT
                               | D3DPRASTERCAPS_DITHER

@@ -1731,8 +1731,7 @@ namespace dxvk {
           // Colorkeying reads back a texel by integer coordinate, which limits
           // it to 2D stages: the size query answers with a three component
           // vector for a volume texture, and the math below assumes two.
-          if (m_fsKey.Stages[0].Contents.GlobalColorKeyEnable
-           && D3DRESOURCETYPE(stage.Type + D3DRTYPE_TEXTURE) == D3DRTYPE_TEXTURE) {
+          if (stage.ColorKeyEnable && D3DRESOURCETYPE(stage.Type + D3DRTYPE_TEXTURE) == D3DRTYPE_TEXTURE) {
             uint32_t image = m_module.opImage(m_ps.samplers[i].origTypeId, imageVarId);
 
             // The sampling coordinate carries an extra component for projected

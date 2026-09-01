@@ -190,16 +190,28 @@ namespace dxvk {
     // The standard way of creating a new D3D3 device. Outside of RAMP, MMX, RGB and HAL,
     // some applications (e.g. Dark Rift) query for Wine's advertised custom device IID.
     if (riid == IID_IDirect3DHALDevice  || riid == IID_IDirect3DRGBDevice  ||
-        riid == IID_IDirect3DMMXDevice  || riid == IID_IDirect3DRampDevice ||
-        riid == IID_WineD3DDevice) {
+        riid == IID_IDirect3DRampDevice || riid == IID_WineD3DDevice) {
       // Surfaces which have been queried from an IDirectDrawSurface7
       // object are unable to create a D3D3 device on this legacy path
       if (unlikely(m_commonSurf->GetDD7Surface() == m_commonSurf->GetOrigin()))
         return E_NOINTERFACE;
 
-      HRESULT hr = CreateDeviceInternal(riid, ppvObject);
-      if (unlikely(FAILED(hr)))
-        return E_NOINTERFACE;
+      // Tests show that a surface can't be used to create more than a device
+      // at a time, and esentially that the surface IS the device in such cases...
+      if (m_device3 == nullptr) {
+        HRESULT hr = CreateDeviceInternal(riid, ppvObject);
+        if (unlikely(FAILED(hr)))
+          return E_NOINTERFACE;
+      // TODO: What happens when a device with a different riid than the existing one
+      // is requested on the same surface? Is the old one released and a new one created?
+      // We could potentially handle such corner cases transparently, by recreating only
+      // the D3D9 device as per the new request and binding it to the same object, though
+      // I don't actually expect this to be much of a problem in practice.
+      } else if (unlikely(m_device3->GetCommonD3DDevice()->GetDeviceGUID() != riid)) {
+        Logger::warn("DDrawSurface::QueryInterface: Query with mismatched device GUID");
+      }
+
+      *ppvObject = m_device3.ref();
 
       return S_OK;
     }
@@ -337,11 +349,23 @@ namespace dxvk {
 
     attachedSurf->SetParentSurface(this);
 
+    hr = attachedSurf->GetCommonSurface()->RefreshSurfaceDescripton(false);
+    if (unlikely(FAILED(hr))) {
+      Logger::err("DDrawSurface::AddAttachedSurface: Failed to retrieve updated attachment surface desc");
+      return hr;
+    }
+
     if (likely(attachedSurf->GetCommonSurface()->IsDepthStencil())) {
       m_depthStencil = attachedSurf;
     // If a flippable surface is attached, mark it as the next flippable surface
     } else if (unlikely(attachedSurf->GetCommonSurface()->IsBackBufferOrFlippable())) {
       m_nextFlippable = attachedSurf;
+    }
+
+    hr = m_commonSurf->RefreshSurfaceDescripton(false);
+    if (unlikely(FAILED(hr))) {
+      Logger::err("DDrawSurface::AddAttachedSurface: Failed to retrieve updated target surface desc");
+      return hr;
     }
 
     return DD_OK;
@@ -404,7 +428,7 @@ namespace dxvk {
 
     m_commonSurf->DirtyDDrawSurface();
 
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+    if (m_shadowSurf != nullptr && d3d9Device != nullptr) {
       const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
                                 !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
                                  m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
@@ -476,7 +500,7 @@ namespace dxvk {
 
     m_commonSurf->DirtyDDrawSurface();
 
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
+    if (m_shadowSurf != nullptr && d3d9Device != nullptr) {
       const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
                                 !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
                                  m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
@@ -498,9 +522,9 @@ namespace dxvk {
     }
 
     if (lpDDSAttachedSurface == nullptr) {
-      HRESULT hrProxy = m_proxy->DeleteAttachedSurface(dwFlags, lpDDSAttachedSurface);
-      if (unlikely(FAILED(hrProxy)))
-        return hrProxy;
+      HRESULT hr = m_proxy->DeleteAttachedSurface(dwFlags, lpDDSAttachedSurface);
+      if (unlikely(FAILED(hr)))
+        return hr;
 
       // If lpDDSAttachedSurface is NULL, then all surfaces are detached
       m_depthStencil = nullptr;
@@ -516,12 +540,23 @@ namespace dxvk {
 
     attachedSurf->SetParentSurface(nullptr);
 
+    hr = attachedSurf->GetCommonSurface()->RefreshSurfaceDescripton(false);
+    if (unlikely(FAILED(hr))) {
+      Logger::err("DDrawSurface::DeleteAttachedSurface: Failed to retrieve updated attachment surface desc");
+      return hr;
+    }
+
     if (likely(m_depthStencil == attachedSurf)) {
       m_depthStencil = nullptr;
     // Clear the next flippable surface or flippable surface detachment
-    } else if (unlikely(attachedSurf->GetCommonSurface()->IsBackBufferOrFlippable() &&
-                        attachedSurf == m_nextFlippable)) {
+    } else if (unlikely(m_nextFlippable == attachedSurf)) {
       m_nextFlippable = nullptr;
+    }
+
+    hr = m_commonSurf->RefreshSurfaceDescripton(false);
+    if (unlikely(FAILED(hr))) {
+      Logger::err("DDrawSurface::DeleteAttachedSurface: Failed to retrieve updated target surface desc");
+      return hr;
     }
 
     return DD_OK;
@@ -801,14 +836,17 @@ namespace dxvk {
       return hr;
 
     // For single surface locks, track the READONLY flag in order to skip dirtying
-    // on Unlock(). Reset the tracking in case of multiple simultaneous locks.
-    if (likely(!m_lockCount)) {
+    // on Unlock(). Reset flag tracking in case of multiple simultaneous locks,
+    // which are technically possible but extremely rare in practice.
+    //
+    // Note: Using lpDestRect as a key for tracking and/or matching Lock() to Unlock()
+    // calls, as the documentation suggests, isn't feasible, as there are applications
+    // which use nullptr during Lock() calls and then a non-null pointer on Unlock().
+    if (likely(!m_readOnlyLock)) {
       m_readOnlyLock = (dwFlags & DDLOCK_READONLY) && !(dwFlags & DDLOCK_WRITEONLY);
     } else {
       m_readOnlyLock = false;
     }
-
-    m_lockCount++;
 
     return DD_OK;
   }
@@ -831,15 +869,17 @@ namespace dxvk {
 
     m_commonSurf->DirtyDDrawSurface();
 
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
-      const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
-                                !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
-                                  m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
-                                  false : true;
-      if (shouldPresent) {
-        InitializeOrUploadD3D9();
-        d3d9Device->Present(NULL, NULL, NULL, NULL);
+    if (m_shadowSurf != nullptr) {
+      d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
+      if (likely(d3d9Device != nullptr)) {
+        const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                  !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                   m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                   false : true;
+        if (shouldPresent) {
+          InitializeOrUploadD3D9();
+          d3d9Device->Present(NULL, NULL, NULL, NULL);
+        }
       }
     }
 
@@ -936,6 +976,9 @@ namespace dxvk {
       m_commonSurf->SetPalette(ddrawPalette);
     }
 
+    // Note: A palette update on a primary surface would cause immediate
+    // presentation, however we don't support P8 primary surfaces
+
     return DD_OK;
   }
 
@@ -946,23 +989,22 @@ namespace dxvk {
 
     if (!m_readOnlyLock) {
       m_commonSurf->DirtyDDrawSurface();
+
+      if (m_shadowSurf != nullptr) {
+        d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
+        if (likely(d3d9Device != nullptr)) {
+          const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
+                                    !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
+                                     m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
+                                     false : true;
+          if (shouldPresent) {
+            InitializeOrUploadD3D9();
+            d3d9Device->Present(NULL, NULL, NULL, NULL);
+          }
+        }
+      }
     } else {
       m_readOnlyLock = false;
-    }
-
-    if (likely(m_lockCount))
-      m_lockCount--;
-
-    d3d9::IDirect3DDevice9* d3d9Device = m_commonSurf->GetRefreshedD3D9Device();
-    if (unlikely(m_shadowSurf != nullptr && d3d9Device != nullptr)) {
-      const bool shouldPresent = m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Auto ?
-                                !m_commonSurf->GetCommonD3DDevice()->IsInScene() :
-                                 m_commonIntf->GetOptions()->legacyPresentGuard == D3DLegacyPresentGuard::Strict ?
-                                 false : true;
-      if (shouldPresent) {
-        InitializeOrUploadD3D9();
-        d3d9Device->Present(NULL, NULL, NULL, NULL);
-      }
     }
 
     return DD_OK;
@@ -1086,7 +1128,7 @@ namespace dxvk {
 
     //Logger::debug(str::format("DDrawSurface::UploadSurfaceData: Uploading nr. [[1-", std::hex, this, "]]"));
 
-    D3D9SurfaceType d3d9SurfaceType = m_commonSurf->GetD3D9SurfaceType();
+    const D3D9SurfaceType d3d9SurfaceType = m_commonSurf->GetD3D9SurfaceType();
 
     switch (d3d9SurfaceType) {
       case D3D9SurfaceType::Texture:
@@ -1112,29 +1154,31 @@ namespace dxvk {
     bool  halFallback          = false;
     bool  rgbFallback          = false;
 
-    if (likely(!d3dOptions->forceSWVP)) {
-      if (riid == IID_IDirect3DHALDevice) {
-        Logger::info("DDrawSurface::CreateDeviceInternal: Creating an IID_IDirect3DHALDevice device");
+    if (riid == IID_IDirect3DHALDevice) {
+      Logger::info("DDrawSurface::CreateDeviceInternal: Creating an IID_IDirect3DHALDevice device");
+      if (likely(!d3dOptions->forceSWVP))
         deviceCreationFlags9 = D3DCREATE_MIXED_VERTEXPROCESSING;
-        isHALDevice = true;
-      } else if (riid == IID_IDirect3DRGBDevice) {
-        Logger::info("DDrawSurface::CreateDeviceInternal: Creating an IID_IDirect3DRGBDevice device");
-      } else if (riid == IID_IDirect3DMMXDevice) {
-        Logger::warn("DDrawSurface::CreateDeviceInternal: Unsupported MMX device, falling back to RGB");
-        rgbFallback = true;
-      } else if (riid == IID_IDirect3DRampDevice) {
-        Logger::warn("DDrawSurface::CreateDeviceInternal: Unsupported Ramp device, falling back to RGB");
-        rgbFallback = true;
+      isHALDevice = true;
+    } else if (riid == IID_IDirect3DRGBDevice) {
+      Logger::info("DDrawSurface::CreateDeviceInternal: Creating an IID_IDirect3DRGBDevice device");
+    } else if (riid == IID_IDirect3DMMXDevice) {
+      Logger::warn("DDrawSurface::CreateDeviceInternal: Unsupported MMX device, falling back to RGB");
+      rgbFallback = true;
+    } else if (riid == IID_IDirect3DRampDevice) {
+      Logger::warn("DDrawSurface::CreateDeviceInternal: Unsupported Ramp device, falling back to RGB");
+      rgbFallback = true;
+    } else if (unlikely(riid == IID_IUnknown)) {
+      Logger::warn("DDrawSurface::CreateDeviceInternal: Unsupported IID_IUnknown, falling back to RGB");
+      rgbFallback = true;
+    } else {
+      if (unlikely(riid != IID_WineD3DDevice)) {
+        Logger::warn("DDrawSurface::CreateDeviceInternal: Unknown device type, falling back to HAL");
+        Logger::warn(str::format(riid));
       } else {
-        if (unlikely(riid != IID_WineD3DDevice)) {
-          Logger::warn("DDrawSurface::CreateDeviceInternal: Unknown device type, falling back to HAL");
-          Logger::warn(str::format(riid));
-        } else {
-          Logger::info("DDrawSurface::CreateDeviceInternal: Creating an IID_WineD3DDevice HAL device");
-        }
-        halFallback = true;
-        // Don't enforce isHALDevice RT validations
+        Logger::info("DDrawSurface::CreateDeviceInternal: Creating an IID_WineD3DDevice HAL device");
       }
+      halFallback = true;
+      // Don't enforce isHALDevice RT validations
     }
 
     const IID rclsidOverride = halFallback ? IID_IDirect3DHALDevice :
@@ -1237,18 +1281,16 @@ namespace dxvk {
     }
 
     try{
-      Com<D3D3Device> device3 = new D3D3Device(nullptr, this, rclsidOverride, &params,
-                                               std::move(device9), deviceCreationFlags9);
+      m_device3 = new D3D3Device(nullptr, this, rclsidOverride, &params,
+                                 std::move(device9), deviceCreationFlags9);
 
       // Set the common device on the common interface
-      m_commonIntf->SetCommonD3DDevice(device3->GetCommonD3DDevice());
+      m_commonIntf->SetCommonD3DDevice(m_device3->GetCommonD3DDevice());
       // Now that we have a valid common D3D device on the DDraw interface,
       // we can initialize the render target and depth stencil (if any)
-      hr = device3->InitializeRTAndDS();
+      hr = m_device3->InitializeRTAndDS();
       if (unlikely(FAILED(hr)))
         return hr;
-
-      *ppvObject = device3.ref();
     } catch (const DxvkError& e) {
       Logger::err(e.message());
       return DDERR_GENERIC;
