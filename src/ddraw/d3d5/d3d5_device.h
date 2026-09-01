@@ -148,7 +148,8 @@ namespace dxvk {
 
         if (m_legacyProjection != nullptr) {
           device9->GetTransform(d3d9::D3DTS_PROJECTION, &m_projectionMatrix);
-          device9->MultiplyTransform(d3d9::D3DTS_PROJECTION, m_legacyProjection);
+          device9->SetTransform(d3d9::D3DTS_PROJECTION, m_legacyProjection);
+          device9->MultiplyTransform(d3d9::D3DTS_PROJECTION, &m_projectionMatrix);
         }
       }
     }
@@ -174,16 +175,15 @@ namespace dxvk {
     Com<DDrawSurface>               m_rt;
     Com<DDrawSurface, false>        m_ds;
 
+    Com<DDrawSurface, false>        m_texture;
+
     Com<D3D5Viewport>               m_currentViewport;
     std::vector<Com<D3D5Viewport>>  m_viewports;
 
     D3DMATRIX                       m_projectionMatrix = { };
     const D3DMATRIX*                m_legacyProjection = nullptr;
 
-    VertexStreamInfo                m_vertexStreamInfo;
-    std::vector<D3DVERTEX>          m_vertexStream;
-    std::vector<D3DLVERTEX>         m_lvertexStream;
-    std::vector<D3DTLVERTEX>        m_tlvertexStream;
+    VertexStream                    m_vertexStream;
 
   };
 

@@ -56,8 +56,8 @@ namespace dxvk {
     // Common D3D9 index buffers
     static constexpr DWORD Usage = D3DUSAGE_DYNAMIC | D3DUSAGE_WRITEONLY;
 
-    for (uint8_t ibIndex = 0; ibIndex < ddrawCaps::IndexBufferCount ; ibIndex++) {
-      const UINT ibSize = ddrawCaps::IndexCount[ibIndex] * sizeof(WORD);
+    for (uint32_t ibIndex = 0; ibIndex < ddrawCaps::IndexBufferCount ; ibIndex++) {
+      const uint32_t ibSize = ddrawCaps::IndexCount[ibIndex] * sizeof(WORD);
 
       HRESULT hr = device9->CreateIndexBuffer(ibSize, Usage, d3d9::D3DFMT_INDEX16,
                                               d3d9::D3DPOOL_DEFAULT, &m_ib9[ibIndex], nullptr);
@@ -624,12 +624,18 @@ namespace dxvk {
       case D3DRENDERSTATE_COLORKEYENABLE: {
         m_commonD3DDevice->SetColorKeyEnable(dwRenderState);
 
-        const bool validColorKey = m_textures[0] != nullptr ? m_textures[0]->GetCommonSurface()->HasValidColorKey() : false;
-        m_bridge->SetColorKeyState(dwRenderState && validColorKey);
-        if (dwRenderState && validColorKey) {
-          DDCOLORKEY normalizedColorKey = m_textures[0]->GetCommonSurface()->GetColorKeyNormalized();
-          m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
-                                normalizedColorKey.dwColorSpaceHighValue);
+        for (DWORD stage = 0; stage < ddrawCaps::TextureStageCount; stage++) {
+          if (m_textures[stage] == nullptr)
+            continue;
+
+          const bool validColorKey = m_textures[stage]->GetCommonSurface()->HasValidColorKey();
+          m_bridge->SetColorKeyState(stage, dwRenderState && validColorKey);
+
+          if (dwRenderState && validColorKey) {
+            const DDCOLORKEY* normalizedColorKey = m_textures[stage]->GetCommonSurface()->GetColorKeyNormalized();
+            m_bridge->SetColorKey(stage, normalizedColorKey->dwColorSpaceLowValue,
+                                  normalizedColorKey->dwColorSpaceHighValue);
+          }
         }
 
         return D3D_OK;
@@ -1139,23 +1145,24 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
 
     Com<D3D7VertexBuffer> vb7 = static_cast<D3D7VertexBuffer*>(lpd3dVertexBuffer);
-
-    if (unlikely(vb7->GetDevice() != this)) {
-      Logger::err("D3D7Device::DrawPrimitiveVB: Invalid vertex buffer parent device");
-      return DDERR_GENERIC;
-    }
+    D3DCommonBuffer* commonBuffer = vb7->GetCommonBuffer();
 
     if (unlikely(vb7->IsLocked())) {
       Logger::err("D3D7Device::DrawPrimitiveVB: Buffer is locked");
       return D3DERR_VERTEXBUFFERLOCKED;
     }
 
+    if (unlikely(m_commonD3DDevice != commonBuffer->GetCommonD3DDevice())) {
+      Logger::err("D3D7Device::DrawPrimitiveVB: Invalid vertex buffer parent device");
+      return DDERR_GENERIC;
+    }
+
     DDrawDirtySurfaceUpload();
 
     d3d9::IDirect3DDevice9* device9 = m_commonD3DDevice->GetD3D9Device();
 
-    device9->SetFVF(vb7->GetFVF());
-    device9->SetStreamSource(0, vb7->GetD3D9VertexBuffer(), 0, vb7->GetStride());
+    device9->SetFVF(commonBuffer->GetFVF());
+    device9->SetStreamSource(0, commonBuffer->GetD3D9VertexBuffer(), 0, commonBuffer->GetStride());
     HRESULT hr = device9->DrawPrimitive(
                       d3d9::D3DPRIMITIVETYPE(d3dptPrimitiveType),
                       dwStartVertex,
@@ -1183,15 +1190,16 @@ namespace dxvk {
       return DDERR_INVALIDPARAMS;
 
     Com<D3D7VertexBuffer> vb7 = static_cast<D3D7VertexBuffer*>(lpd3dVertexBuffer);
-
-    if (unlikely(vb7->GetDevice() != this)) {
-      Logger::err("D3D7Device::DrawIndexedPrimitiveVB: Invalid vertex buffer parent device");
-      return DDERR_GENERIC;
-    }
+    D3DCommonBuffer* commonBuffer = vb7->GetCommonBuffer();
 
     if (unlikely(vb7->IsLocked())) {
       Logger::err("D3D7Device::DrawIndexedPrimitiveVB: Buffer is locked");
       return D3DERR_VERTEXBUFFERLOCKED;
+    }
+
+    if (unlikely(m_commonD3DDevice != commonBuffer->GetCommonD3DDevice())) {
+      Logger::err("D3D7Device::DrawIndexedPrimitiveVB: Invalid vertex buffer parent device");
+      return DDERR_GENERIC;
     }
 
     if (unlikely(dwIndexCount > ddrawCaps::MaxIndexCount)) {
@@ -1219,8 +1227,8 @@ namespace dxvk {
     ib9->Unlock();
 
     device9->SetIndices(ib9);
-    device9->SetFVF(vb7->GetFVF());
-    device9->SetStreamSource(0, vb7->GetD3D9VertexBuffer(), 0, vb7->GetStride());
+    device9->SetFVF(commonBuffer->GetFVF());
+    device9->SetStreamSource(0, commonBuffer->GetD3D9VertexBuffer(), 0, commonBuffer->GetStride());
     HRESULT hr = device9->DrawIndexedPrimitive(
                       d3d9::D3DPRIMITIVETYPE(d3dptPrimitiveType),
                       dwStartVertex,
@@ -1294,9 +1302,7 @@ namespace dxvk {
 
       if (likely(m_textures[stage] != nullptr)) {
         m_textures[stage] = nullptr;
-
-        if (likely(stage == 0))
-          m_bridge->SetColorKeyState(false);
+        m_bridge->SetColorKeyState(stage, false);
       }
 
       return D3D_OK;
@@ -1327,41 +1333,58 @@ namespace dxvk {
     //if (unlikely(m_textures[stage] == surface7))
       //return D3D_OK;
 
-    d3d9::IDirect3DTexture9*     tex9  = commonSurface->GetD3D9Texture();
-    d3d9::IDirect3DCubeTexture9* cube9 = commonSurface->GetD3D9CubeTexture();
+    const D3D9SurfaceType d3d9SurfaceType = commonSurface->GetD3D9SurfaceType();
 
-    if (likely(tex9 != nullptr)) {
-      hr = device9->SetTexture(stage, tex9);
-      if (unlikely(FAILED(hr))) {
-        Logger::warn("D3D7Device::SetTexture: Failed to bind D3D9 texture");
-        return hr;
-      }
+    switch (d3d9SurfaceType) {
+      default:
+      case D3D9SurfaceType::Texture: {
+        d3d9::IDirect3DTexture9* tex9 = commonSurface->GetD3D9Texture();
 
-      if (likely(stage == 0)) {
-        const bool colorKeyEnable = m_commonD3DDevice->GetColorKeyEnable();
-        const bool validColorKey = commonSurface->HasValidColorKey();
-        m_bridge->SetColorKeyState(colorKeyEnable && validColorKey);
-        if (colorKeyEnable && validColorKey) {
-          DDCOLORKEY normalizedColorKey = commonSurface->GetColorKeyNormalized();
-          m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
-                                normalizedColorKey.dwColorSpaceHighValue);
+        // If a surface without a D3D9 texture gets bound, simply unbind the current texture.
+        // This is needed to handle the binding of surfaces which aren't explicitly marked as textures.
+        hr = device9->SetTexture(stage, tex9);
+        if (unlikely(FAILED(hr))) {
+          Logger::warn("D3D7Device::SetTexture: Failed to bind D3D9 texture");
+          return hr;
         }
-      }
-    } else if (likely(cube9 != nullptr)) {
-      hr = device9->SetTexture(stage, cube9);
-      if (unlikely(FAILED(hr))) {
-        Logger::warn("D3D7Device::SetTexture: Failed to bind D3D9 cube texture");
-        return hr;
+
+        if (likely(tex9 != nullptr)) {
+          const bool colorKeyEnable = m_commonD3DDevice->GetColorKeyEnable();
+          const bool validColorKey = commonSurface->HasValidColorKey();
+          m_bridge->SetColorKeyState(stage, colorKeyEnable && validColorKey);
+
+          if (colorKeyEnable && validColorKey) {
+            const DDCOLORKEY* normalizedColorKey = commonSurface->GetColorKeyNormalized();
+            m_bridge->SetColorKey(stage, normalizedColorKey->dwColorSpaceLowValue,
+                                  normalizedColorKey->dwColorSpaceHighValue);
+          }
+        }
+
+        break;
       }
 
-      if (likely(stage == 0)) {
+      case D3D9SurfaceType::CubeTexture: {
+        d3d9::IDirect3DCubeTexture9* cube9 = commonSurface->GetD3D9CubeTexture();
+
+        hr = device9->SetTexture(stage, cube9);
+        if (unlikely(FAILED(hr))) {
+          Logger::warn("D3D7Device::SetTexture: Failed to bind D3D9 cube texture");
+          return hr;
+        }
+
         const bool colorKeyEnable = m_commonD3DDevice->GetColorKeyEnable();
         const bool validColorKey = commonSurface->HasValidColorKey();
-        if (unlikely(colorKeyEnable && validColorKey))
-          Logger::warn("D3D7Device::SetTexture: Unsupported use of cube texture color key");
+        m_bridge->SetColorKeyState(stage, false);
+
+        if (unlikely(colorKeyEnable && validColorKey)) {
+          static bool s_cubeTextureColorKeyWarningShown;
+
+          if (!std::exchange(s_cubeTextureColorKeyWarningShown, true))
+            Logger::warn("D3D7Device::SetTexture: Unsupported use of cube texture color key");
+        }
+
+        break;
       }
-    } else {
-      Logger::err("D3D7Device::SetTexture: Found no valid D3D9 texture");
     }
 
     m_textures[stage] = surface7;

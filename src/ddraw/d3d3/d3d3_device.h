@@ -95,7 +95,7 @@ namespace dxvk {
     }
 
     DDrawSurface* GetRenderTarget() const {
-      return m_rt.ptr();
+      return m_rt;
     }
 
     DDrawSurface* GetDepthStencil() const {
@@ -141,8 +141,11 @@ namespace dxvk {
 
     D3DDEVICEDESC3                  m_desc;
 
-    Com<DDrawSurface>               m_rt;
+    // In D3D3, the RT is the parent of the device
+    DDrawSurface*                   m_rt               = nullptr;
     Com<DDrawSurface, false>        m_ds;
+
+    Com<DDrawSurface, false>        m_texture;
 
     Com<D3D3Viewport>               m_currentViewport;
     std::vector<Com<D3D3Viewport>>  m_viewports;
@@ -153,8 +156,10 @@ namespace dxvk {
     D3DMATRIXHANDLE                 m_viewHandle       = 0;
     D3DMATRIXHANDLE                 m_projectionHandle = 0;
 
-    std::atomic<D3DMATRIXHANDLE>    m_matrixHandle     = 0;
-    std::unordered_map<D3DMATRIXHANDLE, D3DMATRIX> m_matrices;
+    // Tests have indicated that once created, matrix handles are
+    // shared across all devices, regardless of their relation
+    static std::atomic<D3DMATRIXHANDLE> s_matrixHandle;
+    static inline std::unordered_map<D3DMATRIXHANDLE, D3DMATRIX> s_matrices;
 
   };
 

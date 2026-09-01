@@ -4,6 +4,7 @@
 #include "ddraw_format.h"
 
 #include "ddraw_common_interface.h"
+#include "d3d_common_device.h"
 
 #include "ddraw_clipper.h"
 #include "ddraw_palette.h"
@@ -154,14 +155,8 @@ namespace dxvk {
       return (m_desc2.dwFlags & DDSD_CKSRCBLT) || (m_desc.dwFlags & DDSD_CKSRCBLT);
     }
 
-    DDCOLORKEY GetColorKeyNormalized() const {
-      const DDPIXELFORMAT* pixelFormat = (m_desc2.dwFlags & DDSD_PIXELFORMAT) ? &m_desc2.ddpfPixelFormat :
-                                         (m_desc.dwFlags & DDSD_PIXELFORMAT)  ? &m_desc.ddpfPixelFormat : nullptr;
-      const DDCOLORKEY*    colorKey    = (m_desc2.dwFlags & DDSD_CKSRCBLT) ? &m_desc2.ddckCKSrcBlt :
-                                         (m_desc.dwFlags & DDSD_CKSRCBLT)  ? &m_desc.ddckCKSrcBlt : nullptr;
-
-      // Empire of the Ants relies on us using the "Low" color space DWORD
-      return ColorKeyToARGB(pixelFormat, colorKey != nullptr ? colorKey->dwColorSpaceLowValue : 0u);
+    const DDCOLORKEY* GetColorKeyNormalized() const {
+      return &m_ckNormalized;
     }
 
     bool IsFullSurfaceLock(const RECT* lockRect, const RECT* fullSurfaceRect) const {
@@ -186,7 +181,7 @@ namespace dxvk {
       return static_cast<float>(input) / static_cast<float>(max);
     }
 
-    uint16_t GetMipCount() const {
+    uint32_t GetMipCount() const {
       return m_mipCount;
     }
 
@@ -343,8 +338,16 @@ namespace dxvk {
 
     bool IsTexture() const {
       return m_desc2.ddsCaps.dwCaps & DDSCAPS_TEXTURE
+          || m_desc.ddsCaps.dwCaps  & DDSCAPS_TEXTURE;
+    }
+
+    bool IsBindableAsTexture() const {
+      // Surfaces which aren't explicitly marked as textures are only bindable on software devices
+      const bool isBindableSurface = !m_commonD3DDevice->IsHALOrTNLHALDevice() && m_hasTextureHandle;
+
+      return m_desc2.ddsCaps.dwCaps & DDSCAPS_TEXTURE
           || m_desc.ddsCaps.dwCaps  & DDSCAPS_TEXTURE
-          || m_hasTextureHandle;
+          || isBindableSurface;
     }
 
     bool IsTextureMip() const {
@@ -355,13 +358,6 @@ namespace dxvk {
 
     bool IsCubeMap() const {
       return m_desc2.ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP;
-    }
-
-    bool IsTextureOrCubeMap() const {
-      return m_desc2.ddsCaps.dwCaps  & DDSCAPS_TEXTURE
-          || m_desc2.ddsCaps.dwCaps2 & DDSCAPS2_CUBEMAP
-          || m_desc.ddsCaps.dwCaps   & DDSCAPS_TEXTURE
-          || m_hasTextureHandle;
     }
 
     bool IsOverlay() const {
@@ -530,7 +526,7 @@ namespace dxvk {
       } else if (IsCubeMap()) {
         m_d3d9SurfaceType = D3D9SurfaceType::CubeTexture;
       // Textures
-      } else if (IsTexture()) {
+      } else if (IsBindableAsTexture()) {
         m_d3d9SurfaceType = D3D9SurfaceType::Texture;
       // Depth Stencil
       } else if (IsDepthStencil()) {
@@ -570,30 +566,44 @@ namespace dxvk {
           Logger::warn("DDrawCommonSurface::RefreshStaticDescData: Surface format has changed post initialization");
         m_format9 = format9;
       }
+      // refresh normalized color key range (if present)
+      static constexpr DDCOLORKEY DefaultColorKey = { 0u, 0u };
+      // ignore normalized color key calculations on P8 surfaces
+      m_ckNormalized = HasValidColorKey() && m_format9 != d3d9::D3DFMT_P8 ? UpdateColorKeyNormalized() : DefaultColorKey;
     }
 
-    bool                             m_dirtyDDraw         = false;
-    bool                             m_dirtyD3D9          = false;
+    inline DDCOLORKEY UpdateColorKeyNormalized() const {
+      const DDPIXELFORMAT* pixelFormat = (m_desc2.dwFlags & DDSD_PIXELFORMAT) ? &m_desc2.ddpfPixelFormat :
+                                         (m_desc.dwFlags & DDSD_PIXELFORMAT)  ? &m_desc.ddpfPixelFormat : nullptr;
+      const DDCOLORKEY*    colorKey    = (m_desc2.dwFlags & DDSD_CKSRCBLT) ? &m_desc2.ddckCKSrcBlt :
+                                         (m_desc.dwFlags & DDSD_CKSRCBLT)  ? &m_desc.ddckCKSrcBlt : nullptr;
 
-    bool                             m_isDesc2Set         = false;
-    bool                             m_isDescSet          = false;
-    bool                             m_hasTextureHandle   = false;
+      // Empire of the Ants relies on us using the "Low" color space DWORD
+      return ColorKeyToARGB(pixelFormat, colorKey != nullptr ? colorKey->dwColorSpaceLowValue : 0u);
+    }
 
-    bool                             m_isAttached         = false;
-    bool                             m_isRenderTarget     = false;
+    bool                             m_dirtyDDraw       = false;
+    bool                             m_dirtyD3D9        = false;
+
+    bool                             m_isDesc2Set       = false;
+    bool                             m_isDescSet        = false;
+    bool                             m_hasTextureHandle = false;
+
+    bool                             m_isAttached       = false;
+    bool                             m_isRenderTarget   = false;
     bool                             m_isBackBufferOrFlippable = false;
 
     Com<DDrawCommonInterface>        m_commonIntf;
 
-    D3DCommonDevice*                 m_commonD3DDevice    = nullptr;
+    D3DCommonDevice*                 m_commonD3DDevice  = nullptr;
 
-    uint16_t                         m_mipCount           = 1;
-    uint32_t                         m_backBufferIndex    = 0;
+    uint32_t                         m_mipCount         = 1;
+    uint32_t                         m_backBufferIndex  = 0;
 
-    DDSURFACEDESC                    m_desc               = { };
-    DDSURFACEDESC2                   m_desc2              = { };
-    D3D9SurfaceType                  m_d3d9SurfaceType    = D3D9SurfaceType::None;
-    RECT                             m_rect               = { };
+    DDSURFACEDESC                    m_desc             = { };
+    DDSURFACEDESC2                   m_desc2            = { };
+    D3D9SurfaceType                  m_d3d9SurfaceType  = D3D9SurfaceType::None;
+    RECT                             m_rect             = { };
 
     Com<DDrawClipper>                m_clipper;
     Com<DDrawPalette>                m_palette;
@@ -602,17 +612,19 @@ namespace dxvk {
     Com<d3d9::IDirect3DTexture9>     m_texture9;
     Com<d3d9::IDirect3DCubeTexture9> m_cubeMap9;
 
-    d3d9::D3DFORMAT                  m_format9            = d3d9::D3DFMT_UNKNOWN;
+    d3d9::D3DFORMAT                  m_format9          = d3d9::D3DFMT_UNKNOWN;
 
-    DDraw7Surface*                   m_surf7              = nullptr;
-    DDraw4Surface*                   m_surf4              = nullptr;
-    DDraw3Surface*                   m_surf3              = nullptr;
-    DDraw2Surface*                   m_surf2              = nullptr;
-    DDrawSurface*                    m_surf               = nullptr;
+    DDCOLORKEY                       m_ckNormalized     = { };
+
+    DDraw7Surface*                   m_surf7            = nullptr;
+    DDraw4Surface*                   m_surf4            = nullptr;
+    DDraw3Surface*                   m_surf3            = nullptr;
+    DDraw2Surface*                   m_surf2            = nullptr;
+    DDrawSurface*                    m_surf             = nullptr;
 
     // Track the origin surface, as in the DDraw surface
     // that gets created through a CreateSurface call
-    IUnknown*                        m_origin             = nullptr;
+    IUnknown*                        m_origin           = nullptr;
 
   };
 

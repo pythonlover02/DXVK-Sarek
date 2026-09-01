@@ -927,9 +927,9 @@ namespace dxvk {
 
     HRESULT ResetState(D3DPRESENT_PARAMETERS* pPresentationParameters);
 
-    HRESULT SetColorKeyState(bool colorKeyState) {
-      if (unlikely(m_useColorKey != colorKeyState)) {
-        m_useColorKey = colorKeyState;
+    HRESULT SetColorKeyState(DWORD stage, bool colorKeyState) {
+      if (unlikely(m_useColorKey[stage] != colorKeyState)) {
+        m_useColorKey[stage] = colorKeyState;
         m_flags.set(D3D9DeviceFlag::DirtyFFPixelShader);
       }
       return D3D_OK;
@@ -1301,8 +1301,9 @@ namespace dxvk {
 
     bool                            m_isSWVP;
 
-    // D3D7 and earlier texture colorkeying
-    bool                            m_useColorKey = false;
+    // D3D7 and earlier texture color keying
+    std::array<bool,
+      caps::MaxSimultaneousTextures> m_useColorKey = { };
     std::array<DWORD,
       caps::MaxSimultaneousTextures> m_colorKeyLow = { };
     std::array<DWORD,

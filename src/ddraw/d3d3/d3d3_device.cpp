@@ -16,6 +16,8 @@
 
 namespace dxvk {
 
+  std::atomic<D3DMATRIXHANDLE> D3D3Device::s_matrixHandle = 0;
+
   D3D3Device::D3D3Device(
         D3DCommonDevice* commonD3DDevice,
         DDrawSurface* pParent,
@@ -50,6 +52,9 @@ namespace dxvk {
         Logger::warn("D3D3Device: Force enabling AA");
         device9->SetRenderState(d3d9::D3DRS_MULTISAMPLEANTIALIAS, TRUE);
       }
+
+      // D3DRENDERSTATE_COLORKEYENABLE defaults to TRUE on a D3D3 device
+      m_commonD3DDevice->SetColorKeyEnable(TRUE);
     } else {
       device9 = m_commonD3DDevice->GetD3D9Device();
       // Very important, otherwise the depth stencil isn't dirtied on draws
@@ -91,23 +96,25 @@ namespace dxvk {
       m_commonD3DDevice->SetOrigin(nullptr);
   }
 
-  // Interlocked refcount with the origin device
+  // Interlocked refcount with the origin device, or
+  // the parent RT surface, in case of a pure D3D3 device
   ULONG STDMETHODCALLTYPE D3D3Device::AddRef() {
     IUnknown* origin = m_commonD3DDevice->GetOrigin();
     if (unlikely(origin != nullptr && origin != this)) {
       return origin->AddRef();
     } else {
-      return ComObjectClamp::AddRef();
+      return m_parent->AddRef();
     }
   }
 
-  // Interlocked refcount with the origin device
+  // Interlocked refcount with the origin device, or
+  // the parent RT surface, in case of a pure D3D3 device
   ULONG STDMETHODCALLTYPE D3D3Device::Release() {
     IUnknown* origin = m_commonD3DDevice->GetOrigin();
     if (unlikely(origin != nullptr && origin != this)) {
       return origin->Release();
     } else {
-      return ComObjectClamp::Release();
+      return m_parent->Release();
     }
   }
 
@@ -141,8 +148,7 @@ namespace dxvk {
 
       // Apparently all of these should return a reference to the parent surface
       if (riid == IID_IDirect3DHALDevice  || riid == IID_IDirect3DRGBDevice  ||
-          riid == IID_IDirect3DMMXDevice  || riid == IID_IDirect3DRampDevice ||
-          riid == IID_WineD3DDevice) {
+          riid == IID_IDirect3DRampDevice || riid == IID_WineD3DDevice) {
         *ppvObject = ref(m_parent);
         return S_OK;
       }
@@ -213,6 +219,9 @@ namespace dxvk {
 
     const D3DTEXTUREHANDLE handle1 = commonTex1->GetTextureHandle();
     const D3DTEXTUREHANDLE handle2 = commonTex2->GetTextureHandle();
+
+    if (unlikely(!handle1 || !handle2))
+      return DDERR_INVALIDPARAMS;
 
     DDrawCommonInterface::ReleaseTextureHandle(handle1);
     DDrawCommonInterface::ReleaseTextureHandle(handle2);
@@ -420,21 +429,24 @@ namespace dxvk {
     return D3D_OK;
   }
 
+  // No idea what this is supposed to do in practice, but there aren't any known uses anyway
   HRESULT STDMETHODCALLTYPE D3D3Device::Initialize(IDirect3D *d3d, GUID *lpGUID, D3DDEVICEDESC *desc) {
-    if (unlikely(d3d == nullptr))
-      return DDERR_INVALIDPARAMS;
-
-    return D3D_OK;
+    return DDERR_ALREADYINITIALIZED;
   }
 
   HRESULT STDMETHODCALLTYPE D3D3Device::CreateExecuteBuffer(D3DEXECUTEBUFFERDESC *desc, IDirect3DExecuteBuffer **buffer, IUnknown *pkOuter) {
     if (unlikely(desc == nullptr || buffer == nullptr))
       return DDERR_INVALIDPARAMS;
 
+    InitReturnPtr(buffer);
+
     if (unlikely(desc->dwSize != sizeof(D3DEXECUTEBUFFERDESC)))
       return DDERR_INVALIDPARAMS;
 
-    InitReturnPtr(buffer);
+    // "The D3DEXECUTEBUFFERDESC structure describes the execute buffer to be created.
+    //  At a minimum, the application must specify the size required."
+    if (unlikely(!(desc->dwFlags & D3DDEB_BUFSIZE)))
+      return DDERR_INVALIDPARAMS;
 
     *buffer = ref(new D3D3ExecuteBuffer(this, desc));
 
@@ -616,7 +628,7 @@ namespace dxvk {
 
                 ProcessVerticesData pvData;
                 pvData.inData = buf + executeData->dwVertexOffset + pv.wStart * sizeof(D3DVERTEX);
-                pvData.inFVF = doLighting ? D3DFVF_VERTEX : D3DFVF_LVERTEX;
+                pvData.inFVF = op == D3DPROCESSVERTICES_TRANSFORMLIGHT ? D3DFVF_VERTEX : D3DFVF_LVERTEX;
                 pvData.inStride = sizeof(D3DVERTEX);
                 pvData.outData = buf + executeData->dwHVertexOffset + pv.wDest * sizeof(D3DTLVERTEX);
                 pvData.outFVF = D3DFVF_TLVERTEX;
@@ -772,12 +784,12 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D3Device::CreateMatrix(D3DMATRIXHANDLE *matrix) {
     D3DDeviceLock lock = LockDevice();
 
-    m_matrixHandle++;
-    m_matrices.emplace(std::piecewise_construct,
-                       std::forward_as_tuple(m_matrixHandle),
+    D3DMATRIXHANDLE matrixHandle = ++s_matrixHandle;
+    s_matrices.emplace(std::piecewise_construct,
+                       std::forward_as_tuple(matrixHandle),
                        std::forward_as_tuple(D3DMATRIX()));
 
-    *matrix = m_matrixHandle;
+    *matrix = matrixHandle;
 
     return D3D_OK;
   }
@@ -788,9 +800,9 @@ namespace dxvk {
     if (unlikely(matrix == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    auto matrixIter = m_matrices.find(handle);
+    auto matrixIter = s_matrices.find(handle);
 
-    if (likely(matrixIter != m_matrices.end())) {
+    if (likely(matrixIter != s_matrices.end())) {
       matrixIter->second = *matrix;
     } else {
       Logger::warn("D3D3Device::SetMatrix: Matrix not found");
@@ -823,9 +835,9 @@ namespace dxvk {
     if (unlikely(matrix == nullptr))
       return DDERR_INVALIDPARAMS;
 
-    auto matrixIter = m_matrices.find(handle);
+    auto matrixIter = s_matrices.find(handle);
 
-    if (likely(matrixIter != m_matrices.end())) {
+    if (likely(matrixIter != s_matrices.end())) {
       *matrix = matrixIter->second;
     } else {
       Logger::warn(str::format("D3D3Device::GetMatrix: Matrix not found: ", handle));
@@ -838,10 +850,10 @@ namespace dxvk {
   HRESULT STDMETHODCALLTYPE D3D3Device::DeleteMatrix(D3DMATRIXHANDLE D3DMatHandle) {
     D3DDeviceLock lock = LockDevice();
 
-    auto matrixIter = m_matrices.find(D3DMatHandle);
+    auto matrixIter = s_matrices.find(D3DMatHandle);
 
-    if (likely(matrixIter != m_matrices.end())) {
-      m_matrices.erase(matrixIter);
+    if (likely(matrixIter != s_matrices.end())) {
+      s_matrices.erase(matrixIter);
     } else {
       Logger::warn("D3D3Device::DeleteMatrix: Matrix not found");
       return DDERR_INVALIDPARAMS;
@@ -1012,6 +1024,7 @@ namespace dxvk {
       case D3DRENDERSTATE_FOGTABLEEND:
       case D3DRENDERSTATE_FOGTABLEDENSITY:
       //case D3DRENDERSTATE_STIPPLEENABLE:
+      //case D3DRENDERSTATE_COLORKEYENABLE: // Apparently can be toggled in D3D3 as well
       //case D3DRENDERSTATE_STIPPLEPATTERN00:
       //case D3DRENDERSTATE_STIPPLEPATTERN01:
       //case D3DRENDERSTATE_STIPPLEPATTERN02:
@@ -1280,6 +1293,27 @@ namespace dxvk {
       case D3DRENDERSTATE_STIPPLEENABLE:
         return D3D_OK;
 
+      // Technically, this doesn't exist in D3D3, but some Wine tests appear to suggest
+      // it can be toggled even with execute buffers, so handle it anyway...
+      case D3DRENDERSTATE_COLORKEYENABLE: {
+        m_commonD3DDevice->SetColorKeyEnable(dwRenderState);
+
+        const D3DTEXTUREHANDLE currentTextureHandle = m_commonD3DDevice->GetCurrentTextureHandle();
+        DDrawSurface* surface = currentTextureHandle != 0 ?
+                                DDrawCommonInterface::GetSurfaceFromTextureHandle(currentTextureHandle) : nullptr;
+        // Color keying is always enabled on RGB devices, regardless of D3DRENDERSTATE_COLORKEYENABLE
+        const bool colorKeyEnable = !m_commonD3DDevice->IsHALOrTNLHALDevice() || dwRenderState;
+        const bool validColorKey = surface != nullptr ? surface->GetCommonSurface()->HasValidColorKey() : false;
+        m_bridge->SetColorKeyState(0, colorKeyEnable && validColorKey);
+        if (colorKeyEnable && validColorKey) {
+          const DDCOLORKEY* normalizedColorKey = surface->GetCommonSurface()->GetColorKeyNormalized();
+          m_bridge->SetColorKey(0, normalizedColorKey->dwColorSpaceLowValue,
+                                normalizedColorKey->dwColorSpaceHighValue);
+        }
+
+        return D3D_OK;
+      }
+
       // Tests have shown age accurate GPUs didn't offer support for stippling at all
       case D3DRENDERSTATE_STIPPLEPATTERN00:
       case D3DRENDERSTATE_STIPPLEPATTERN01:
@@ -1503,8 +1537,11 @@ namespace dxvk {
         return hr;
       }
 
-      if (likely(m_commonD3DDevice->GetCurrentTextureHandle() != 0))
+      if (likely(m_commonD3DDevice->GetCurrentTextureHandle() != 0)) {
+        m_texture = nullptr;
         m_commonD3DDevice->SetCurrentTextureHandle(0);
+        m_bridge->SetColorKeyState(0, false);
+      }
 
       return D3D_OK;
     }
@@ -1528,13 +1565,15 @@ namespace dxvk {
 
     d3d9::IDirect3DTexture9* tex9 = commonSurface->GetD3D9Texture();
 
-    if (likely(tex9 != nullptr)) {
-      hr = device9->SetTexture(0, tex9);
-      if (unlikely(FAILED(hr))) {
-        Logger::warn("D3D3Device::SetTextureInternal: Failed to bind D3D9 texture");
-        return hr;
-      }
+    // If a surface without a D3D9 texture gets bound, simply unbind the current texture.
+    // This is needed to handle the binding of surfaces which aren't explicitly marked as textures.
+    hr = device9->SetTexture(0, tex9);
+    if (unlikely(FAILED(hr))) {
+      Logger::warn("D3D3Device::SetTextureInternal: Failed to bind D3D9 texture");
+      return hr;
+    }
 
+    if (likely(tex9 != nullptr)) {
       // "Any alpha values in the texture replace the alpha values in the colors that would
       //  have been used with no texturing; if the texture does not contain an alpha component,
       //  alpha values at the vertices in the source are interpolated between vertices."
@@ -1543,18 +1582,18 @@ namespace dxvk {
         device9->SetTextureStageState(0, d3d9::D3DTSS_ALPHAOP, textureOp);
       }
 
-      // D3D3 enables color key transparency globally
+      // Color keying is always enabled on RGB devices, regardless of D3DRENDERSTATE_COLORKEYENABLE
+      const bool colorKeyEnable = !m_commonD3DDevice->IsHALOrTNLHALDevice() || m_commonD3DDevice->GetColorKeyEnable();
       const bool validColorKey = commonSurface->HasValidColorKey();
-      m_bridge->SetColorKeyState(validColorKey);
-      if (validColorKey) {
-        DDCOLORKEY normalizedColorKey = commonSurface->GetColorKeyNormalized();
-        m_bridge->SetColorKey(normalizedColorKey.dwColorSpaceLowValue,
-                              normalizedColorKey.dwColorSpaceHighValue);
+      m_bridge->SetColorKeyState(0, colorKeyEnable && validColorKey);
+      if (colorKeyEnable && validColorKey) {
+        const DDCOLORKEY* normalizedColorKey = commonSurface->GetColorKeyNormalized();
+        m_bridge->SetColorKey(0, normalizedColorKey->dwColorSpaceLowValue,
+                              normalizedColorKey->dwColorSpaceHighValue);
       }
-    } else {
-      Logger::err("D3D3Device::SetTextureInternal: Found no valid D3D9 texture");
     }
 
+    m_texture = surface;
     m_commonD3DDevice->SetCurrentTextureHandle(textureHandle);
 
     return D3D_OK;

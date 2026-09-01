@@ -173,7 +173,8 @@ namespace dxvk {
 
         if (m_legacyProjection != nullptr) {
           device9->GetTransform(d3d9::D3DTS_PROJECTION, &m_projectionMatrix);
-          device9->MultiplyTransform(d3d9::D3DTS_PROJECTION, m_legacyProjection);
+          device9->SetTransform(d3d9::D3DTS_PROJECTION, m_legacyProjection);
+          device9->MultiplyTransform(d3d9::D3DTS_PROJECTION, &m_projectionMatrix);
         }
       }
     }
@@ -184,11 +185,11 @@ namespace dxvk {
       }
     }
 
-    bool                            m_alphaOpSet         = false;
+    bool                            m_alphaOpSet       = false;
 
     Com<D3DCommonDevice>            m_commonD3DDevice;
 
-    DDrawCommonInterface*           m_commonIntf         = nullptr;
+    DDrawCommonInterface*           m_commonIntf       = nullptr;
 
     Com<IDxvkLegacyD3DDeviceBridge> m_bridge;
 
@@ -202,16 +203,16 @@ namespace dxvk {
     Com<DDraw4Surface>              m_rt;
     Com<DDraw4Surface, false>       m_ds;
 
+    // Only for the legacy D3DTEXTUREHANDLE texture path
+    Com<DDraw4Surface, false>       m_texture;
+
     Com<D3D6Viewport>               m_currentViewport;
     std::vector<Com<D3D6Viewport>>  m_viewports;
 
-    D3DMATRIX                       m_projectionMatrix   = { };
-    const D3DMATRIX*                m_legacyProjection   = nullptr;
+    D3DMATRIX                       m_projectionMatrix = { };
+    const D3DMATRIX*                m_legacyProjection = nullptr;
 
-    VertexStreamInfo                m_vertexStreamInfo;
-    std::vector<D3DVERTEX>          m_vertexStream;
-    std::vector<D3DLVERTEX>         m_lvertexStream;
-    std::vector<D3DTLVERTEX>        m_tlvertexStream;
+    VertexStream                    m_vertexStream;
 
     // D3D5Texture (aka IDirect3DTexture2) is shared between D3D5 and D3D6
     std::array<Com<D3D5Texture, false>, ddrawCaps::TextureStageCount> m_textures;

@@ -208,19 +208,17 @@ namespace dxvk {
 
     inline HRESULT UploadSurfaceData();
 
-    bool                                m_isChildObject   = false;
-
-    bool                                m_readOnlyLock    = false;
-    std::atomic<uint8_t>                m_lockCount       = 0u;
+    bool                                m_isChildObject = false;
+    std::atomic<bool>                   m_readOnlyLock  = false;
 
     Com<DDrawCommonSurface>             m_commonSurf;
-    DDrawCommonInterface*               m_commonIntf      = nullptr;
+    DDrawCommonInterface*               m_commonIntf    = nullptr;
 
-    DDraw7Surface*                      m_parentSurf      = nullptr;
+    DDraw7Surface*                      m_parentSurf    = nullptr;
 
     std::array<IDirectDrawSurface7*, 6> m_cubeMapSurfaces;
 
-    DDraw7Surface*                      m_nextFlippable   = nullptr;
+    DDraw7Surface*                      m_nextFlippable = nullptr;
 
     // Offscreen plain surface we use to mask unwanted DDraw interactions, such
     // as forced swapchain presents caused by blits/locks on primary surfaces
