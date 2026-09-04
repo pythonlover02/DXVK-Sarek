@@ -5,42 +5,52 @@
 #include "../util/util_error.h"
 
 namespace dxvk::wsi {
-  static WsiDriver* s_driver = nullptr;
-  static int s_refcount = 0;
-
   static const WsiBootstrap *wsiBootstrap[] = {
     &Win32WSI,
   };
 
-  void init() {
-    if (s_refcount++ > 0)
-      return;
-
+  static WsiDriver* createDriver() {
     std::string hint = dxvk::env::getEnvVar("DXVK_WSI_DRIVER");
     if (hint == "")
       hint = "Win32";
 
-    bool success = false;
     for (const WsiBootstrap *b : wsiBootstrap) {
-      if (hint == b->name && b->createDriver(&s_driver)) {
-        success = true;
-        break;
-      }
+      WsiDriver *driver = nullptr;
+
+      if (hint == b->name && b->createDriver(&driver))
+        return driver;
     }
 
-    if (!success)
-      throw DxvkError("Failed to initialize WSI.");
+    throw DxvkError("Failed to initialize WSI.");
+  }
+
+  // The driver is created on first use rather than being tied to the
+  // lifetime of a DxvkInstance. Each DLL linking this library holds its
+  // own copy of the pointer, and not every one of them creates an
+  // instance: d3d11 takes the one owned by the dxgi factory, so a driver
+  // created alongside the instance would leave d3d11's copy null. Creating
+  // it here also keeps it alive past the last instance, which swap chains
+  // rely on when they restore the display mode from their destructors.
+  static WsiDriver* getDriver() {
+    static WsiDriver* driver = createDriver();
+    return driver;
+  }
+
+  // Resolves the driver on every use, so that the call sites below can
+  // keep reading as plain member calls.
+  struct WsiDriverRef {
+    WsiDriver* operator -> () const { return getDriver(); }
+  };
+
+  static WsiDriverRef s_driver;
+
+  void init() {
+    // Not required, but reports a driver that cannot be created at the
+    // point the instance is set up rather than on the first window call.
+    getDriver();
   }
 
   void quit() {
-    if (s_refcount == 0)
-      return;
-
-    s_refcount--;
-    if (s_refcount == 0) {
-      delete s_driver;
-      s_driver = nullptr;
-    }
   }
 
   std::vector<const char *> getInstanceExtensions() {
