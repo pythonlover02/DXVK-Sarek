@@ -6,8 +6,6 @@
 #include <vector>
 #include <cstdint>
 
-#include "wsi_edid.h"
-
 namespace dxvk::wsi {
 
   /**
@@ -42,16 +40,6 @@ namespace dxvk::wsi {
     * \returns The monitor of given index
     */
   HMONITOR enumMonitors(uint32_t index);
-
-  /**
-    * \brief Enumerators monitors on the system
-    * \param [in] adapterLUID array of adapters' LUIDs
-    * \param [in] numLUIDs adapterLUID array size (0 for all monitors)
-    * \param [in] index Monitor index within enumeration
-    *
-    * \returns The monitor of given index
-    */
-  HMONITOR enumMonitors(const LUID *adapterLUID[], uint32_t numLUIDs, uint32_t index);
 
   /**
     * \brief Get the GDI name of a HMONITOR
@@ -104,20 +92,6 @@ namespace dxvk::wsi {
           WsiMode*         pMode);
 
   /**
-    * \brief Get the current display mode
-    *
-    * This is the display mode of the user's
-    * default desktop.
-    * 
-    * \param [in] hMonitor The monitor
-    * \param [out] pMode The resultant mode
-    * \returns \c true on success, \c false on failure
-    */
-  bool getDesktopDisplayMode(
-          HMONITOR         hMonitor,
-          WsiMode*         pMode);
-
-  /**
     * \brief Get the size of a monitor
     *
     * Helper function to grab the size of a monitor
@@ -136,17 +110,5 @@ namespace dxvk::wsi {
     if (pHeight)
       *pHeight = rect.bottom - rect.top;
   }
-
-  /**
-    * \brief Get the EDID of a monitor
-    *
-    * Helper function to grab the EDID of a monitor.
-    * This is needed to get the HDR static metadata + colorimetry
-    * info of a display for exposing HDR.
-    *
-    * \param [in] hMonitor The monitor
-    * \returns \c EDID if successful, an empty vector if failure.
-    */
-  WsiEdidData getMonitorEdid(HMONITOR hMonitor);
 
 }

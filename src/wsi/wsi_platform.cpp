@@ -152,10 +152,6 @@ namespace dxvk::wsi {
     return s_driver->enumMonitors(index);
   }
 
-  HMONITOR enumMonitors(const LUID *adapterLUID[], uint32_t numLUIDs, uint32_t index) {
-    return s_driver->enumMonitors(adapterLUID, numLUIDs, index);
-  }
-
   bool getDisplayName(
           HMONITOR         hMonitor,
           WCHAR            (&Name)[32]) {
@@ -179,16 +175,6 @@ namespace dxvk::wsi {
           HMONITOR         hMonitor,
           WsiMode*         pMode) {
     return s_driver->getCurrentDisplayMode(hMonitor, pMode);
-  }
-
-  bool getDesktopDisplayMode(
-          HMONITOR         hMonitor,
-          WsiMode*         pMode) {
-    return s_driver->getDesktopDisplayMode(hMonitor, pMode);
-  }
-
-  WsiEdidData getMonitorEdid(HMONITOR hMonitor) {
-    return s_driver->getMonitorEdid(hMonitor);
   }
 
 }

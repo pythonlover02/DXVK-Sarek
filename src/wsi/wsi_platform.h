@@ -19,8 +19,6 @@ namespace dxvk::wsi {
 
     virtual HMONITOR enumMonitors(uint32_t index) = 0;
 
-    virtual HMONITOR enumMonitors(const LUID *adapterLUID[], uint32_t numLUIDs, uint32_t index) = 0;
-
     virtual bool getDisplayName(
             HMONITOR         hMonitor,
             WCHAR            (&Name)[32]) = 0;
@@ -37,12 +35,6 @@ namespace dxvk::wsi {
     virtual bool getCurrentDisplayMode(
             HMONITOR         hMonitor,
             WsiMode*         pMode) = 0;
-
-    virtual bool getDesktopDisplayMode(
-            HMONITOR         hMonitor,
-            WsiMode*         pMode) = 0;
-
-    virtual WsiEdidData getMonitorEdid(HMONITOR hMonitor) = 0;
 
     // Window
 

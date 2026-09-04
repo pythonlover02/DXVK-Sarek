@@ -5,10 +5,7 @@ wsi_src = [
   'win32/wsi_window_win32.cpp',
 ]
 
-wsi_deps = [ cpp.find_library('setupapi') ]
-
 wsi_lib = static_library('wsi', wsi_src,
-  dependencies        : wsi_deps,
   include_directories : [ dxvk_include_path ])
 
 wsi_dep = declare_dependency(
