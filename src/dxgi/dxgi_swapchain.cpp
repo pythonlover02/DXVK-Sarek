@@ -183,6 +183,12 @@ namespace dxvk {
           IDXGIOutput** ppTarget) {
     HRESULT hr = S_OK;
 
+    // A fullscreen swap chain whose window is no longer visible keeps its
+    // exclusive display mode, so drop back to windowed here rather than
+    // leaving the mode applied after the application has lost focus.
+    if (!m_descFs.Windowed && wsi::isOccluded(m_window))
+      SetFullscreenState(FALSE, nullptr);
+
     if (pFullscreen != nullptr)
       *pFullscreen = !m_descFs.Windowed;
 
