@@ -30,4 +30,15 @@ namespace dxvk {
     return -1;
   }
 
+  NTSTATUS D3DKMTEscape(const D3DKMT_ESCAPE* Arg1) {
+    static auto func = (D3DKMTEscapeType)
+      GetProcAddress(GetGDIModule(), "D3DKMTEscape");
+
+    if (func != nullptr)
+      return func(Arg1);
+
+    Logger::warn("D3DKMTEscape: Unable to query proc address.");
+    return -1;
+  }
+
 }
