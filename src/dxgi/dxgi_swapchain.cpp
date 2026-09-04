@@ -262,6 +262,9 @@ namespace dxvk {
     if (SyncInterval > 4)
       return DXGI_ERROR_INVALID_CALL;
 
+    if ((m_desc.SwapEffect == DXGI_SWAP_EFFECT_DISCARD || m_desc.SwapEffect == DXGI_SWAP_EFFECT_SEQUENTIAL) && wsi::isMinimized(m_window))
+      return DXGI_STATUS_OCCLUDED;
+
     std::lock_guard<dxvk::recursive_mutex> lockWin(m_lockWindow);
 
     try {
