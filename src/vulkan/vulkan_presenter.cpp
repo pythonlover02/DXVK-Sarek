@@ -2,6 +2,8 @@
 
 #include "../dxvk/dxvk_format.h"
 
+#include "../wsi/wsi_window.h"
+
 namespace dxvk::vk {
 
   Presenter::Presenter(
@@ -441,18 +443,10 @@ namespace dxvk::vk {
 
 
   VkResult Presenter::createSurface() {
-    HINSTANCE instance = reinterpret_cast<HINSTANCE>(
-      GetWindowLongPtr(m_window, GWLP_HINSTANCE));
-
-    VkWin32SurfaceCreateInfoKHR info;
-    info.sType      = VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR;
-    info.pNext      = nullptr;
-    info.flags      = 0;
-    info.hinstance  = instance;
-    info.hwnd       = m_window;
-
-    VkResult status = m_vki->vkCreateWin32SurfaceKHR(
-      m_vki->instance(), &info, nullptr, &m_surface);
+    VkResult status = wsi::createSurface(m_window,
+      m_vki->getLoaderProc(),
+      m_vki->instance(),
+      &m_surface);
 
     if (status != VK_SUCCESS)
       return status;
