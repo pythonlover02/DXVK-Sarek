@@ -187,7 +187,10 @@ namespace dxvk::wsi {
     devMode.dmPelsHeight = mode.height;
     devMode.dmBitsPerPel = mode.bitsPerPixel;
 
-    if (mode.refreshRate.numerator != 0)  {
+    // A zero denominator arrives unchanged from application-supplied mode
+    // descriptions, so treat it as an unspecified refresh rate rather than
+    // dividing by it.
+    if (mode.refreshRate.numerator != 0 && mode.refreshRate.denominator != 0) {
       devMode.dmFields |= DM_DISPLAYFREQUENCY;
       devMode.dmDisplayFrequency = mode.refreshRate.numerator
                                  / mode.refreshRate.denominator;
