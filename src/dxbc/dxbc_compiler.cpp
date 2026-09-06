@@ -3207,10 +3207,22 @@ namespace dxvk {
 
     // If the mip level is out of bounds, D3D requires us to return
     // zero before applying modifiers, whereas SPIR-V is undefined,
-    // so we need to fix it up manually here.
+    // so we need to fix it up manually here. OpSelect only accepts a
+    // scalar condition for a vector result as of SPIR-V 1.4, and this
+    // module is 1.3, so broadcast the condition to match the size.
+    uint32_t cond = m_module.opULessThan(
+      m_module.defBoolType(), mipLod.id, imageLevels.id);
+
+    if (imageSize.type.ccount > 1) {
+      std::array<uint32_t, 4> conds = {{ cond, cond, cond, cond }};
+
+      cond = m_module.opCompositeConstruct(
+        m_module.defVectorType(m_module.defBoolType(), imageSize.type.ccount),
+        imageSize.type.ccount, conds.data());
+    }
+
     imageSize.id = m_module.opSelect(getVectorTypeId(imageSize.type),
-      m_module.opULessThan(m_module.defBoolType(), mipLod.id, imageLevels.id),
-      imageSize.id, emitBuildZeroVector(imageSize.type).id);
+      cond, imageSize.id, emitBuildZeroVector(imageSize.type).id);
 
     // Convert intermediates to the requested type
     if (returnType == DxbcScalarType::Float32) {
