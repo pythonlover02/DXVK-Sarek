@@ -483,6 +483,11 @@ namespace dxvk {
     { R"(\\Astro-Win64-Shipping\.exe$)", {{
       { "dxgi.hideNvidiaGpu",               "True" },
     }} },
+    /* Civilization VI: Overlapping and garbled text  *
+     * with constant buffer range checking enabled    */
+    { R"(\\CivilizationVI\.exe$)", {{
+      { "d3d11.constantBufferRangeCheck",  "False" },
+    }} },
 
     /**********************************************/
     /* D3D9 GAMES                                 */
